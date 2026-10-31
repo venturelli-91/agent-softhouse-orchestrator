@@ -16,8 +16,9 @@ fraca; as barreiras reais são código, permissões do CLI, worktree isolado e e
 | [02-grafo-tracer-bullet.md](02-grafo-tracer-bullet.md) | `graph.ts`, estado, nós, arestas, tracer com modelo real, linha de base de consumo, bugs |
 | [03-guardrails-de-fluxo.md](03-guardrails-de-fluxo.md) | `guardrails.ts` Seção 1, escalada ao CEO, testes com nós falsos, CI, regressão ao vivo |
 | [04-planejador.md](04-planejador.md) | nó planejador, esclarecimento de escopo com o CEO |
+| [05-publicar-devops-watchdog.md](05-publicar-devops-watchdog.md) | push/PR pelo código, devops pós-CEO, watchdog |
 
-(Os próximos docs entram junto com cada task: nós restantes (devops, watchdog), publicação.)
+(Os próximos docs entram junto com cada task: publicação.)
 
 ## Decisões e achados (task 1)
 
