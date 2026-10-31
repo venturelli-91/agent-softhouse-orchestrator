@@ -7,7 +7,7 @@ const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
 export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
 const sh = (...padroes: string[]) => padroes.map((p) => `${SHELL}(${p})`);
 
-export type Papel = "triagem" | "planejador" | "dev" | "reviewer" | "qa";
+export type Papel = "triagem" | "planejador" | "dev" | "reviewer" | "qa" | "devops" | "watchdog";
 
 // ===== Secao 1: regras de fluxo =====
 export const MAX_REVISOES = 3;
@@ -86,6 +86,8 @@ export const PERMISSOES: Record<Papel, { tools: string[]; allow: string[]; deny:
   planejador: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
   reviewer: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
   qa: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
+  devops: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
+  watchdog: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
   dev: {
     tools: [...LEITURA, "Write", "Edit", SHELL],
     allow: [...LEITURA, "Write(./**)", "Edit(./**)", ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*", "npm test*", "npm run typecheck*")],

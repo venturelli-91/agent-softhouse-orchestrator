@@ -1,6 +1,7 @@
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
 import { autoaprovacao, gitSeguro, MAX_REVISOES, MAX_TICKETS_ATIVOS, orcamentoEstourado, RECURSION_LIMIT, ticketsAtivos, tokens, verificarEvidencia } from "./guardrails.ts";
+import { publicar } from "./publicar.ts";
 import { FalhaDeNo, runAgent, type Consumo } from "./run-agent.ts";
 
 const ESPECIALIDADES = ["frontend", "backend", "fullstack", "mobile", "integracoes", "ia", "dados"] as const;
@@ -124,7 +125,25 @@ const reviewer = revisor("reviewer", (t) => [
   ...(t.flags.toca_performance ? ["performance"] : []),
   ...(t.flags.toca_ia ? ["engenheiro-evals"] : []),
 ], "qa");
-const qa = revisor("qa", () => ["qa-automation"], "aprovacao");
+const qa = revisor("qa", () => ["qa-automation"], "publicar");
+
+// Push da branch e PR (rascunho) pelo codigo, nao pelo agente; so com a evidencia ainda valida.
+const publicarNo = protegido("publicar", async (t) => {
+  const v = t.evidencias.length ? verificarEvidencia(t.worktree, t.base) : { ok: false as const, motivo: "sem evidencias" };
+  if (!v.ok) throw new FalhaDeNo(`evidencia invalida: ${v.motivo}`);
+  const corpo = [t.resumo, "Criterios:", ...t.criterios.map((c) => `- ${c}`), `Evidencias: ${v.evidencias.join(", ")}`].join("\n\n");
+  const pr = publicar({ cwd: t.worktree, titulo: `${t.id}: ${t.titulo}`, corpo });
+  return { status: "aprovacao", evidencias: [...v.evidencias, pr], historico: log(t, "publicar", pr) };
+});
+
+// Merge/deploy so depois do CEO; sem permissao de escrita, o agente descreve o plano e o rollback.
+const devops = protegido("devops", async (t) => {
+  const { saida, consumo } = await runAgent({
+    papel: "devops", arquivos: ["devops-sre"], cwd: t.worktree, schema: SaidaDev,
+    contexto: contexto(dadosTicket(t), "O CEO aprovou. Simulacao: NAO execute deploy nem merge. Descreva status, plano de rollback e observabilidade."),
+  });
+  return { status: "deploy_simulado", resumo: saida.resumo, historico: log(t, "devops", "deploy simulado", consumo) };
+});
 
 // Unico ponto de merge/deploy e de escalada. Aprovacao so conta se a evidencia ainda se sustenta.
 const aprovacaoCeo = async (t: T): Promise<Partial<T>> => {
@@ -137,7 +156,7 @@ const aprovacaoCeo = async (t: T): Promise<Partial<T>> => {
   }) as string;
   const h = (res: string) => log(t, "aprovacao_ceo", res);
   if (!motivo) {
-    if (r === "aprovar") return { status: "deploy_simulado", historico: h("aprovado") };
+    if (r === "aprovar") return { status: "aprovado", historico: h("aprovado") };
     return { status: "dev_falhou", revisoes: t.revisoes + 1, resumo: `CEO rejeitou: ${r}`.slice(0, 500), historico: h("rejeitado") };
   }
   if (r === "abortar") return { status: "abortado", historico: h("abortado") };
@@ -152,18 +171,20 @@ const aprovacaoCeo = async (t: T): Promise<Partial<T>> => {
 const rota = (ok: string, no: string) => (t: T) =>
   t.status === ok ? no : t.status === "dev_falhou" && t.revisoes < MAX_REVISOES ? "dev" : "aprovacao_ceo";
 const aposTriagem = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguo" ? "planejador" : "aprovacao_ceo");
-const aposCeo = (t: T) => (t.status === "dev_falhou" ? "dev" : t.status === "replanejar" ? "planejador" : END);
+const aposCeo = (t: T) => (t.status === "dev_falhou" ? "dev" : t.status === "replanejar" ? "planejador" : t.status === "aprovado" ? "devops" : END);
 
 export function montarGrafo(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
-    .addNode("triagem", triagem).addNode("planejador", planejador).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("aprovacao_ceo", aprovacaoCeo)
+    .addNode("triagem", triagem).addNode("planejador", planejador).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publicar", publicarNo).addNode("aprovacao_ceo", aprovacaoCeo).addNode("devops", devops)
     .addEdge(START, "triagem")
     .addConditionalEdges("triagem", aposTriagem, ["dev", "planejador", "aprovacao_ceo"])
     .addConditionalEdges("planejador", rota("dev", "dev"), ["dev", "aprovacao_ceo"])
     .addConditionalEdges("dev", rota("revisao", "reviewer"), ["reviewer", "dev", "aprovacao_ceo"])
     .addConditionalEdges("reviewer", rota("qa", "qa"), ["qa", "dev", "aprovacao_ceo"])
-    .addConditionalEdges("qa", rota("aprovacao", "aprovacao_ceo"), ["aprovacao_ceo", "dev"])
-    .addConditionalEdges("aprovacao_ceo", aposCeo, ["dev", "planejador", END])
+    .addConditionalEdges("qa", rota("publicar", "publicar"), ["publicar", "dev", "aprovacao_ceo"])
+    .addConditionalEdges("publicar", rota("aprovacao", "aprovacao_ceo"), ["aprovacao_ceo"])
+    .addConditionalEdges("aprovacao_ceo", aposCeo, ["dev", "planejador", "devops", END])
+    .addEdge("devops", END)
     .compile({ checkpointer });
 }
 

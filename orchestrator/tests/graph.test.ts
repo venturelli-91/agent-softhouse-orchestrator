@@ -7,7 +7,9 @@ import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { criarFixture, git } from "../scripts/fixture.ts";
 import { config, criarWorktree, montarGrafo, retomar } from "../src/graph.ts";
+import { registrarPublicador } from "../src/publicar.ts";
 import { FalhaDeNo, registrarExecutor, type Req } from "../src/run-agent.ts";
+import { watchdog } from "../src/watchdog.ts";
 
 type Comportamento = Partial<Record<string, (req: Req<unknown>) => unknown>>;
 let ajuste: Comportamento = {};
@@ -27,7 +29,11 @@ const padrao: Comportamento = {
   dev: (req) => (commitar(req.cwd, "agente-dev"), { resumo: "ok" }),
   reviewer: () => ({ veredito: "aprovado", comentarios: "", resumo: "ok" }),
   qa: () => ({ veredito: "aprovado", comentarios: "", resumo: "ok" }),
+  devops: () => ({ resumo: "deploy simulado" }),
+  watchdog: () => ({ alertas: ["T-1 parado"], resumo: "ok" }),
 };
+let publicacoes: string[] = [];
+registrarPublicador("fake", { publicar: (p) => (publicacoes.push(p.titulo), "pr:https://exemplo/pull/1") });
 
 registrarExecutor("fake", {
   async run<T>(req: Req<T>) {
@@ -41,6 +47,8 @@ registrarExecutor("fake", {
 
 beforeEach(() => {
   process.env.EXECUTOR = "fake";
+  process.env.PUBLICADOR = "fake";
+  publicacoes = [];
   process.env.TOKEN_BUDGET_TICKET = "100000";
   ajuste = {};
   chamadas = [];
@@ -160,4 +168,43 @@ test("limite de 5 tickets ativos", async () => {
   const repo = criarFixture(raiz);
   for (let i = 1; i <= 5; i++) criarWorktree(repo, `T-${i}`, join(raiz, `wt${i}`));
   assert.throws(() => criarWorktree(repo, "T-6", join(raiz, "wt6")), /limite de 5/);
+});
+
+test("push e PR saem do codigo do grafo, depois do QA e antes do CEO; devops so depois do CEO", async () => {
+  const g = await iniciar();
+  assert.equal(publicacoes.length, 1);
+  assert.ok((pausa(g.r)?.evidencias as string[]).includes("pr:https://exemplo/pull/1"));
+  assert.ok(!chamadas.includes("devops"));
+  const fim = await ver(g, "aprovar");
+  assert.equal(fim.status, "deploy_simulado");
+  assert.equal(chamadas.at(-1), "devops");
+});
+
+test("rejeicao do CEO nao aciona o devops", async () => {
+  const g = await iniciar();
+  await ver(g, "nao gostei");
+  assert.ok(!chamadas.includes("devops"));
+});
+
+test("PUBLICADOR ausente escala ao CEO e nada e publicado", async () => {
+  delete process.env.PUBLICADOR;
+  const g = await iniciar();
+  assert.equal(pausa(g.r)?.tipo, "escalada");
+  assert.match(String(pausa(g.r)?.motivo), /PUBLICADOR/);
+  assert.equal(publicacoes.length, 0);
+});
+
+test("publicador que falha escala ao CEO", async () => {
+  process.env.PUBLICADOR = "quebrado";
+  registrarPublicador("quebrado", { publicar: () => { throw new Error("push recusado"); } });
+  const g = await iniciar();
+  assert.equal(pausa(g.r)?.tipo, "escalada");
+  assert.match(String(pausa(g.r)?.motivo), /push recusado/);
+});
+
+test("watchdog le o estado e devolve alertas sem escrever", async () => {
+  const g = await iniciar();
+  const r = await watchdog([g.r], g.raiz);
+  assert.deepEqual(r.alertas, ["T-1 parado"]);
+  assert.equal(chamadas.at(-1), "watchdog");
 });
