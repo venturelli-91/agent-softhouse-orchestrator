@@ -2,7 +2,7 @@
 import { execFileSync, execSync } from "node:child_process";
 import type { Consumo } from "./run-agent.ts";
 // No Windows, os.devNull (um caminho \\.\nul) nao e valido para o git; usa NUL.
-const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
+export const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
 // Neste Windows o shell do claude -p e o PowerShell; em POSIX, Bash.
 export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
 const sh = (...padroes: string[]) => padroes.map((p) => `${SHELL}(${p})`);

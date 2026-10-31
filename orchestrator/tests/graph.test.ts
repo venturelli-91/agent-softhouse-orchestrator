@@ -33,7 +33,7 @@ const padrao: Comportamento = {
   watchdog: () => ({ alertas: ["T-1 parado"], resumo: "ok" }),
 };
 let publicacoes: string[] = [];
-registrarPublicador("fake", { publicar: (p) => (publicacoes.push(p.titulo), "pr:https://exemplo/pull/1") });
+registrarPublicador("fake", { publicar: (p) => (publicacoes.push(`${p.id}@${p.sha}`), "pr:https://exemplo/pull/1") });
 
 registrarExecutor("fake", {
   async run<T>(req: Req<T>) {
@@ -173,6 +173,7 @@ test("limite de 5 tickets ativos", async () => {
 test("push e PR saem do codigo do grafo, depois do QA e antes do CEO; devops so depois do CEO", async () => {
   const g = await iniciar();
   assert.equal(publicacoes.length, 1);
+  assert.match(publicacoes[0], /^T-1@[0-9a-f]{40}$/);
   assert.ok((pausa(g.r)?.evidencias as string[]).includes("pr:https://exemplo/pull/1"));
   assert.ok(!chamadas.includes("devops"));
   const fim = await ver(g, "aprovar");

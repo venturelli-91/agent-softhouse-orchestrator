@@ -14,7 +14,7 @@ com `status=aprovado`, que só `aprovacao_ceo` produz após `interrupt()`.
 - `PUBLICADOR` (env): `github` | `nenhum`. Ausente ou desconhecido = `FalhaDeNo` (escala ao CEO, nada é enviado).
   `.env.example` traz `nenhum`; troque para `github` só ao usar um repo-alvo real com `origin` e `gh` autenticado.
   Mesmo encaixe do executor (`registrarPublicador`), usado pelos testes.
-- O push roda no host com as credenciais do usuário (`gitSeguro`); o agente dev continua sem `git push`.
+- O push roda no host com as credenciais do usuário (`gitSeguro`, hooks desligados, `--no-verify`) e envia exatamente o SHA verificado para `refs/heads/ticket/<id>`, nunca o HEAD atual; o agente dev continua sem `git push`.
 
 ## devops
 

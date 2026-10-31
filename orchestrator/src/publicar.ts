@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { gitSeguro } from "./guardrails.ts";
+import { devNull, gitSeguro } from "./guardrails.ts";
 import { FalhaDeNo } from "./run-agent.ts";
 
-export type Pub = { cwd: string; titulo: string; corpo: string };
+// `sha` e o commit que a verificacao conferiu; a ref de destino e derivada do id, nunca do HEAD.
+export type Pub = { cwd: string; id: string; sha: string; titulo: string; corpo: string };
 // Devolve a evidencia (ex.: "pr:<url>"). Push e PR sao feitos pelo codigo do grafo, nunca pelo agente.
 export interface Publicador {
   publicar(p: Pub): string;
@@ -12,9 +13,9 @@ const gh = (cwd: string, ...args: string[]) => execFileSync("gh", args, { cwd, e
 
 // Branch ticket/<id> vai para origin e o PR e sempre rascunho: merge e do CEO.
 const github: Publicador = {
-  publicar({ cwd, titulo, corpo }) {
-    const branch = gitSeguro(cwd, "rev-parse", "--abbrev-ref", "HEAD");
-    gitSeguro(cwd, "push", "--set-upstream", "origin", branch);
+  publicar({ cwd, id, sha, titulo, corpo }) {
+    const branch = `ticket/${id}`;
+    gitSeguro(cwd, "-c", `core.hooksPath=${devNull}`, "push", "--no-verify", "origin", `${sha}:refs/heads/${branch}`);
     let url: string;
     try {
       url = gh(cwd, "pr", "view", branch, "--json", "url", "-q", ".url");
