@@ -1,5 +1,6 @@
 // Secao 1: regras de fluxo entre nos (constantes + evidencia). Secao 2: defesa dentro de cada no.
 import { execFileSync, execSync } from "node:child_process";
+import type { Consumo } from "./run-agent.ts";
 // No Windows, os.devNull (um caminho \\.\nul) nao e valido para o git; usa NUL.
 const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
 // Neste Windows o shell do claude -p e o PowerShell; em POSIX, Bash.
@@ -11,9 +12,33 @@ export type Papel = "triagem" | "dev" | "reviewer" | "qa";
 // ===== Secao 1: regras de fluxo =====
 export const MAX_REVISOES = 3;
 export const RECURSION_LIMIT = 40;
+export const MAX_TICKETS_ATIVOS = 5;
 export const TIMEOUT_POR_NO_MS = 600_000;
 
-// Evidencia verificada por codigo (custo zero de token): o que o agente declara nao conta.
+export const tokens = (c: Consumo) => c.tokens_in + c.tokens_out + c.cache_read + c.cache_create;
+
+// Orcamento de tokens do ticket (TOKEN_BUDGET_TICKET). Ausente = falha fechada.
+export function orcamentoEstourado(consumos: (Consumo | undefined)[], env: NodeJS.ProcessEnv = process.env): string | null {
+  const teto = Number(env.TOKEN_BUDGET_TICKET);
+  if (!teto) throw new Error("env ausente: TOKEN_BUDGET_TICKET");
+  const usado = consumos.reduce((a, c) => a + (c ? tokens(c) : 0), 0);
+  return usado > teto ? `orcamento de tokens estourado (${usado} > ${teto})` : null;
+}
+
+// Ninguem aprova a propria entrega: quem revisa/testa nao pode ser o autor do commit.
+export function autoaprovacao(autor: string | null, quem: string): string | null {
+  if (!autor) return "autor do commit desconhecido";
+  return autor === quem ? `${quem} nao pode aprovar a propria entrega` : null;
+}
+
+// Tickets ativos = worktrees ticket/* do repo-alvo (estado no proprio git, sem outro banco).
+export function ticketsAtivos(repo: string): number {
+  return gitSeguro(repo, "worktree", "list", "--porcelain").split("\n").filter((l) => l.startsWith("branch refs/heads/ticket/")).length;
+}
+
+// Caminhos que nenhum agente pode alterar: segredos, CI e o proprio orquestrador.
+const PROIBIDOS = /(^|\/)\.env|^\.github\/|^orchestrator\/|(^|\/)(\.git-credentials|\.npmrc|id_rsa[^/]*)$|\.(pem|key)$|credential|secret/i;
+
 // Git do lado do host sobre repo que o agente mexeu: sem fsmonitor, pager, config de sistema ou diff externo.
 export function gitSeguro(cwd: string, ...args: string[]): string {
   const env = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_EXTERNAL_DIFF: "", GIT_TERMINAL_PROMPT: "0" };
@@ -21,12 +46,20 @@ export function gitSeguro(cwd: string, ...args: string[]): string {
 }
 
 // Arquivos que o npm executa no host: alterados pelo agente, o ticket vai ao CEO em vez de rodar.
-const EXECUTA_NO_HOST = /(^|\/)(package\.json|\.npmrc)$/;
+const EXECUTA_NO_HOST = /(^|\/)(package\.json|\.npmrc)$/i;
 
+// Evidencia verificada por codigo (custo zero de token): o que o agente declara nao conta.
 export function verificarEvidencia(wt: string, base: string): { ok: true; autor: string; evidencias: string[] } | { ok: false; motivo: string } {
   const git = (...a: string[]) => gitSeguro(wt, ...a);
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, motivo: "nenhum commit novo no worktree" };
-  const perigosos = git("diff", "--name-only", "--no-ext-diff", `${base}..HEAD`).split("\n").filter((f) => EXECUTA_NO_HOST.test(f));
+  // npm test roda sobre a working tree: so vale o que esta commitado, sem sujeira e sem arquivo executavel ignorado.
+  const sujeira = git("status", "--porcelain", "--untracked-files=all", "--ignored").split("\n").filter(Boolean);
+  if (sujeira.some((l) => !l.startsWith("!!"))) return { ok: false, motivo: "worktree com alteracoes nao commitadas" };
+  if (sujeira.some((l) => EXECUTA_NO_HOST.test(l.slice(3)))) return { ok: false, motivo: "arquivo que executa codigo no host fora do commit (ignorado)" };
+  const arquivos = git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-ext-diff", `${base}..HEAD`).split("\0").filter(Boolean);
+  const proibidos = arquivos.filter((f) => PROIBIDOS.test(f));
+  if (proibidos.length) return { ok: false, motivo: `diff toca caminho proibido (${proibidos.join(", ")})` };
+  const perigosos = arquivos.filter((f) => EXECUTA_NO_HOST.test(f));
   if (perigosos.length) return { ok: false, motivo: `diff toca arquivo que executa codigo no host (${perigosos.join(", ")}): exige revisao do CEO` };
   try {
     // execSync (shell) porque npm e npm.cmd no Windows; o comando e fixo.

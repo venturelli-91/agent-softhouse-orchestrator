@@ -73,27 +73,39 @@ const claudeSubscription: Executor = {
       p.stdin.end(req.contexto);
     });
 
-    const r = JSON.parse(bruto);
-    if (r.is_error || r.subtype !== "success") throw new FalhaDeNo(`${req.papel}: ${r.subtype ?? "erro"} (${r.terminal_reason})`);
-    const saida = req.schema.safeParse(r.structured_output);
-    if (!saida.success) throw new FalhaDeNo(`${req.papel}: saida invalida: ${saida.error.message.slice(0, 300)}`);
-    const u = r.usage;
-    return {
-      saida: saida.data,
-      consumo: {
-        tokens_in: u.input_tokens,
-        tokens_out: u.output_tokens,
-        cache_read: u.cache_read_input_tokens,
-        cache_create: u.cache_creation_input_tokens,
-        custo_usd: r.total_cost_usd,
-        turnos: r.num_turns,
-        ms: Date.now() - t0,
-      },
-    };
+    return interpretar(req.papel, bruto, req.schema, Date.now() - t0);
   },
 };
 
+// Saida do `claude -p --output-format json` -> resultado validado. Qualquer desvio e falha.
+export function interpretar<T>(papel: Papel, bruto: string, schema: z.ZodType<T>, ms: number): Resultado<T> {
+  let r;
+  try {
+    r = JSON.parse(bruto);
+  } catch {
+    throw new FalhaDeNo(`${papel}: saida nao e JSON`);
+  }
+  if (r.is_error || r.subtype !== "success") throw new FalhaDeNo(`${papel}: ${r.subtype ?? "erro"} (${r.terminal_reason})`);
+  const saida = schema.safeParse(r.structured_output);
+  if (!saida.success) throw new FalhaDeNo(`${papel}: saida invalida: ${saida.error.message.slice(0, 300)}`);
+  const u = r.usage;
+  return {
+    saida: saida.data,
+    consumo: {
+      tokens_in: u.input_tokens,
+      tokens_out: u.output_tokens,
+      cache_read: u.cache_read_input_tokens,
+      cache_create: u.cache_creation_input_tokens,
+      custo_usd: r.total_cost_usd,
+      turnos: r.num_turns,
+      ms,
+    },
+  };
+}
+
 const executores: Record<string, Executor> = { "claude-subscription": claudeSubscription };
+// Encaixe para outros executores (e para nos falsos nos testes).
+export const registrarExecutor = (nome: string, ex: Executor) => void (executores[nome] = ex);
 
 export function runAgent<T>(req: Req<T>): Promise<Resultado<T>> {
   const nome = process.env.EXECUTOR ?? "claude-subscription";

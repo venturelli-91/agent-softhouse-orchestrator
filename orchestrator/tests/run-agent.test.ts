@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { z } from "zod";
 import { envMinimo, PERMISSOES, SHELL } from "../src/guardrails.ts";
-import { argsClaude, carregarPrompt } from "../src/run-agent.ts";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { argsClaude, carregarPrompt, FalhaDeNo, interpretar } from "../src/run-agent.ts";
 
 const schema = z.object({ ok: z.boolean() });
 const env = { MODEL_DEFAULT: "m-x", EFFORT_DEFAULT: "medium", TURNOS_DEFAULT: "8", TURNOS_QA: "4", MODEL_QA: "m-qa" };
@@ -43,12 +46,32 @@ test("env do subprocesso nao vaza credenciais e da identidade ao git", () => {
   assert.equal(e.GIT_CONFIG_NOSYSTEM, "1");
   assert.equal(e.GIT_CONFIG_KEY_0, "core.hooksPath");
   assert.ok(!PERMISSOES.dev.allow.includes(`${SHELL}(npm *)`));
-  assert.notEqual(e.GIT_CONFIG_GLOBAL, "\\.\nul");
+  assert.ok(!e.GIT_CONFIG_GLOBAL?.startsWith("\\\\"));
   assert.ok(!PERMISSOES.dev.allow.includes("Write") && PERMISSOES.dev.allow.includes("Write(./**)"));
 });
 
 test("carregarPrompt remove o frontmatter e concatena", () => {
-  const p = carregarPrompt(["triagem"], "../.claude/agents");
-  assert.match(p, /^Você é a Triagem/);
+  const dir = mkdtempSync(join(tmpdir(), "ag-"));
+  writeFileSync(join(dir, "a.md"), "---\nname: a\ntools: Read\n---\nVoce e A.\n");
+  writeFileSync(join(dir, "b.md"), "Voce e B.\n");
+  const p = carregarPrompt(["a", "b"], dir);
+  assert.match(p, /^Voce e A\./);
   assert.doesNotMatch(p, /^name:/m);
+  assert.match(p, /Voce e B\./);
+});
+
+const ok = { is_error: false, subtype: "success", structured_output: { ok: true }, num_turns: 2, total_cost_usd: 0.01, usage: { input_tokens: 1, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 } };
+
+test("saida valida vira resultado com consumo", () => {
+  const r = interpretar("qa", JSON.stringify(ok), schema, 5);
+  assert.deepEqual(r.saida, { ok: true });
+  assert.equal(r.consumo.cache_create, 4);
+});
+
+test("saida invalida, limite de turnos, erro e lixo sao falha", () => {
+  const falha = (o: unknown) => assert.throws(() => interpretar("qa", typeof o === "string" ? o : JSON.stringify(o), schema, 1), FalhaDeNo);
+  falha({ ...ok, structured_output: { ok: "nao" } });
+  falha({ ...ok, subtype: "error_max_turns", terminal_reason: "max_turns" });
+  falha({ ...ok, is_error: true });
+  falha("isto nao e json");
 });

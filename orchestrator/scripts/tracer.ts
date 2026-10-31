@@ -1,23 +1,13 @@
 // Tracer bullet: ticket trivial num repo-fixture descartavel, com o modelo real e worktree isolado.
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { criarFixture } from "./fixture.ts";
 import { config, criarWorktree, montarGrafo, relatorio, retomar } from "../src/graph.ts";
 
 const raiz = mkdtempSync(join(tmpdir(), "orch-"));
-const repo = join(raiz, "fixture");
-const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=f@x.local", ...a], { cwd, stdio: "pipe" });
-mkdirSync(join(repo, "test"), { recursive: true });
-writeFileSync(join(repo, "package.json"), '{"name":"fixture","type":"module","scripts":{"test":"node --test"}}\n');
-writeFileSync(join(repo, "checkout.html"), "<button>Enviar</button>\n");
-writeFileSync(join(repo, "test/checkout.test.js"),
-  'import { test } from "node:test";\nimport assert from "node:assert";\nimport { readFileSync } from "node:fs";\n' +
-  'test("botao do checkout", () => assert.match(readFileSync("checkout.html", "utf8"), />Enviar pedido</));\n');
-git(repo, "init", "-q", "-b", "main");
-git(repo, "add", "-A");
-git(repo, "commit", "-q", "-m", "fixture");
+const repo = criarFixture(raiz);
 
 const id = "T-001";
 const wt = criarWorktree(repo, id, join(raiz, `wt-${id}`));

@@ -1,6 +1,6 @@
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
-import { gitSeguro, MAX_REVISOES, RECURSION_LIMIT, verificarEvidencia } from "./guardrails.ts";
+import { autoaprovacao, gitSeguro, MAX_REVISOES, MAX_TICKETS_ATIVOS, orcamentoEstourado, RECURSION_LIMIT, ticketsAtivos, tokens, verificarEvidencia } from "./guardrails.ts";
 import { FalhaDeNo, runAgent, type Consumo } from "./run-agent.ts";
 
 const ESPECIALIDADES = ["frontend", "backend", "fullstack", "mobile", "integracoes", "ia", "dados"] as const;
@@ -55,13 +55,19 @@ const contexto = (...partes: string[]) =>
 const dadosTicket = (t: T) => `Ticket ${t.id}: ${t.titulo}\nCriterios de aceite:\n${t.criterios.map((c) => `- ${c}`).join("\n")}\nResumo atual:\n${t.resumo}`;
 const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
 
-// Falha do executor (erro, timeout, saida invalida) nao quebra o grafo: escala e para.
+const escalar = (t: T, nome: string, motivo: string): Partial<T> =>
+  ({ status: "escalado", resumo: `${nome}: ${motivo}`.split("\n").slice(0, 10).join("\n"), historico: log(t, nome, `escalado: ${motivo}`) });
+
+// Falha do executor (erro, timeout, saida invalida) ou orcamento estourado nao quebra o grafo:
+// o ticket para e vai ao CEO via aprovacao_ceo.
 const protegido = (nome: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T): Promise<Partial<T>> => {
+  const estouro = orcamentoEstourado(t.historico.map((h) => h.consumo));
+  if (estouro) return escalar(t, nome, estouro);
   try {
     return await fn(t);
   } catch (e) {
     if (!(e instanceof FalhaDeNo)) throw e;
-    return { status: "escalado", resumo: `${nome}: ${e.message}`.split("\n").slice(0, 10).join("\n"), historico: log(t, nome, `falha: ${e.message}`) };
+    return escalar(t, nome, e.message);
   }
 };
 
@@ -83,6 +89,12 @@ const dev = protegido("dev", async (t) => {
 
 function revisor(nome: "reviewer" | "qa", arquivos: (t: T) => string[], proximo: string) {
   return protegido(nome, async (t) => {
+    // Regras de fluxo em codigo: independencia e evidencia verificada antes de gastar token.
+    const quem = `agente-${nome}`;
+    const bloqueio = autoaprovacao(t.autor_id, quem);
+    if (bloqueio) throw new FalhaDeNo(bloqueio);
+    const v = t.evidencias.length ? verificarEvidencia(t.worktree, t.base) : { ok: false as const, motivo: "sem evidencias" };
+    if (!v.ok) throw new FalhaDeNo(`evidencia invalida: ${v.motivo}`);
     const { saida, consumo } = await runAgent({
       papel: nome, arquivos: arquivos(t), cwd: t.worktree, schema: SaidaRevisao,
       contexto: contexto(dadosTicket(t), `Diff:\n${diff(t)}`),
@@ -100,25 +112,39 @@ const reviewer = revisor("reviewer", (t) => [
 ], "qa");
 const qa = revisor("qa", () => ["qa-automation"], "aprovacao");
 
+// Unico ponto de merge/deploy e de escalada. Aprovacao so conta se a evidencia ainda se sustenta.
 const aprovacaoCeo = async (t: T): Promise<Partial<T>> => {
-  const r = interrupt({ ticket: t.id, titulo: t.titulo, resumo: t.resumo, evidencias: t.evidencias }) as string;
-  if (r === "aprovar") return { status: "deploy_simulado", historico: log(t, "aprovacao_ceo", "aprovado") };
-  return { status: "dev_falhou", revisoes: t.revisoes + 1, resumo: `CEO rejeitou: ${r}`.slice(0, 500), historico: log(t, "aprovacao_ceo", "rejeitado") };
+  const v = t.status === "aprovacao" && t.evidencias.length ? verificarEvidencia(t.worktree, t.base) : null;
+  const motivo = t.status === "aprovacao" ? (v?.ok ? null : `evidencia invalida: ${v ? v.motivo : "sem evidencias"}`)
+    : t.status === "dev_falhou" ? `teto de ${MAX_REVISOES} revisoes atingido: ${t.resumo}` : `${t.status}: ${t.resumo}`;
+  const r = interrupt({
+    tipo: motivo ? "escalada" : "aprovacao", motivo, ticket: t.id, titulo: t.titulo, resumo: t.resumo, evidencias: t.evidencias,
+    flags_ativas: Object.entries(t.flags).filter(([, ativa]) => ativa).map(([k]) => k),
+  }) as string;
+  const h = (res: string) => log(t, "aprovacao_ceo", res);
+  if (!motivo) {
+    if (r === "aprovar") return { status: "deploy_simulado", historico: h("aprovado") };
+    return { status: "dev_falhou", revisoes: t.revisoes + 1, resumo: `CEO rejeitou: ${r}`.slice(0, 500), historico: h("rejeitado") };
+  }
+  // Escalada: o CEO manda abortar ou instrui o dev (so se a triagem ja produziu criterios).
+  if (r === "abortar" || !t.criterios.length) return { status: "abortado", historico: h("abortado") };
+  return { status: "dev_falhou", revisoes: 0, resumo: `CEO instruiu: ${r}`.slice(0, 500), historico: h("retomado") };
 };
 
-// Laco de revisao: acima do teto, para e escala em vez de girar.
-const aposRevisao = (t: T) => (t.revisoes >= MAX_REVISOES ? END : "dev");
-const rota = (ok: string, no: string) => (t: T) => (t.status === ok ? no : t.status === "dev_falhou" ? aposRevisao(t) : END);
+// Laco de revisao: acima do teto, ou em qualquer escalada/ambiguidade, o ticket vai ao CEO.
+const rota = (ok: string, no: string) => (t: T) =>
+  t.status === ok ? no : t.status === "dev_falhou" && t.revisoes < MAX_REVISOES ? "dev" : "aprovacao_ceo";
+const aposCeo = (t: T) => (t.status === "dev_falhou" ? "dev" : END);
 
 export function montarGrafo(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
     .addNode("triagem", triagem).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("aprovacao_ceo", aprovacaoCeo)
     .addEdge(START, "triagem")
-    .addConditionalEdges("triagem", rota("dev", "dev"), ["dev", END])
-    .addConditionalEdges("dev", rota("revisao", "reviewer"), ["reviewer", "dev", END])
-    .addConditionalEdges("reviewer", rota("qa", "qa"), ["qa", "dev", END])
-    .addConditionalEdges("qa", rota("aprovacao", "aprovacao_ceo"), ["aprovacao_ceo", "dev", END])
-    .addConditionalEdges("aprovacao_ceo", rota("deploy_simulado", END), ["dev", END])
+    .addConditionalEdges("triagem", rota("dev", "dev"), ["dev", "aprovacao_ceo"])
+    .addConditionalEdges("dev", rota("revisao", "reviewer"), ["reviewer", "dev", "aprovacao_ceo"])
+    .addConditionalEdges("reviewer", rota("qa", "qa"), ["qa", "dev", "aprovacao_ceo"])
+    .addConditionalEdges("qa", rota("aprovacao", "aprovacao_ceo"), ["aprovacao_ceo", "dev"])
+    .addConditionalEdges("aprovacao_ceo", aposCeo, ["dev", END])
     .compile({ checkpointer });
 }
 
@@ -126,11 +152,10 @@ export const config = (id: string) => ({ configurable: { thread_id: id }, recurs
 export const retomar = (resposta: string) => new Command({ resume: resposta });
 
 export function criarWorktree(repo: string, id: string, dir: string): { worktree: string; base: string } {
+  if (ticketsAtivos(repo) >= MAX_TICKETS_ATIVOS) throw new Error(`limite de ${MAX_TICKETS_ATIVOS} tickets ativos atingido`);
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   return { worktree: dir, base: sh(repo, "rev-parse", "HEAD") };
 }
-
-export const tokens = (c: Consumo) => c.tokens_in + c.tokens_out + c.cache_read + c.cache_create;
 
 export function relatorio(t: T): string {
   const linhas = t.historico.filter((h) => h.consumo).map((h) => {
