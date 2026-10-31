@@ -58,7 +58,7 @@ Regras de roteamento (`rota` / `aposRevisao`): sucesso segue; reprovação ou ve
 falha volta ao dev com `revisoes + 1`; `revisoes >= MAX_REVISOES` ou qualquer falha de nó
 (`FalhaDeNo`: erro, timeout, saída inválida, limite de turnos) termina o ticket com
 `status=escalado` e o motivo no `resumo`. Triagem "ambígua" termina com `status=ambiguo`
-(o planejador entra na task 4). Nesta fase o teto estoura para `END`; a task 3 troca por
+(o planejador, task 4, assume essa rota). Nesta fase o teto estoura para `END`; a task 3 troca por
 `aprovacao_ceo`.
 
 ## Verificação por código (zero token)
