@@ -1,0 +1,6 @@
+node_modules/
+.env
+.impeccable/
+.orchestrator/
+!.claude/
+.claude/settings.local.json
