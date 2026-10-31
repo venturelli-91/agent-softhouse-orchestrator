@@ -13,9 +13,9 @@ fraca; as barreiras reais são código, permissões do CLI, worktree isolado e e
 | Doc | Conteúdo |
 |---|---|
 | [01-executor.md](01-executor.md) | `run-agent.ts`, `guardrails.ts` (Seção 2), flags reais do `claude -p`, medições |
+| [02-grafo-tracer-bullet.md](02-grafo-tracer-bullet.md) | `graph.ts`, estado, nós, arestas, tracer com modelo real, linha de base de consumo, bugs |
 
-(Os próximos docs entram junto com cada task: grafo, guardrails de fluxo, nós restantes,
-publicação.)
+(Os próximos docs entram junto com cada task: guardrails de fluxo, nós restantes, publicação.)
 
 ## Decisões e achados (task 1)
 

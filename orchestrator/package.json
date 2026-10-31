@@ -9,6 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "tracer": "node --env-file=.env scripts/tracer.ts",
     "test": "node --test \"tests/**/*.test.ts\""
   },
   "dependencies": {
