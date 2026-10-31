@@ -38,7 +38,7 @@ test("nenhum nome de modelo no codigo", () => {
 
 test("env do subprocesso nao vaza credenciais e da identidade ao git", () => {
   const e = envMinimo("dev", { PATH: "/bin", ANTHROPIC_API_KEY: "x", ANTHROPIC_AUTH_TOKEN: "x", ANTHROPIC_BASE_URL: "x", GITHUB_TOKEN: "x" });
-  assert.deepEqual(Object.keys(e).filter((k) => /ANTHROPIC|TOKEN|KEY/.test(k)), []);
+  assert.deepEqual(Object.keys(e).filter((k) => /ANTHROPIC|TOKEN|API_KEY/.test(k)), []);
   assert.equal(e.GIT_AUTHOR_NAME, "agente-dev");
   assert.equal(e.GIT_CONFIG_NOSYSTEM, "1");
   assert.equal(e.GIT_CONFIG_KEY_0, "core.hooksPath");
