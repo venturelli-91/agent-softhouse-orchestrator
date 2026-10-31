@@ -1,10 +1,32 @@
-// Secao 1 (regras de fluxo entre nos) entra na task 3. Aqui: Secao 2, defesa dentro de cada no.
-import { devNull } from "node:os";
+// Secao 1: regras de fluxo entre nos (constantes + evidencia). Secao 2: defesa dentro de cada no.
+import { execFileSync, execSync } from "node:child_process";
+// No Windows, os.devNull (um caminho \\.\nul) nao e valido para o git; usa NUL.
+const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
+// Neste Windows o shell do claude -p e o PowerShell; em POSIX, Bash.
+export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
+const sh = (...padroes: string[]) => padroes.map((p) => `${SHELL}(${p})`);
 
 export type Papel = "triagem" | "dev" | "reviewer" | "qa";
 
+// ===== Secao 1: regras de fluxo =====
+export const MAX_REVISOES = 3;
+export const RECURSION_LIMIT = 40;
 export const TIMEOUT_POR_NO_MS = 600_000;
 
+// Evidencia verificada por codigo (custo zero de token): o que o agente declara nao conta.
+export function verificarEvidencia(wt: string, base: string): { ok: true; autor: string; evidencias: string[] } | { ok: false; motivo: string } {
+  const git = (...a: string[]) => execFileSync("git", a, { cwd: wt, encoding: "utf8" }).trim();
+  if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, motivo: "nenhum commit novo no worktree" };
+  try {
+    // execSync (shell) porque npm e npm.cmd no Windows; o comando e fixo.
+    execSync("npm test", { cwd: wt, env: envMinimo("dev"), stdio: "pipe" });
+  } catch (e) {
+    return { ok: false, motivo: `npm test falhou: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}` };
+  }
+  return { ok: true, autor: git("log", "-1", "--format=%an"), evidencias: [`commit:${git("rev-parse", "--short", "HEAD")}`, "testes:npm test ok"] };
+}
+
+// ===== Secao 2: defesa dentro de cada no =====
 const LEITURA = ["Read", "Grep", "Glob"];
 const SEGREDOS = [
   "Read(**/.env*)", "Edit(**/.env*)", "Write(**/.env*)",
@@ -20,15 +42,15 @@ export const PERMISSOES: Record<Papel, { tools: string[]; allow: string[]; deny:
   reviewer: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
   qa: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
   dev: {
-    tools: [...LEITURA, "Write", "Edit", "Bash"],
-    allow: [...LEITURA, "Write(./**)", "Edit(./**)", "Bash(git add *)", "Bash(git commit *)", "Bash(git status*)", "Bash(git diff*)", "Bash(npm test*)", "Bash(npm run typecheck*)"],
-    deny: [...SEGREDOS, ...GIT_INTERNO, "Write(~/**)", "Edit(~/**)", "Bash(npm exec*)", "Bash(npx*)", "Bash(npm config*)", "Bash(npm publish*)", "Bash(npm pkg*)", "Bash(git push*)", "Bash(rm -r*)", "Bash(rm -fr*)", "Bash(git remote*)", "Bash(git config*)"],
+    tools: [...LEITURA, "Write", "Edit", SHELL],
+    allow: [...LEITURA, "Write(./**)", "Edit(./**)", ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*", "npm test*", "npm run typecheck*")],
+    deny: [...SEGREDOS, ...GIT_INTERNO, ...sh("npm exec*", "npx*", "npm config*", "npm publish*", "npm pkg*", "git push*", "git remote*", "git config*", "rm *", "Remove-Item*", "del *", "rmdir*")],
   },
 };
 
 const ENV_PERMITIDO = [
   "PATH", "PATHEXT", "SystemRoot", "windir", "COMSPEC", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH",
-  "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "LANG",
+  "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "LANG", "SystemDrive", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CLAUDE_CODE_GIT_BASH_PATH",
 ];
 
 // Whitelist: ANTHROPIC_*, tokens e qualquer outra variavel nao entram no subprocesso.

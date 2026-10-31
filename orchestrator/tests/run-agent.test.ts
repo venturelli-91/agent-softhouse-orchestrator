@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { z } from "zod";
-import { envMinimo, PERMISSOES } from "../src/guardrails.ts";
+import { envMinimo, PERMISSOES, SHELL } from "../src/guardrails.ts";
 import { argsClaude, carregarPrompt } from "../src/run-agent.ts";
 
 const schema = z.object({ ok: z.boolean() });
@@ -20,8 +20,8 @@ test("papeis de revisao sao somente leitura", () => {
 test("dev nao tem git push, rm -r nem leitura de .env", () => {
   const a = argsClaude({ papel: "dev", schema }, "sys", env);
   const negadas = a.slice(a.indexOf("--disallowedTools") + 1);
-  for (const t of ["Bash(git push*)", "Bash(rm -r*)", "Read(**/.env*)", "Write(**/.git/**)", "Bash(npx*)", "Read(~/.ssh/**)"]) assert.ok(negadas.includes(t), t);
-  assert.ok(!a.includes("Bash(git push *)") && !PERMISSOES.dev.allow.some((t) => t.includes("push")));
+  for (const t of [`${SHELL}(git push*)`, `${SHELL}(rm *)`, "Read(**/.env*)", "Write(**/.git/**)", `${SHELL}(npx*)`, "Read(~/.ssh/**)"]) assert.ok(negadas.includes(t), t);
+  assert.ok(!PERMISSOES.dev.allow.some((t) => t.includes("push")));
 });
 
 test("modelo, esforco e turnos vem so do ambiente; override por papel", () => {
@@ -42,7 +42,8 @@ test("env do subprocesso nao vaza credenciais e da identidade ao git", () => {
   assert.equal(e.GIT_AUTHOR_NAME, "agente-dev");
   assert.equal(e.GIT_CONFIG_NOSYSTEM, "1");
   assert.equal(e.GIT_CONFIG_KEY_0, "core.hooksPath");
-  assert.ok(!PERMISSOES.dev.allow.includes("Bash(npm *)"));
+  assert.ok(!PERMISSOES.dev.allow.includes(`${SHELL}(npm *)`));
+  assert.notEqual(e.GIT_CONFIG_GLOBAL, "\\.\nul");
   assert.ok(!PERMISSOES.dev.allow.includes("Write") && PERMISSOES.dev.allow.includes("Write(./**)"));
 });
 
