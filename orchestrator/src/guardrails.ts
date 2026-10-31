@@ -7,7 +7,7 @@ const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
 export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
 const sh = (...padroes: string[]) => padroes.map((p) => `${SHELL}(${p})`);
 
-export type Papel = "triagem" | "dev" | "reviewer" | "qa";
+export type Papel = "triagem" | "planejador" | "dev" | "reviewer" | "qa";
 
 // ===== Secao 1: regras de fluxo =====
 export const MAX_REVISOES = 3;
@@ -83,6 +83,7 @@ const GIT_INTERNO = ["Write(**/.git/**)", "Edit(**/.git/**)", "Write(**/.git)", 
 // Bash com allowlist e fraco por natureza: a barreira real e worktree sem .env + env sem credenciais.
 export const PERMISSOES: Record<Papel, { tools: string[]; allow: string[]; deny: string[] }> = {
   triagem: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
+  planejador: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
   reviewer: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
   qa: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
   dev: {

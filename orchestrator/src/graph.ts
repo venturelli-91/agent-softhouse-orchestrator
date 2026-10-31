@@ -41,6 +41,8 @@ const SaidaTriagem = z.object({
   titulo: z.string(), prioridade: z.enum(["P0", "P1", "P2", "Bug"]), especialidade: z.enum(ESPECIALIDADES),
   claro: z.boolean(), flags: FlagsSchema, criterios: z.array(z.string()), resumo,
 });
+// `pergunta` vazia quando claro; senao e o que falta para o CEO responder.
+const SaidaPlano = SaidaTriagem.extend({ pergunta: z.string() });
 const SaidaDev = z.object({ resumo });
 const SaidaRevisao = z.object({ veredito: z.enum(["aprovado", "reprovado"]), comentarios: z.string(), resumo });
 
@@ -74,7 +76,19 @@ const protegido = (nome: string, fn: (t: T) => Promise<Partial<T>>) => async (t:
 const triagem = protegido("triagem", async (t) => {
   const { saida, consumo } = await runAgent({ papel: "triagem", arquivos: ["triagem"], cwd: t.worktree, schema: SaidaTriagem, contexto: contexto(`Pedido do CEO: ${t.pedido}`) });
   const { claro, resumo, ...resto } = saida;
-  return { ...resto, resumo, status: claro ? "dev" : "ambiguo", historico: log(t, "triagem", claro ? "claro" : "ambiguo", consumo) };
+  return { ...resto, criterios: claro ? resto.criterios : [], resumo, status: claro ? "dev" : "ambiguo", historico: log(t, "triagem", claro ? "claro" : "ambiguo", consumo) };
+});
+
+// analista-demanda -> product-manager -> tech-lead num unico turno de agente (tokens: um contexto so).
+// Sem criterios fechados nao ha ticket: a pergunta vai ao CEO e a resposta volta para ca.
+const planejador = protegido("planejador", async (t) => {
+  const { saida, consumo } = await runAgent({
+    papel: "planejador", arquivos: ["analista-demanda", "product-manager", "tech-lead"], cwd: t.worktree, schema: SaidaPlano,
+    contexto: contexto(`Pedido do CEO: ${t.pedido}`, `Triagem (pedido ambiguo): ${t.resumo}`, "Se faltar informacao que impede criterios de aceite verificaveis, claro=false e `pergunta` com o que falta."),
+  });
+  const { claro, pergunta, ...plano } = saida;
+  if (!claro || !plano.criterios.length) return { status: "ambiguo", resumo: pergunta || plano.resumo, historico: log(t, "planejador", "ambiguo", consumo) };
+  return { ...plano, status: "dev", historico: log(t, "planejador", "claro", consumo) };
 });
 
 const dev = protegido("dev", async (t) => {
@@ -126,25 +140,30 @@ const aprovacaoCeo = async (t: T): Promise<Partial<T>> => {
     if (r === "aprovar") return { status: "deploy_simulado", historico: h("aprovado") };
     return { status: "dev_falhou", revisoes: t.revisoes + 1, resumo: `CEO rejeitou: ${r}`.slice(0, 500), historico: h("rejeitado") };
   }
-  // Escalada: o CEO manda abortar ou instrui o dev (so se a triagem ja produziu criterios).
-  if (r === "abortar" || !t.criterios.length) return { status: "abortado", historico: h("abortado") };
+  if (r === "abortar") return { status: "abortado", historico: h("abortado") };
+  // Falta informacao: a resposta do CEO complementa o pedido e o planejador tenta de novo.
+  if (t.status === "ambiguo") return { status: "replanejar", pedido: `${t.pedido}\n\nEsclarecimento do CEO: ${r}`, historico: h("esclarecido") };
+  // Demais escaladas: o CEO instrui o dev (so se ja existem criterios).
+  if (!t.criterios.length) return { status: "abortado", historico: h("abortado") };
   return { status: "dev_falhou", revisoes: 0, resumo: `CEO instruiu: ${r}`.slice(0, 500), historico: h("retomado") };
 };
 
 // Laco de revisao: acima do teto, ou em qualquer escalada/ambiguidade, o ticket vai ao CEO.
 const rota = (ok: string, no: string) => (t: T) =>
   t.status === ok ? no : t.status === "dev_falhou" && t.revisoes < MAX_REVISOES ? "dev" : "aprovacao_ceo";
-const aposCeo = (t: T) => (t.status === "dev_falhou" ? "dev" : END);
+const aposTriagem = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguo" ? "planejador" : "aprovacao_ceo");
+const aposCeo = (t: T) => (t.status === "dev_falhou" ? "dev" : t.status === "replanejar" ? "planejador" : END);
 
 export function montarGrafo(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
-    .addNode("triagem", triagem).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("aprovacao_ceo", aprovacaoCeo)
+    .addNode("triagem", triagem).addNode("planejador", planejador).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("aprovacao_ceo", aprovacaoCeo)
     .addEdge(START, "triagem")
-    .addConditionalEdges("triagem", rota("dev", "dev"), ["dev", "aprovacao_ceo"])
+    .addConditionalEdges("triagem", aposTriagem, ["dev", "planejador", "aprovacao_ceo"])
+    .addConditionalEdges("planejador", rota("dev", "dev"), ["dev", "aprovacao_ceo"])
     .addConditionalEdges("dev", rota("revisao", "reviewer"), ["reviewer", "dev", "aprovacao_ceo"])
     .addConditionalEdges("reviewer", rota("qa", "qa"), ["qa", "dev", "aprovacao_ceo"])
     .addConditionalEdges("qa", rota("aprovacao", "aprovacao_ceo"), ["aprovacao_ceo", "dev"])
-    .addConditionalEdges("aprovacao_ceo", aposCeo, ["dev", END])
+    .addConditionalEdges("aprovacao_ceo", aposCeo, ["dev", "planejador", END])
     .compile({ checkpointer });
 }
 

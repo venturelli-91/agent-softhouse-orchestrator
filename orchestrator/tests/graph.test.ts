@@ -23,6 +23,7 @@ const commitar = (cwd: string, autor: string, arquivo = "checkout.html", conteud
 };
 const padrao: Comportamento = {
   triagem: () => ({ titulo: "t", prioridade: "P2", especialidade: "frontend", claro: true, flags: FLAGS, criterios: ["botao diz Enviar pedido"], resumo: "ok" }),
+  planejador: () => ({ ...(padrao.triagem!({} as Req<unknown>) as object), pergunta: "" }),
   dev: (req) => (commitar(req.cwd, "agente-dev"), { resumo: "ok" }),
   reviewer: () => ({ veredito: "aprovado", comentarios: "", resumo: "ok" }),
   qa: () => ({ veredito: "aprovado", comentarios: "", resumo: "ok" }),
@@ -100,10 +101,39 @@ test("saida invalida do no e falha: escala e nao avanca", async () => {
   assert.ok(!chamadas.includes("dev"));
 });
 
-test("pedido ambiguo vai ao CEO sem chamar o dev", async () => {
-  ajuste.triagem = () => ({ ...(padrao.triagem!({} as Req<unknown>) as object), claro: false });
+const ambiguo = () => ({ ...(padrao.triagem!({} as Req<unknown>) as object), claro: false, criterios: [] });
+
+test("pedido ambiguo passa pelo planejador e segue ao dev quando ele fecha os criterios", async () => {
+  ajuste.triagem = ambiguo;
+  const g = await iniciar();
+  assert.deepEqual(chamadas.slice(0, 2), ["triagem", "planejador"]);
+  assert.equal(pausa(g.r)?.tipo, "aprovacao");
+});
+
+test("planejador sem criterios escala com a pergunta; resposta do CEO volta ao planejador", async () => {
+  ajuste.triagem = ambiguo;
+  let rodadas = 0;
+  let pedidoVisto = "";
+  ajuste.planejador = (req) => {
+    pedidoVisto = req.contexto;
+    return ++rodadas === 1
+      ? { ...(ambiguo() as object), pergunta: "qual botao?", criterios: [] }
+      : { ...(padrao.planejador!(req) as object) };
+  };
   const g = await iniciar();
   assert.equal(pausa(g.r)?.tipo, "escalada");
+  assert.match(String(pausa(g.r)?.motivo), /qual botao\?/);
+  assert.ok(!chamadas.includes("dev"));
+  const r2 = await ver(g, "o do checkout");
+  assert.match(pedidoVisto, /Esclarecimento do CEO: o do checkout/);
+  assert.equal(pausa(r2)?.tipo, "aprovacao");
+});
+
+test("CEO aborta quando o planejador pede esclarecimento", async () => {
+  ajuste.triagem = ambiguo;
+  ajuste.planejador = () => ({ ...(ambiguo() as object), pergunta: "?", criterios: [] });
+  const g = await iniciar();
+  assert.equal((await ver(g, "abortar")).status, "abortado");
   assert.ok(!chamadas.includes("dev"));
 });
 
