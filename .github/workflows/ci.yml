@@ -1,7 +1,14 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+    paths: ["orchestrator/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["orchestrator/**", ".github/workflows/ci.yml"]
 permissions:
   contents: read
+defaults:
+  run:
+    working-directory: orchestrator
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -11,6 +18,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: orchestrator/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       # Nos falsos: nenhum modelo, nenhuma credencial.

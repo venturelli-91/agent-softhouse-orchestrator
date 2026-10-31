@@ -37,12 +37,9 @@ própria entrega.
 
 ## CI
 
-`orchestrator/.github/workflows/ci.yml`: Node 24, `npm ci`, `npm run typecheck`, `npm test`,
-`permissions: contents: read`, sem secrets. **Nota:** o GitHub só executa workflows na raiz do
-repositório; como o workflow está dentro de `orchestrator/` (estrutura publicável pedida), ele
-roda se `orchestrator/` for publicado como repositório próprio. No remoto atual
-(`venturelli-house`, onde ele é uma subpasta) é preciso copiá-lo para `.github/workflows/` com
-`working-directory: orchestrator`. Decisão pendente do CEO na Fase 3.
+`.github/workflows/ci.yml` (raiz, com `working-directory: orchestrator`): Node 24, `npm ci`, `npm run typecheck`, `npm test`,
+`permissions: contents: read`, sem secrets, só dispara em mudanças de `orchestrator/`. (Antes ficava dentro de
+`orchestrator/` e o GitHub não o executava; movido na publicação.)
 
 ## Segurança — rodada 4 (revisão automática)
 
