@@ -49,8 +49,9 @@ export function gitSeguro(cwd: string, ...args: string[]): string {
 const EXECUTA_NO_HOST = /(^|\/)(package\.json|\.npmrc)$/i;
 
 // Evidencia verificada por codigo (custo zero de token): o que o agente declara nao conta.
-export function verificarEvidencia(wt: string, base: string): { ok: true; autor: string; evidencias: string[] } | { ok: false; motivo: string } {
+export function verificarEvidencia(wt: string, base: string): { ok: true; autor: string; sha: string; evidencias: string[] } | { ok: false; motivo: string } {
   const git = (...a: string[]) => gitSeguro(wt, ...a);
+  const sha = git("rev-parse", "HEAD");
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, motivo: "nenhum commit novo no worktree" };
   // npm test roda sobre a working tree: so vale o que esta commitado, sem sujeira e sem arquivo executavel ignorado.
   const sujeira = git("status", "--porcelain", "--untracked-files=all", "--ignored").split("\n").filter(Boolean);
@@ -67,7 +68,10 @@ export function verificarEvidencia(wt: string, base: string): { ok: true; autor:
   } catch (e) {
     return { ok: false, motivo: `npm test falhou: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}` };
   }
-  return { ok: true, autor: git("log", "-1", "--format=%an"), evidencias: [`commit:${git("rev-parse", "--short", "HEAD")}`, "testes:npm test ok"] };
+  // npm test executa codigo do repo: se ele moveu o HEAD ou sujou a arvore, a verificacao nao vale.
+  if (git("rev-parse", "HEAD") !== sha) return { ok: false, motivo: "HEAD mudou durante a verificacao" };
+  if (git("status", "--porcelain", "--untracked-files=all").length) return { ok: false, motivo: "worktree alterado durante a verificacao" };
+  return { ok: true, sha, autor: git("log", "-1", "--format=%an", sha), evidencias: [`commit:${git("rev-parse", "--short", sha)}`, "testes:npm test ok"] };
 }
 
 // ===== Secao 2: defesa dentro de cada no =====

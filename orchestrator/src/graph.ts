@@ -132,8 +132,7 @@ const publicarNo = protegido("publicar", async (t) => {
   const v = t.evidencias.length ? verificarEvidencia(t.worktree, t.base) : { ok: false as const, motivo: "sem evidencias" };
   if (!v.ok) throw new FalhaDeNo(`evidencia invalida: ${v.motivo}`);
   const corpo = [t.resumo, "Criterios:", ...t.criterios.map((c) => `- ${c}`), `Evidencias: ${v.evidencias.join(", ")}`].join("\n\n");
-  const sha = gitSeguro(t.worktree, "rev-parse", "HEAD");
-  const pr = publicar({ cwd: t.worktree, id: t.id, sha, titulo: `${t.id}: ${t.titulo}`, corpo });
+  const pr = publicar({ cwd: t.worktree, id: t.id, sha: v.sha, titulo: `${t.id}: ${t.titulo}`, corpo });
   return { status: "aprovacao", evidencias: [...v.evidencias, pr], historico: log(t, "publicar", pr) };
 });
 

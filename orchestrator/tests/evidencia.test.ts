@@ -93,3 +93,14 @@ test("renomear arquivo proibido nao esconde o caminho antigo", () => {
   assert.equal(r.ok, false);
   assert.match((r as { motivo: string }).motivo, /proibido/);
 });
+
+test("npm test que move o HEAD invalida a verificacao", () => {
+  const { d, base } = repo("git commit --allow-empty -qm movido");
+  writeFileSync(join(d, "a.txt"), "x");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "add a");
+  const r = verificarEvidencia(d, base);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { motivo: string }).motivo, /HEAD mudou/);
+});
