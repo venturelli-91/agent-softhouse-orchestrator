@@ -79,3 +79,17 @@ test("worktree com alteracao nao commitada e rejeitado", () => {
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
 });
+
+test("renomear arquivo proibido nao esconde o caminho antigo", () => {
+  const { d } = repo();
+  writeFileSync(join(d, ".env"), "SEGREDO=1");
+  git(d, "add", "-A", "-f");
+  git(d, "commit", "-qm", "env no base");
+  const base = git(d, "rev-parse", "HEAD");
+  git(d, "mv", ".env", "ambiente.txt");
+  git(d, "commit", "-qm", "renomeia");
+  const r = verificarEvidencia(d, base);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { motivo: string }).motivo, /proibido/);
+});

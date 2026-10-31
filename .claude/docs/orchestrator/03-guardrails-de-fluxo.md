@@ -48,6 +48,7 @@ roda se `orchestrator/` for publicado como repositório próprio. No remoto atua
 
 - `npm test` só roda com worktree limpo e sem `package.json`/`.npmrc` alterados ou ignorados.
 - Casamento de caminhos case-insensitive e com `-z`/`core.quotePath=false`.
+- `git diff --no-renames`: renomear/mover arquivo proibido expõe também o caminho antigo.
 
 ## Regressão ao vivo
 

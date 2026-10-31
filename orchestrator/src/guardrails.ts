@@ -56,7 +56,7 @@ export function verificarEvidencia(wt: string, base: string): { ok: true; autor:
   const sujeira = git("status", "--porcelain", "--untracked-files=all", "--ignored").split("\n").filter(Boolean);
   if (sujeira.some((l) => !l.startsWith("!!"))) return { ok: false, motivo: "worktree com alteracoes nao commitadas" };
   if (sujeira.some((l) => EXECUTA_NO_HOST.test(l.slice(3)))) return { ok: false, motivo: "arquivo que executa codigo no host fora do commit (ignorado)" };
-  const arquivos = git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-ext-diff", `${base}..HEAD`).split("\0").filter(Boolean);
+  const arquivos = git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", `${base}..HEAD`).split("\0").filter(Boolean);
   const proibidos = arquivos.filter((f) => PROIBIDOS.test(f));
   if (proibidos.length) return { ok: false, motivo: `diff toca caminho proibido (${proibidos.join(", ")})` };
   const perigosos = arquivos.filter((f) => EXECUTA_NO_HOST.test(f));
