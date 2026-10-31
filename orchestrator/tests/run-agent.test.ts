@@ -20,7 +20,7 @@ test("papeis de revisao sao somente leitura", () => {
 test("dev nao tem git push, rm -r nem leitura de .env", () => {
   const a = argsClaude({ papel: "dev", schema }, "sys", env);
   const negadas = a.slice(a.indexOf("--disallowedTools") + 1);
-  for (const t of ["Bash(git push*)", "Bash(rm -r*)", "Read(**/.env*)"]) assert.ok(negadas.includes(t), t);
+  for (const t of ["Bash(git push*)", "Bash(rm -r*)", "Read(**/.env*)", "Write(**/.git/**)", "Bash(npx*)", "Read(~/.ssh/**)"]) assert.ok(negadas.includes(t), t);
   assert.ok(!a.includes("Bash(git push *)") && !PERMISSOES.dev.allow.some((t) => t.includes("push")));
 });
 
@@ -41,6 +41,8 @@ test("env do subprocesso nao vaza credenciais e da identidade ao git", () => {
   assert.deepEqual(Object.keys(e).filter((k) => /ANTHROPIC|TOKEN|KEY/.test(k)), []);
   assert.equal(e.GIT_AUTHOR_NAME, "agente-dev");
   assert.equal(e.GIT_CONFIG_NOSYSTEM, "1");
+  assert.equal(e.GIT_CONFIG_KEY_0, "core.hooksPath");
+  assert.ok(!PERMISSOES.dev.allow.includes("Bash(npm *)"));
 });
 
 test("carregarPrompt remove o frontmatter e concatena", () => {

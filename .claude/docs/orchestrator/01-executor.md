@@ -55,13 +55,17 @@ Descartadas de propósito:
 | Papel | Ferramentas | Observação |
 |---|---|---|
 | triagem, reviewer, qa | `Read, Grep, Glob` | somente leitura; reviewer/qa recebem o diff no contexto |
-| dev | + `Write, Edit, Bash` | `Bash` só com `git add/commit/status/diff` e `npm *`; nega `git push`, `git remote`, `git config`, `rm -r`, leitura/edição de `.env*` |
+| dev | + `Write, Edit, Bash` | `Bash` só com `git add/commit/status/diff`, `npm test`, `npm run typecheck`; nega `git push/remote/config`, `rm -r`, `npm exec/npx/config/publish/pkg`, escrita em `.git/**`, `.gitattributes`, `.gitmodules`; todos os papéis negam leitura de `.env*`, `~/.ssh`, `~/.claude`, `~/.npmrc`, `~/.git-credentials`, `.git/config` |
 
 **Limite conhecido:** allowlist/denylist de `Bash` é uma barreira fraca (comandos
 alternativos podem contornar um padrão). As barreiras fortes são: worktree sem `.env` (arquivos
 ignorados não existem no checkout), env sem credenciais e `GIT_CONFIG_GLOBAL`/`NOSYSTEM`
 neutralizados (sem credential helper, então `git push` não autentica). O push e o PR são feitos
 pelo código do grafo (Fase 2), nunca pelo agente.
+
+**Hardening pós-review de segurança:** `GIT_CONFIG_COUNT` força `core.hooksPath` e `core.fsmonitor` neutros (config por env vence a do repo) e `NPM_CONFIG_USERCONFIG` aponta para o null device.
+
+**Riscos residuais (aceitos e documentados):** (1) `npm test`/`typecheck` executam scripts do `package.json`, que o dev pode editar; a mitigação é o diff recusar `package.json` scripts fora do escopo (task 3) e, idealmente, sandbox de SO/container; (2) `HOME`/`USERPROFILE` reais permanecem no env porque o login da assinatura vive lá; as negações de `~/...` são best-effort; (3) a semântica exata dos padrões de deny será exercitada no tracer bullet com um dev que tenta `git push` e ler `.env`.
 
 O git do subprocesso recebe identidade `agente-<papel>`; isso vira o `autor_id` verificável
 por código (task 3).
