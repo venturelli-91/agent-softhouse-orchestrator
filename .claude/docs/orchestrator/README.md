@@ -17,6 +17,7 @@ fraca; as barreiras reais são código, permissões do CLI, worktree isolado e e
 | [03-guardrails-de-fluxo.md](03-guardrails-de-fluxo.md) | `guardrails.ts` Seção 1, escalada ao CEO, testes com nós falsos, CI, regressão ao vivo |
 | [04-planejador.md](04-planejador.md) | nó planejador, esclarecimento de escopo com o CEO |
 | [05-publicar-devops-watchdog.md](05-publicar-devops-watchdog.md) | push/PR pelo código, devops pós-CEO, watchdog |
+| [06-fase-3-e-relatorio-final.md](06-fase-3-e-relatorio-final.md) | publicação, regressão ao vivo, relatório final |
 
 (Os próximos docs entram junto com cada task: publicação.)
 
