@@ -65,6 +65,8 @@ pelo código do grafo (Fase 2), nunca pelo agente.
 
 **Hardening pós-review de segurança:** `GIT_CONFIG_COUNT` força `core.hooksPath` e `core.fsmonitor` neutros (config por env vence a do repo) e `NPM_CONFIG_USERCONFIG` aponta para o null device.
 
+`Write`/`Edit` do dev ficam restritos ao worktree (`./**`) e negam `~/**`; `core.pager` e `GIT_EXTERNAL_DIFF` são neutralizados por env. Filtros/textconv/`sshCommand` exigem definição em config que o agente não consegue escrever (`.git/**` negado, config global nula, sem `git config`/`git -c` na allowlist).
+
 **Riscos residuais (aceitos e documentados):** (1) `npm test`/`typecheck` executam scripts do `package.json`, que o dev pode editar; a mitigação é o diff recusar `package.json` scripts fora do escopo (task 3) e, idealmente, sandbox de SO/container; (2) `HOME`/`USERPROFILE` reais permanecem no env porque o login da assinatura vive lá; as negações de `~/...` são best-effort; (3) a semântica exata dos padrões de deny será exercitada no tracer bullet com um dev que tenta `git push` e ler `.env`.
 
 O git do subprocesso recebe identidade `agente-<papel>`; isso vira o `autor_id` verificável

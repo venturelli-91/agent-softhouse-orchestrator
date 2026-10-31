@@ -21,8 +21,8 @@ export const PERMISSOES: Record<Papel, { tools: string[]; allow: string[]; deny:
   qa: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
   dev: {
     tools: [...LEITURA, "Write", "Edit", "Bash"],
-    allow: [...LEITURA, "Write", "Edit", "Bash(git add *)", "Bash(git commit *)", "Bash(git status*)", "Bash(git diff*)", "Bash(npm test*)", "Bash(npm run typecheck*)"],
-    deny: [...SEGREDOS, ...GIT_INTERNO, "Bash(npm exec*)", "Bash(npx*)", "Bash(npm config*)", "Bash(npm publish*)", "Bash(npm pkg*)", "Bash(git push*)", "Bash(rm -r*)", "Bash(rm -fr*)", "Bash(git remote*)", "Bash(git config*)"],
+    allow: [...LEITURA, "Write(./**)", "Edit(./**)", "Bash(git add *)", "Bash(git commit *)", "Bash(git status*)", "Bash(git diff*)", "Bash(npm test*)", "Bash(npm run typecheck*)"],
+    deny: [...SEGREDOS, ...GIT_INTERNO, "Write(~/**)", "Edit(~/**)", "Bash(npm exec*)", "Bash(npx*)", "Bash(npm config*)", "Bash(npm publish*)", "Bash(npm pkg*)", "Bash(git push*)", "Bash(rm -r*)", "Bash(rm -fr*)", "Bash(git remote*)", "Bash(git config*)"],
   },
 };
 
@@ -40,11 +40,14 @@ export function envMinimo(papel: Papel, src: NodeJS.ProcessEnv = process.env): R
     ...env,
     GIT_CONFIG_GLOBAL: devNull,
     GIT_CONFIG_NOSYSTEM: "1",
-    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_COUNT: "3",
     GIT_CONFIG_KEY_0: "core.hooksPath",
     GIT_CONFIG_VALUE_0: devNull,
     GIT_CONFIG_KEY_1: "core.fsmonitor",
     GIT_CONFIG_VALUE_1: "false",
+    GIT_CONFIG_KEY_2: "core.pager",
+    GIT_CONFIG_VALUE_2: "cat",
+    GIT_EXTERNAL_DIFF: "",
     NPM_CONFIG_USERCONFIG: devNull,
     GIT_TERMINAL_PROMPT: "0",
     GIT_AUTHOR_NAME: `agente-${papel}`,

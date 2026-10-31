@@ -43,6 +43,7 @@ test("env do subprocesso nao vaza credenciais e da identidade ao git", () => {
   assert.equal(e.GIT_CONFIG_NOSYSTEM, "1");
   assert.equal(e.GIT_CONFIG_KEY_0, "core.hooksPath");
   assert.ok(!PERMISSOES.dev.allow.includes("Bash(npm *)"));
+  assert.ok(!PERMISSOES.dev.allow.includes("Write") && PERMISSOES.dev.allow.includes("Write(./**)"));
 });
 
 test("carregarPrompt remove o frontmatter e concatena", () => {
