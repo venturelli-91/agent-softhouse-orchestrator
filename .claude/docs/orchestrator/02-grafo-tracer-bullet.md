@@ -129,3 +129,15 @@ mas não é comparável (o dev nem editava).
 - Agentes citam Playwright/Nielsen dos prompts originais, que não existem nesta sessão
   enxuta (sem MCP). Isso é ruído de prompt, não de código; o recorte do prompt por papel fica
   como melhoria de tokens se o consumo pesar.
+
+## Hardening pós-review de segurança (rodada 3)
+
+- `verificarEvidencia` recusa o ticket (escala ao CEO) se o diff tocar `package.json` ou
+  `.npmrc`, porque `npm test` executa esses scripts no host; `npm test` tem timeout.
+- Git do lado do host passa por `gitSeguro`: `core.fsmonitor=false`, `core.pager=cat`,
+  `GIT_CONFIG_NOSYSTEM`, `GIT_EXTERNAL_DIFF` vazio; o diff usa `--no-ext-diff --no-textconv`.
+- Dev não escreve o arquivo `.git` do worktree (`Write/Edit(**/.git)`; `**/.git/**` não o cobria)
+  e não usa `git log/diff --output`.
+- **Residual:** testes escritos pelo próprio dev ainda executam no host. A mitigação completa é
+  sandbox de SO/container, fora do escopo desta camada fina.
+- Testes: `tests/evidencia.test.ts` (sem commit, diff em `package.json`, commit válido).

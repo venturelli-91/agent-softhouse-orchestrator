@@ -1,7 +1,6 @@
-import { execFileSync } from "node:child_process";
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
-import { MAX_REVISOES, RECURSION_LIMIT, verificarEvidencia } from "./guardrails.ts";
+import { gitSeguro, MAX_REVISOES, RECURSION_LIMIT, verificarEvidencia } from "./guardrails.ts";
 import { FalhaDeNo, runAgent, type Consumo } from "./run-agent.ts";
 
 const ESPECIALIDADES = ["frontend", "backend", "fullstack", "mobile", "integracoes", "ia", "dados"] as const;
@@ -48,13 +47,13 @@ const SaidaRevisao = z.object({ veredito: z.enum(["aprovado", "reprovado"]), com
 const log = (t: T, no: string, resultado: string, consumo?: Consumo) =>
   [...t.historico, { no, hora: new Date().toISOString(), resultado, ms: consumo?.ms ?? 0, consumo }];
 
-const sh = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8" }).trim();
+const sh = gitSeguro;
 
 // Contexto minimo: so o que o papel precisa, nunca o historico de conversas.
 const contexto = (...partes: string[]) =>
   [...partes, "Responda apenas no formato estruturado. `resumo`: ate 10 linhas, so o necessario para o proximo no."].join("\n\n");
 const dadosTicket = (t: T) => `Ticket ${t.id}: ${t.titulo}\nCriterios de aceite:\n${t.criterios.map((c) => `- ${c}`).join("\n")}\nResumo atual:\n${t.resumo}`;
-const diff = (t: T) => sh(t.worktree, "diff", t.base, "HEAD").slice(0, 20_000);
+const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
 
 // Falha do executor (erro, timeout, saida invalida) nao quebra o grafo: escala e para.
 const protegido = (nome: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T): Promise<Partial<T>> => {

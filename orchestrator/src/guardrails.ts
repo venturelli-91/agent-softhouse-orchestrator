@@ -14,12 +14,23 @@ export const RECURSION_LIMIT = 40;
 export const TIMEOUT_POR_NO_MS = 600_000;
 
 // Evidencia verificada por codigo (custo zero de token): o que o agente declara nao conta.
+// Git do lado do host sobre repo que o agente mexeu: sem fsmonitor, pager, config de sistema ou diff externo.
+export function gitSeguro(cwd: string, ...args: string[]): string {
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_EXTERNAL_DIFF: "", GIT_TERMINAL_PROMPT: "0" };
+  return execFileSync("git", ["-c", "core.fsmonitor=false", "-c", "core.pager=cat", ...args], { cwd, env, encoding: "utf8" }).trim();
+}
+
+// Arquivos que o npm executa no host: alterados pelo agente, o ticket vai ao CEO em vez de rodar.
+const EXECUTA_NO_HOST = /(^|\/)(package\.json|\.npmrc)$/;
+
 export function verificarEvidencia(wt: string, base: string): { ok: true; autor: string; evidencias: string[] } | { ok: false; motivo: string } {
-  const git = (...a: string[]) => execFileSync("git", a, { cwd: wt, encoding: "utf8" }).trim();
+  const git = (...a: string[]) => gitSeguro(wt, ...a);
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, motivo: "nenhum commit novo no worktree" };
+  const perigosos = git("diff", "--name-only", "--no-ext-diff", `${base}..HEAD`).split("\n").filter((f) => EXECUTA_NO_HOST.test(f));
+  if (perigosos.length) return { ok: false, motivo: `diff toca arquivo que executa codigo no host (${perigosos.join(", ")}): exige revisao do CEO` };
   try {
     // execSync (shell) porque npm e npm.cmd no Windows; o comando e fixo.
-    execSync("npm test", { cwd: wt, env: envMinimo("dev"), stdio: "pipe" });
+    execSync("npm test", { cwd: wt, env: envMinimo("dev"), stdio: "pipe", timeout: TIMEOUT_POR_NO_MS });
   } catch (e) {
     return { ok: false, motivo: `npm test falhou: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}` };
   }
@@ -33,7 +44,7 @@ const SEGREDOS = [
   "Read(~/.ssh/**)", "Read(~/.claude/**)", "Read(~/.npmrc)", "Read(~/.git-credentials)", "Read(**/.git/config)",
 ];
 // Hooks, filtros e fsmonitor do git executam codigo: o dev nao pode escrever neles.
-const GIT_INTERNO = ["Write(**/.git/**)", "Edit(**/.git/**)", "Write(**/.gitattributes)", "Edit(**/.gitattributes)", "Write(**/.gitmodules)", "Edit(**/.gitmodules)"];
+const GIT_INTERNO = ["Write(**/.git/**)", "Edit(**/.git/**)", "Write(**/.git)", "Edit(**/.git)", "Write(**/.gitattributes)", "Edit(**/.gitattributes)", "Write(**/.gitmodules)", "Edit(**/.gitmodules)"];
 
 // tools = ferramentas built-in disponiveis; allow = auto-aprovadas; deny = sempre negadas.
 // Bash com allowlist e fraco por natureza: a barreira real e worktree sem .env + env sem credenciais.
@@ -44,7 +55,7 @@ export const PERMISSOES: Record<Papel, { tools: string[]; allow: string[]; deny:
   dev: {
     tools: [...LEITURA, "Write", "Edit", SHELL],
     allow: [...LEITURA, "Write(./**)", "Edit(./**)", ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*", "npm test*", "npm run typecheck*")],
-    deny: [...SEGREDOS, ...GIT_INTERNO, ...sh("npm exec*", "npx*", "npm config*", "npm publish*", "npm pkg*", "git push*", "git remote*", "git config*", "rm *", "Remove-Item*", "del *", "rmdir*")],
+    deny: [...SEGREDOS, ...GIT_INTERNO, ...sh("npm exec*", "npx*", "npm config*", "npm publish*", "npm pkg*", "git push*", "git log*--output*", "git diff*--output*", "git remote*", "git config*", "rm *", "Remove-Item*", "del *", "rmdir*")],
   },
 };
 
