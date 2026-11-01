@@ -34,7 +34,16 @@ const defaults: Behavior = {
   watchdog: () => ({ alerts: ["T-1 stalled"], summary: "ok" }),
 };
 let publications: string[] = [];
-registerPublisher("fake", { publish: (p) => (publications.push(`${p.id}@${p.sha}`), "pr:https://example/pull/1") });
+let merges: string[] = [];
+let mergeError: string | null = null;
+registerPublisher("fake", {
+  publish: (p) => (publications.push(`${p.id}@${p.sha}`), "pr:https://example/pull/1"),
+  merge: async (m) => {
+    if (mergeError) throw new Error(mergeError);
+    merges.push(`${m.pr}@${m.sha}`);
+    return `merged:${m.pr}`;
+  },
+});
 
 registerExecutor("fake", {
   async run<T>(req: Req<T>) {
@@ -50,6 +59,8 @@ beforeEach(() => {
   process.env.EXECUTOR = "fake";
   process.env.PUBLISHER = "fake";
   publications = [];
+  merges = [];
+  mergeError = null;
   process.env.TOKEN_BUDGET_TICKET = "100000";
   override = {};
   calls = [];
@@ -57,13 +68,13 @@ beforeEach(() => {
 });
 afterEach(() => roots.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
 
-async function start(id = "T-1", saver: MemorySaver = new MemorySaver()) {
+async function start(id = "T-1", saver: MemorySaver = new MemorySaver(), extra: object = {}) {
   const root = mkdtempSync(join(tmpdir(), "gt-"));
   roots.push(root);
   const repo = createFixture(root);
   const graph = buildGraph(saver);
   const cfg = config(id);
-  const r = await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, "wt")) }, cfg);
+  const r = await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, "wt")), ...extra }, cfg);
   return { graph, cfg, r, repo, root };
 }
 const paused = (r: unknown) => (r as { __interrupt__?: { value: Record<string, unknown> }[] }).__interrupt__?.[0]?.value;
@@ -254,4 +265,39 @@ test("alerts flag stalled, looping, over-budget and escalated tickets, and skip 
   assert.match(alerts([t({ id: "B", status: "dev", history: [{ ...old[0], time: "2026-01-02T11:30:00Z", usage }] })], now, env).join(), /B token budget at 90%/);
   assert.match(alerts([t({ id: "C", status: "escalated", summary: "qa: budget", history: [{ ...old[0], time: "2026-01-02T11:30:00Z" }] })], now, env).join(), /C escalated: qa: budget/);
   assert.match(alerts([t({ id: "D", priority: "P0", status: "dev", history: [{ ...old[0], time: "2026-01-02T10:30:00Z" }] })], now, env).join(), /D \[P0\] dev for 1\.5h/);
+});
+
+test("merge=pr never merges; merge=auto merges the verified commit only after the CEO approves", async () => {
+  const pr = await start("T-1");
+  assert.equal((await answer(pr, "approve")).status, "simulated_deploy");
+  assert.deepEqual(merges, []);
+
+  const auto = await start("T-2", new MemorySaver(), { merge: "auto" });
+  assert.equal(paused(auto.r)?.type, "approval");
+  assert.deepEqual(merges, [], "nothing merges before approval");
+  const done = await answer(auto, "approve");
+  assert.equal(done.status, "simulated_deploy");
+  assert.equal(merges.length, 1);
+  assert.match(merges[0], /^https:\/\/example\/pull\/1@[0-9a-f]{40}$/);
+  assert.ok(done.evidence.some((e: string) => e.startsWith("merged:")));
+});
+
+test("a failed merge escalates to the CEO; retry merges, anything else goes back to the dev", async () => {
+  mergeError = "CI checks failed";
+  const g = await start("T-1", new MemorySaver(), { merge: "auto" });
+  const esc = await answer(g, "approve");
+  assert.equal(paused(esc)?.type, "escalation");
+  assert.match(String(paused(esc)?.reason), /CI checks failed/);
+  assert.notEqual(esc.status, "simulated_deploy");
+  mergeError = null;
+  const retried = await answer(g, "retry");
+  assert.equal(retried.status, "simulated_deploy");
+  assert.equal(merges.length, 1);
+
+  mergeError = "CI checks failed";
+  const h = await start("T-2", new MemorySaver(), { merge: "auto" });
+  await answer(h, "approve");
+  const back = await answer(h, "fix the failing check");
+  assert.equal(paused(back)?.type, "approval", "the dev reran and a new approval was requested");
+  assert.equal(merges.length, 1);
 });

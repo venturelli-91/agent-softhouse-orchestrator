@@ -1,7 +1,7 @@
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
 import { selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
-import { publish } from "./publish.ts";
+import { mergePr, publish } from "./publish.ts";
 import { loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
 
@@ -155,6 +155,17 @@ const devops = guarded("devops", async (t) => {
   return { status: "simulated_deploy", summary: cap(output.summary), history: log(t, "devops", "simulated deploy", usage) };
 });
 
+// Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
+const mergeNode = guarded("merge_pr", async (t) => {
+  if (t.merge !== "auto") return { history: log(t, "merge_pr", "skipped (merge=pr)") };
+  const v = verifyEvidence(t.worktree, t.base, t.test);
+  if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
+  const pr = t.evidence.find((e) => e.startsWith("pr:"))?.slice(3);
+  if (!pr || pr === "none") throw new NodeFailure("merge: no PR to merge");
+  const merged = await mergePr({ cwd: t.worktree, pr, sha: v.sha });
+  return { evidence: [...t.evidence, merged], history: log(t, "merge_pr", merged) };
+});
+
 // The only merge/deploy and escalation point. Approval only counts if the evidence still holds.
 const ceoApproval = async (t: T): Promise<Partial<T>> => {
   const v = t.status === "approval" && t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : null;
@@ -172,6 +183,8 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
   if (r === "abort") return { status: "aborted", history: h("aborted") };
   // Missing information: the CEO's answer supplements the request and the planner tries again.
   if (t.status === "ambiguous") return { status: "replan", request: `${t.request}\n\nCEO clarification: ${r}`, history: h("clarified") };
+  // A failed merge (CI red, PR moved): "retry" runs it again, anything else is an instruction for the dev.
+  if (t.history.at(-1)?.node === "merge_pr" && r === "retry") return { status: "approved", history: h("merge retry") };
   // Any other escalation: the CEO instructs the dev (only if criteria already exist).
   if (!t.criteria.length) return { status: "aborted", history: h("aborted") };
   return { status: "dev_failed", revisions: 0, summary: `CEO instructed: ${r}`.slice(0, 500), history: h("resumed") };
@@ -181,11 +194,12 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
 const route = (ok: string, node: string) => (t: T) =>
   t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval";
 const afterTriage = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguous" ? "planner" : "ceo_approval");
-const afterCeo = (t: T) => (t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "devops" : END);
+const afterCeo = (t: T) => (t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END);
+const afterMerge = (t: T) => (t.status === "approved" ? "devops" : "ceo_approval");
 
 export function buildGraph(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
-    .addNode("triage", triage).addNode("planner", planner).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publish", publishNode).addNode("ceo_approval", ceoApproval).addNode("devops", devops)
+    .addNode("triage", triage).addNode("planner", planner).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publish", publishNode).addNode("ceo_approval", ceoApproval).addNode("merge_pr", mergeNode).addNode("devops", devops)
     .addEdge(START, "triage")
     .addConditionalEdges("triage", afterTriage, ["dev", "planner", "ceo_approval"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "ceo_approval"])
@@ -193,7 +207,8 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("reviewer", route("qa", "qa"), ["qa", "dev", "ceo_approval"])
     .addConditionalEdges("qa", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
     .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval"])
-    .addConditionalEdges("ceo_approval", afterCeo, ["dev", "planner", "devops", END])
+    .addConditionalEdges("ceo_approval", afterCeo, ["dev", "planner", "merge_pr", END])
+    .addConditionalEdges("merge_pr", afterMerge, ["devops", "ceo_approval"])
     .addEdge("devops", END)
     .compile({ checkpointer });
 }
