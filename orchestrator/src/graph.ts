@@ -25,7 +25,12 @@ export const Ticket = z.object({
   worktree: z.string(),
   base: z.string(),
   test: z.string().default("npm test"),
-  merge: z.enum(["pr", "auto"]).default("pr"),
+  merge: z.enum(["pr", "auto", "local"]).default("pr"),
+  publisher: z.string().default(""),
+  push_remote: z.string().default("origin"),
+  base_repo: z.string().default(""),
+  disclosure: z.boolean().default(true),
+  base_branch: z.string().default(""),
   approved_sha: z.string().default(""),
   rules: z.string().default(""),
   title: z.string().default(""),
@@ -221,12 +226,13 @@ export function buildGraph(checkpointer = new MemorySaver()) {
 export const config = (id: string) => ({ configurable: { thread_id: id }, recursionLimit: RECURSION_LIMIT });
 export const resume = (answer: string) => new Command({ resume: answer });
 
-export function createWorktree(repo: string, id: string, dir: string): { worktree: string; base: string; test: string; merge: "pr" | "auto"; rules: string } {
+export function createWorktree(repo: string, id: string, dir: string, home?: string) {
   if (activeTickets(repo) >= MAX_ACTIVE_TICKETS) throw new Error(`limit of ${MAX_ACTIVE_TICKETS} active tickets reached`);
+  const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge } = loadRepoConfig(repo, base);
-  return { worktree: dir, base, test, merge, rules: loadConventions(repo, base) };
+  const { test, merge, publisher, push_remote, base_repo, disclosure } = loadRepoConfig(repo, base, home);
+  return { worktree: dir, base, test, merge, publisher: publisher ?? "", push_remote, base_repo, disclosure, base_branch, rules: loadConventions(repo, base) };
 }
 
 export function report(t: T): string {

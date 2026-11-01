@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { permissionArgs, SHELL, verifyEvidence } from "../src/guardrails.ts";
 import { loadRepoConfig } from "../src/repo-config.ts";
 
+process.env.ORCH_HOME = mkdtempSync(join(tmpdir(), "rc-home-"));
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
 function repo(config?: string) {
   const d = mkdtempSync(join(tmpdir(), "rc-"));
@@ -20,9 +21,9 @@ function repo(config?: string) {
 
 test("the config comes from the base commit, with safe defaults", () => {
   const none = repo();
-  assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr" });
+  assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr", push_remote: "origin", base_repo: "", disclosure: true });
   const some = repo('{"test":"pytest -q","merge":"auto"}');
-  assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto" });
+  assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto", push_remote: "origin", base_repo: "", disclosure: true });
   // an uncommitted edit of the file does not count
   writeFileSync(join(some.d, ".orchestrator.json"), '{"test":"rm -rf x"}');
   assert.equal(loadRepoConfig(some.d, some.base).test, "pytest -q");
@@ -65,4 +66,48 @@ test("the dev's allowlist gets the repo's test command instead of npm test", () 
   const py = allow(permissionArgs("dev", "pytest -q"));
   assert.ok(py.includes(`${SHELL}(pytest -q*)`) && !py.includes(`${SHELL}(npm test*)`));
   assert.ok(!allow(permissionArgs("qa", "pytest -q")).some((t) => t.includes("pytest")));
+});
+
+function home(cfg: string) {
+  const h = mkdtempSync(join(tmpdir(), "rc-home-"));
+  mkdirSync(h, { recursive: true });
+  writeFileSync(join(h, "config.json"), cfg);
+  return h;
+}
+
+test("external config applies when the repo has no file", () => {
+  const { d, base } = repo();
+  const h = home(JSON.stringify({ repos: { [resolve(d)]: { test: "pytest -q", merge: "local", disclosure: false } } }));
+  const c = loadRepoConfig(d, base, h);
+  assert.deepEqual([c.test, c.merge, c.disclosure], ["pytest -q", "local", false]);
+  [d, h].forEach((x) => rmSync(x, { recursive: true, force: true }));
+});
+
+test("the in-repo file wins per key over the external one", () => {
+  const { d, base } = repo('{"test":"make check"}');
+  const h = home(JSON.stringify({ repos: { [resolve(d)]: { test: "pytest -q", disclosure: false } } }));
+  const c = loadRepoConfig(d, base, h);
+  assert.deepEqual([c.test, c.disclosure], ["make check", false]);
+  [d, h].forEach((x) => rmSync(x, { recursive: true, force: true }));
+});
+
+test("a malformed external config.json throws an error naming config.json", () => {
+  const { d, base } = repo();
+  const h = home("{nope");
+  assert.throws(() => loadRepoConfig(d, base, h), /config\.json/);
+  const h2 = home(JSON.stringify({ repos: { [resolve(d)]: { merge: "yolo" } } }));
+  assert.throws(() => loadRepoConfig(d, base, h2), /config\.json/);
+  [d, h, h2].forEach((x) => rmSync(x, { recursive: true, force: true }));
+});
+
+test("push_remote with a space is rejected", () => {
+  const { d, base } = repo('{"push_remote":"my remote"}');
+  assert.throws(() => loadRepoConfig(d, base), /push_remote/);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("merge local is accepted", () => {
+  const { d, base } = repo('{"merge":"local"}');
+  assert.equal(loadRepoConfig(d, base).merge, "local");
+  rmSync(d, { recursive: true, force: true });
 });
