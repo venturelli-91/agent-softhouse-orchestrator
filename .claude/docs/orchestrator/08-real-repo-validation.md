@@ -64,6 +64,29 @@ node can rise while cost falls; the token budget counts tokens, not dollars.
 gap is run-to-run variance. Whether a cheaper reviewer/QA catches as much is not proven;
 watch rejection rates over more tickets. `.env.example` now ships these overrides.
 
+## Does a cheaper model still catch bad diffs?
+
+`scripts/eval-review.ts --models a,b` runs reviewer and qa on 5 hand-made diffs with known
+verdicts (1 good; 4 bad: no tests, rounds up instead of down, no range check, scope creep).
+One run per case.
+
+| Model | Reviewer (correct / US$) | QA (correct / US$) |
+|---|---|---|
+| Haiku 5.5 | 5/5 / 0.006 | 4/5 / 0.007 |
+| Sonnet 5.5 | 5/5 / 0.066 | 4/5 / 0.086 |
+| Opus 5.5 | 5/5 / 0.230 | 4/5 / 0.265 |
+
+- **Reviewer:** all three models caught all four bad diffs and approved the good one.
+  Haiku costs ~1/10 of Sonnet and ~1/40 of Opus here, so it is the default for this node.
+- **QA is inconclusive, not a model difference.** Every model "missed" the same case: the
+  harness runs QA in an empty workspace, so QA rejected the good diff because it could not
+  read `src/cart.js` (its stop rule demands every criterion validated). The four bad diffs
+  were rejected correctly. A fair QA eval needs a real worktree per case.
+- First attempt had a flaw of mine (the "good" diff lacked the test import), which all
+  models rightly rejected; fixed before the table above.
+- Limits: 5 cases, 1 run each, only the read-only nodes. Dev, planner, triage and devops
+  are not covered, and Fable was not tested.
+
 ## Still open
 
 Real deploy/merge; QA with a shell or real browser; container sandbox for `npm test`;
