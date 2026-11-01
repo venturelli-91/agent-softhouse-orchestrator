@@ -2,114 +2,114 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { envMinimo, lerEnv, permissoesArgs, TIMEOUT_POR_NO_MS, type Papel } from "./guardrails.ts";
+import { minimalEnv, readEnv, permissionArgs, NODE_TIMEOUT_MS, type Role } from "./guardrails.ts";
 
-export type Consumo = {
+export type Usage = {
   tokens_in: number;
   tokens_out: number;
   cache_read: number;
   cache_create: number;
-  custo_usd: number;
-  turnos: number;
+  cost_usd: number;
+  turns: number;
   ms: number;
 };
 
-// O no monta o contexto minimo a partir do estado; o executor so conhece papel + texto.
+// The node builds the minimal context from the state; the executor only knows role + text.
 export type Req<T> = {
-  papel: Papel;
-  arquivos: string[]; // nomes em AGENTS_DIR, sem .md
-  contexto: string;
+  role: Role;
+  files: string[]; // names in AGENTS_DIR, without .md
+  context: string;
   schema: z.ZodType<T>;
   cwd: string;
 };
-export type Resultado<T> = { saida: T; consumo: Consumo };
+export type Result<T> = { output: T; usage: Usage };
 export interface Executor {
-  run<T>(req: Req<T>): Promise<Resultado<T>>;
+  run<T>(req: Req<T>): Promise<Result<T>>;
 }
 
-export class FalhaDeNo extends Error {}
+export class NodeFailure extends Error {}
 
-export function carregarPrompt(arquivos: string[], dir = process.env.AGENTS_DIR): string {
-  if (!dir) throw new FalhaDeNo("env ausente: AGENTS_DIR");
-  return arquivos
+export function loadPrompt(files: string[], dir = process.env.AGENTS_DIR): string {
+  if (!dir) throw new NodeFailure("missing env: AGENTS_DIR");
+  return files
     .map((a) => readFileSync(join(dir, `${a}.md`), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim())
     .join("\n\n---\n\n");
 }
 
-// O CLI nao conhece o draft 2020-12 que o zod declara em $schema.
+// The CLI does not know the draft 2020-12 that zod declares in $schema.
 const jsonSchema = (s: z.ZodType) => ({ ...z.toJSONSchema(s), $schema: undefined });
 
-// --max-turns conta o turno do StructuredOutput do --json-schema, dai o +1.
-// Sem --bare (ele ignora o login da assinatura); o contexto e enxugado pelas demais flags.
-export function argsClaude(req: Pick<Req<unknown>, "papel" | "schema">, sistema: string, env = process.env): string[] {
+// --max-turns counts the StructuredOutput turn of --json-schema, hence the +1.
+// No --bare (it ignores the subscription login); the context is trimmed by the other flags.
+export function claudeArgs(req: Pick<Req<unknown>, "role" | "schema">, system: string, env = process.env): string[] {
   return [
     "-p",
-    "--model", lerEnv("MODEL", req.papel, env),
-    "--effort", lerEnv("EFFORT", req.papel, env),
-    "--max-turns", String(Number(lerEnv("TURNOS", req.papel, env)) + 1),
-    "--system-prompt", sistema,
+    "--model", readEnv("MODEL", req.role, env),
+    "--effort", readEnv("EFFORT", req.role, env),
+    "--max-turns", String(Number(readEnv("TURNS", req.role, env)) + 1),
+    "--system-prompt", system,
     "--output-format", "json",
     "--json-schema", JSON.stringify(jsonSchema(req.schema as z.ZodType)),
     "--setting-sources", "",
     "--strict-mcp-config",
     "--disable-slash-commands",
     "--no-session-persistence",
-    ...permissoesArgs(req.papel),
+    ...permissionArgs(req.role),
   ];
 }
 
 const claudeSubscription: Executor = {
-  async run<T>(req: Req<T>): Promise<Resultado<T>> {
-    const args = argsClaude(req, carregarPrompt(req.arquivos));
+  async run<T>(req: Req<T>): Promise<Result<T>> {
+    const args = claudeArgs(req, loadPrompt(req.files));
     const t0 = Date.now();
-    const bruto = await new Promise<string>((ok, erro) => {
-      const p = spawn("claude", args, { cwd: req.cwd, env: envMinimo(req.papel), signal: AbortSignal.timeout(TIMEOUT_POR_NO_MS) });
+    const raw = await new Promise<string>((ok, fail) => {
+      const p = spawn("claude", args, { cwd: req.cwd, env: minimalEnv(req.role), signal: AbortSignal.timeout(NODE_TIMEOUT_MS) });
       let out = "";
       let err = "";
       p.stdout.on("data", (d) => (out += d));
       p.stderr.on("data", (d) => (err += d));
-      p.on("error", (e) => erro(new FalhaDeNo(`${req.papel}: ${e.name === "AbortError" ? "timeout" : e.message}`)));
-      p.on("close", (code) => (out ? ok(out) : erro(new FalhaDeNo(`${req.papel}: exit ${code}: ${err.slice(0, 300)}`))));
-      p.stdin.end(req.contexto);
+      p.on("error", (e) => fail(new NodeFailure(`${req.role}: ${e.name === "AbortError" ? "timeout" : e.message}`)));
+      p.on("close", (code) => (out ? ok(out) : fail(new NodeFailure(`${req.role}: exit ${code}: ${err.slice(0, 300)}`))));
+      p.stdin.end(req.context);
     });
 
-    return interpretar(req.papel, bruto, req.schema, Date.now() - t0);
+    return parseOutput(req.role, raw, req.schema, Date.now() - t0);
   },
 };
 
-// Saida do `claude -p --output-format json` -> resultado validado. Qualquer desvio e falha.
-export function interpretar<T>(papel: Papel, bruto: string, schema: z.ZodType<T>, ms: number): Resultado<T> {
+// Output of `claude -p --output-format json` -> validated result. Any deviation is a failure.
+export function parseOutput<T>(role: Role, raw: string, schema: z.ZodType<T>, ms: number): Result<T> {
   let r;
   try {
-    r = JSON.parse(bruto);
+    r = JSON.parse(raw);
   } catch {
-    throw new FalhaDeNo(`${papel}: saida nao e JSON`);
+    throw new NodeFailure(`${role}: output is not JSON`);
   }
-  if (r.is_error || r.subtype !== "success") throw new FalhaDeNo(`${papel}: ${r.subtype ?? "erro"} (${r.terminal_reason})`);
-  const saida = schema.safeParse(r.structured_output);
-  if (!saida.success) throw new FalhaDeNo(`${papel}: saida invalida: ${saida.error.message.slice(0, 300)}`);
+  if (r.is_error || r.subtype !== "success") throw new NodeFailure(`${role}: ${r.subtype ?? "error"} (${r.terminal_reason})`);
+  const output = schema.safeParse(r.structured_output);
+  if (!output.success) throw new NodeFailure(`${role}: invalid output: ${output.error.message.slice(0, 300)}`);
   const u = r.usage;
   return {
-    saida: saida.data,
-    consumo: {
+    output: output.data,
+    usage: {
       tokens_in: u.input_tokens,
       tokens_out: u.output_tokens,
       cache_read: u.cache_read_input_tokens,
       cache_create: u.cache_creation_input_tokens,
-      custo_usd: r.total_cost_usd,
-      turnos: r.num_turns,
+      cost_usd: r.total_cost_usd,
+      turns: r.num_turns,
       ms,
     },
   };
 }
 
-const executores: Record<string, Executor> = { "claude-subscription": claudeSubscription };
-// Encaixe para outros executores (e para nos falsos nos testes).
-export const registrarExecutor = (nome: string, ex: Executor) => void (executores[nome] = ex);
+const executors: Record<string, Executor> = { "claude-subscription": claudeSubscription };
+// Hook for other executors (and for fake nodes in tests).
+export const registerExecutor = (name: string, ex: Executor) => void (executors[name] = ex);
 
-export function runAgent<T>(req: Req<T>): Promise<Resultado<T>> {
-  const nome = process.env.EXECUTOR ?? "claude-subscription";
-  const ex = executores[nome];
-  if (!ex) throw new FalhaDeNo(`EXECUTOR desconhecido: ${nome}`);
+export function runAgent<T>(req: Req<T>): Promise<Result<T>> {
+  const name = process.env.EXECUTOR ?? "claude-subscription";
+  const ex = executors[name];
+  if (!ex) throw new NodeFailure(`unknown EXECUTOR: ${name}`);
   return ex.run(req);
 }

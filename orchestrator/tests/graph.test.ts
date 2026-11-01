@@ -1,211 +1,211 @@
-// Guardrails de fluxo contra nos falsos: nenhum modelo, nenhuma credencial.
+// Flow guardrails against fake nodes: no model, no credentials.
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
-import { criarFixture, git } from "../scripts/fixture.ts";
-import { config, criarWorktree, montarGrafo, retomar } from "../src/graph.ts";
-import { registrarPublicador } from "../src/publicar.ts";
-import { FalhaDeNo, registrarExecutor, type Req } from "../src/run-agent.ts";
+import { createFixture, git } from "../scripts/fixture.ts";
+import { config, createWorktree, buildGraph, resume } from "../src/graph.ts";
+import { registerPublisher } from "../src/publish.ts";
+import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
 import { watchdog } from "../src/watchdog.ts";
 
-type Comportamento = Partial<Record<string, (req: Req<unknown>) => unknown>>;
-let ajuste: Comportamento = {};
-let chamadas: string[] = [];
-let tokensPorChamada = 10;
-const raizes: string[] = [];
+type Behavior = Partial<Record<string, (req: Req<unknown>) => unknown>>;
+let override: Behavior = {};
+let calls: string[] = [];
+let tokensPerCall = 10;
+const roots: string[] = [];
 
-const FLAGS = { toca_seguranca: false, toca_performance: false, toca_ia: false, toca_schema: false, toca_api_publica: false, toca_permissoes: false, toca_integracao_externa: false, toca_custo: false };
-const commitar = (cwd: string, autor: string, arquivo = "checkout.html", conteudo = "<button>Enviar pedido</button>\n") => {
-  writeFileSync(join(cwd, arquivo), conteudo);
+const FLAGS = { touches_security: false, touches_performance: false, touches_ai: false, touches_schema: false, touches_public_api: false, touches_permissions: false, touches_external_integration: false, touches_cost: false };
+const commit = (cwd: string, author: string, file = "checkout.html", content = "<button>Submit order</button>\n") => {
+  writeFileSync(join(cwd, file), content);
   git(cwd, "add", "-A");
-  git(cwd, "-c", `user.name=${autor}`, "commit", "-q", "--allow-empty", "-m", "dev");
+  git(cwd, "-c", `user.name=${author}`, "commit", "-q", "--allow-empty", "-m", "dev");
 };
-const padrao: Comportamento = {
-  triagem: () => ({ titulo: "t", prioridade: "P2", especialidade: "frontend", claro: true, flags: FLAGS, criterios: ["botao diz Enviar pedido"], resumo: "ok" }),
-  planejador: () => ({ ...(padrao.triagem!({} as Req<unknown>) as object), pergunta: "" }),
-  dev: (req) => (commitar(req.cwd, "agente-dev"), { resumo: "ok" }),
-  reviewer: () => ({ veredito: "aprovado", comentarios: "", resumo: "ok" }),
-  qa: () => ({ veredito: "aprovado", comentarios: "", resumo: "ok" }),
-  devops: () => ({ resumo: "deploy simulado" }),
-  watchdog: () => ({ alertas: ["T-1 parado"], resumo: "ok" }),
+const defaults: Behavior = {
+  triage: () => ({ title: "t", priority: "P2", specialty: "frontend", clear: true, flags: FLAGS, criteria: ["button says Submit order"], summary: "ok" }),
+  planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), question: "" }),
+  dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok" }),
+  reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
+  qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),
+  devops: () => ({ summary: "simulated deploy" }),
+  watchdog: () => ({ alerts: ["T-1 stalled"], summary: "ok" }),
 };
-let publicacoes: string[] = [];
-registrarPublicador("fake", { publicar: (p) => (publicacoes.push(`${p.id}@${p.sha}`), "pr:https://exemplo/pull/1") });
+let publications: string[] = [];
+registerPublisher("fake", { publish: (p) => (publications.push(`${p.id}@${p.sha}`), "pr:https://example/pull/1") });
 
-registrarExecutor("fake", {
+registerExecutor("fake", {
   async run<T>(req: Req<T>) {
-    chamadas.push(req.papel);
-    const bruto = (ajuste[req.papel] ?? padrao[req.papel]!)(req as Req<unknown>);
-    const saida = req.schema.safeParse(bruto);
-    if (!saida.success) throw new FalhaDeNo(`${req.papel}: saida invalida`);
-    return { saida: saida.data, consumo: { tokens_in: tokensPorChamada, tokens_out: 0, cache_read: 0, cache_create: 0, custo_usd: 0, turnos: 1, ms: 1 } };
+    calls.push(req.role);
+    const raw = (override[req.role] ?? defaults[req.role]!)(req as Req<unknown>);
+    const output = req.schema.safeParse(raw);
+    if (!output.success) throw new NodeFailure(`${req.role}: invalid output`);
+    return { output: output.data, usage: { tokens_in: tokensPerCall, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 } };
   },
 });
 
 beforeEach(() => {
   process.env.EXECUTOR = "fake";
-  process.env.PUBLICADOR = "fake";
-  publicacoes = [];
+  process.env.PUBLISHER = "fake";
+  publications = [];
   process.env.TOKEN_BUDGET_TICKET = "100000";
-  ajuste = {};
-  chamadas = [];
-  tokensPorChamada = 10;
+  override = {};
+  calls = [];
+  tokensPerCall = 10;
 });
-afterEach(() => raizes.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
+afterEach(() => roots.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
 
-async function iniciar(id = "T-1") {
-  const raiz = mkdtempSync(join(tmpdir(), "gt-"));
-  raizes.push(raiz);
-  const repo = criarFixture(raiz);
-  const grafo = montarGrafo(new MemorySaver());
+async function start(id = "T-1") {
+  const root = mkdtempSync(join(tmpdir(), "gt-"));
+  roots.push(root);
+  const repo = createFixture(root);
+  const graph = buildGraph(new MemorySaver());
   const cfg = config(id);
-  const r = await grafo.invoke({ id, pedido: "p", ...criarWorktree(repo, id, join(raiz, "wt")) }, cfg);
-  return { grafo, cfg, r, repo, raiz };
+  const r = await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, "wt")) }, cfg);
+  return { graph, cfg, r, repo, root };
 }
-const pausa = (r: unknown) => (r as { __interrupt__?: { value: Record<string, unknown> }[] }).__interrupt__?.[0]?.value;
-const ver = (g: Awaited<ReturnType<typeof iniciar>>, resposta: string) => g.grafo.invoke(retomar(resposta) as never, g.cfg);
+const paused = (r: unknown) => (r as { __interrupt__?: { value: Record<string, unknown> }[] }).__interrupt__?.[0]?.value;
+const answer = (g: Awaited<ReturnType<typeof start>>, reply: string) => g.graph.invoke(resume(reply) as never, g.cfg);
 
-test("deploy so acontece depois da aprovacao do CEO; rejeicao volta ao dev", async () => {
-  const g = await iniciar();
-  assert.equal(pausa(g.r)?.tipo, "aprovacao");
-  assert.notEqual(g.r.status, "deploy_simulado");
-  const rej = await ver(g, "nao gostei");
-  assert.equal(pausa(rej)?.tipo, "aprovacao");
-  assert.equal(rej.revisoes, 1);
-  assert.notEqual(rej.status, "deploy_simulado");
-  assert.equal((await ver(g, "aprovar")).status, "deploy_simulado");
+test("deploy only happens after CEO approval; rejection goes back to the dev", async () => {
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.notEqual(g.r.status, "simulated_deploy");
+  const rej = await answer(g, "did not like it");
+  assert.equal(paused(rej)?.type, "approval");
+  assert.equal(rej.revisions, 1);
+  assert.notEqual(rej.status, "simulated_deploy");
+  assert.equal((await answer(g, "approve")).status, "simulated_deploy");
 });
 
-test("flag de aprovacao chega ao CEO como flag ativa", async () => {
-  ajuste.triagem = () => ({ ...(padrao.triagem!({} as Req<unknown>) as object), flags: { ...FLAGS, toca_schema: true } });
-  const g = await iniciar();
-  assert.deepEqual(pausa(g.r)?.flags_ativas, ["toca_schema"]);
+test("an approval flag reaches the CEO as an active flag", async () => {
+  override.triage = () => ({ ...(defaults.triage!({} as Req<unknown>) as object), flags: { ...FLAGS, touches_schema: true } });
+  const g = await start();
+  assert.deepEqual(paused(g.r)?.active_flags, ["touches_schema"]);
 });
 
-test("autoaprovacao bloqueada: revisor igual ao autor nem executa", async () => {
-  ajuste.dev = (req) => (commitar(req.cwd, "agente-reviewer"), { resumo: "ok" });
-  const g = await iniciar();
-  assert.equal(pausa(g.r)?.tipo, "escalada");
-  assert.match(String(pausa(g.r)?.motivo), /propria entrega/);
-  assert.ok(!chamadas.includes("reviewer"));
-  assert.equal((await ver(g, "abortar")).status, "abortado");
+test("self-approval blocked: reviewer equal to the author does not even run", async () => {
+  override.dev = (req) => (commit(req.cwd, "agent-reviewer"), { summary: "ok" });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /its own delivery/);
+  assert.ok(!calls.includes("reviewer"));
+  assert.equal((await answer(g, "abort")).status, "aborted");
 });
 
-test("teto de 3 revisoes escala ao CEO", async () => {
-  ajuste.reviewer = () => ({ veredito: "reprovado", comentarios: "refaca", resumo: "x" });
-  const g = await iniciar();
-  assert.equal(chamadas.filter((c) => c === "dev").length, 3);
-  assert.equal(pausa(g.r)?.tipo, "escalada");
-  assert.match(String(pausa(g.r)?.motivo), /teto de 3/);
+test("the cap of 3 revisions escalates to the CEO", async () => {
+  override.reviewer = () => ({ verdict: "rejected", comments: "redo it", summary: "x" });
+  const g = await start();
+  assert.equal(calls.filter((c) => c === "dev").length, 3);
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /cap of 3/);
 });
 
-test("saida invalida do no e falha: escala e nao avanca", async () => {
-  ajuste.triagem = () => ({ lixo: 1 });
-  const g = await iniciar();
-  assert.equal(pausa(g.r)?.tipo, "escalada");
-  assert.ok(!chamadas.includes("dev"));
+test("invalid node output is a failure: it escalates and does not advance", async () => {
+  override.triage = () => ({ junk: 1 });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.ok(!calls.includes("dev"));
 });
 
-const ambiguo = () => ({ ...(padrao.triagem!({} as Req<unknown>) as object), claro: false, criterios: [] });
+const ambiguous = () => ({ ...(defaults.triage!({} as Req<unknown>) as object), clear: false, criteria: [] });
 
-test("pedido ambiguo passa pelo planejador e segue ao dev quando ele fecha os criterios", async () => {
-  ajuste.triagem = ambiguo;
-  const g = await iniciar();
-  assert.deepEqual(chamadas.slice(0, 2), ["triagem", "planejador"]);
-  assert.equal(pausa(g.r)?.tipo, "aprovacao");
+test("an ambiguous request goes through the planner and proceeds to the dev once it closes the criteria", async () => {
+  override.triage = ambiguous;
+  const g = await start();
+  assert.deepEqual(calls.slice(0, 2), ["triage", "planner"]);
+  assert.equal(paused(g.r)?.type, "approval");
 });
 
-test("planejador sem criterios escala com a pergunta; resposta do CEO volta ao planejador", async () => {
-  ajuste.triagem = ambiguo;
-  let rodadas = 0;
-  let pedidoVisto = "";
-  ajuste.planejador = (req) => {
-    pedidoVisto = req.contexto;
-    return ++rodadas === 1
-      ? { ...(ambiguo() as object), pergunta: "qual botao?", criterios: [] }
-      : { ...(padrao.planejador!(req) as object) };
+test("a planner without criteria escalates with the question; the CEO's answer returns to the planner", async () => {
+  override.triage = ambiguous;
+  let rounds = 0;
+  let seenRequest = "";
+  override.planner = (req) => {
+    seenRequest = req.context;
+    return ++rounds === 1
+      ? { ...(ambiguous() as object), question: "which button?", criteria: [] }
+      : { ...(defaults.planner!(req) as object) };
   };
-  const g = await iniciar();
-  assert.equal(pausa(g.r)?.tipo, "escalada");
-  assert.match(String(pausa(g.r)?.motivo), /qual botao\?/);
-  assert.ok(!chamadas.includes("dev"));
-  const r2 = await ver(g, "o do checkout");
-  assert.match(pedidoVisto, /Esclarecimento do CEO: o do checkout/);
-  assert.equal(pausa(r2)?.tipo, "aprovacao");
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /which button\?/);
+  assert.ok(!calls.includes("dev"));
+  const r2 = await answer(g, "the checkout one");
+  assert.match(seenRequest, /CEO clarification: the checkout one/);
+  assert.equal(paused(r2)?.type, "approval");
 });
 
-test("CEO aborta quando o planejador pede esclarecimento", async () => {
-  ajuste.triagem = ambiguo;
-  ajuste.planejador = () => ({ ...(ambiguo() as object), pergunta: "?", criterios: [] });
-  const g = await iniciar();
-  assert.equal((await ver(g, "abortar")).status, "abortado");
-  assert.ok(!chamadas.includes("dev"));
+test("the CEO aborts when the planner asks for clarification", async () => {
+  override.triage = ambiguous;
+  override.planner = () => ({ ...(ambiguous() as object), question: "?", criteria: [] });
+  const g = await start();
+  assert.equal((await answer(g, "abort")).status, "aborted");
+  assert.ok(!calls.includes("dev"));
 });
 
-test("orcamento de tokens estourado interrompe o ticket", async () => {
+test("an exceeded token budget interrupts the ticket", async () => {
   process.env.TOKEN_BUDGET_TICKET = "50";
-  tokensPorChamada = 40;
-  const g = await iniciar();
-  assert.equal(pausa(g.r)?.tipo, "escalada");
-  assert.match(String(pausa(g.r)?.motivo), /orcamento/);
-  assert.ok(!chamadas.includes("reviewer"));
+  tokensPerCall = 40;
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /budget/);
+  assert.ok(!calls.includes("reviewer"));
 });
 
-test("evidencia declarada pelo dev sem teste real passando e rejeitada", async () => {
-  ajuste.dev = (req) => (commitar(req.cwd, "agente-dev", "outro.txt", "x"), { resumo: "pronto, testes passam" });
-  const g = await iniciar();
-  assert.ok(!chamadas.includes("reviewer"));
-  assert.equal(pausa(g.r)?.tipo, "escalada");
-  assert.match(String(pausa(g.r)?.motivo), /npm test falhou/);
+test("evidence declared by the dev without a real passing test is rejected", async () => {
+  override.dev = (req) => (commit(req.cwd, "agent-dev", "other.txt", "x"), { summary: "done, tests pass" });
+  const g = await start();
+  assert.ok(!calls.includes("reviewer"));
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /npm test failed/);
 });
 
-test("limite de 5 tickets ativos", async () => {
-  const raiz = mkdtempSync(join(tmpdir(), "gt-"));
-  raizes.push(raiz);
-  const repo = criarFixture(raiz);
-  for (let i = 1; i <= 5; i++) criarWorktree(repo, `T-${i}`, join(raiz, `wt${i}`));
-  assert.throws(() => criarWorktree(repo, "T-6", join(raiz, "wt6")), /limite de 5/);
+test("limit of 5 active tickets", async () => {
+  const root = mkdtempSync(join(tmpdir(), "gt-"));
+  roots.push(root);
+  const repo = createFixture(root);
+  for (let i = 1; i <= 5; i++) createWorktree(repo, `T-${i}`, join(root, `wt${i}`));
+  assert.throws(() => createWorktree(repo, "T-6", join(root, "wt6")), /limit of 5/);
 });
 
-test("push e PR saem do codigo do grafo, depois do QA e antes do CEO; devops so depois do CEO", async () => {
-  const g = await iniciar();
-  assert.equal(publicacoes.length, 1);
-  assert.match(publicacoes[0], /^T-1@[0-9a-f]{40}$/);
-  assert.ok((pausa(g.r)?.evidencias as string[]).includes("pr:https://exemplo/pull/1"));
-  assert.ok(!chamadas.includes("devops"));
-  const fim = await ver(g, "aprovar");
-  assert.equal(fim.status, "deploy_simulado");
-  assert.equal(chamadas.at(-1), "devops");
+test("push and PR come from the graph's code, after QA and before the CEO; devops only after the CEO", async () => {
+  const g = await start();
+  assert.equal(publications.length, 1);
+  assert.match(publications[0], /^T-1@[0-9a-f]{40}$/);
+  assert.ok((paused(g.r)?.evidence as string[]).includes("pr:https://example/pull/1"));
+  assert.ok(!calls.includes("devops"));
+  const end = await answer(g, "approve");
+  assert.equal(end.status, "simulated_deploy");
+  assert.equal(calls.at(-1), "devops");
 });
 
-test("rejeicao do CEO nao aciona o devops", async () => {
-  const g = await iniciar();
-  await ver(g, "nao gostei");
-  assert.ok(!chamadas.includes("devops"));
+test("CEO rejection does not trigger devops", async () => {
+  const g = await start();
+  await answer(g, "did not like it");
+  assert.ok(!calls.includes("devops"));
 });
 
-test("PUBLICADOR ausente escala ao CEO e nada e publicado", async () => {
-  delete process.env.PUBLICADOR;
-  const g = await iniciar();
-  assert.equal(pausa(g.r)?.tipo, "escalada");
-  assert.match(String(pausa(g.r)?.motivo), /PUBLICADOR/);
-  assert.equal(publicacoes.length, 0);
+test("a missing PUBLISHER escalates to the CEO and nothing is published", async () => {
+  delete process.env.PUBLISHER;
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /PUBLISHER/);
+  assert.equal(publications.length, 0);
 });
 
-test("publicador que falha escala ao CEO", async () => {
-  process.env.PUBLICADOR = "quebrado";
-  registrarPublicador("quebrado", { publicar: () => { throw new Error("push recusado"); } });
-  const g = await iniciar();
-  assert.equal(pausa(g.r)?.tipo, "escalada");
-  assert.match(String(pausa(g.r)?.motivo), /push recusado/);
+test("a failing publisher escalates to the CEO", async () => {
+  process.env.PUBLISHER = "broken";
+  registerPublisher("broken", { publish: () => { throw new Error("push refused"); } });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /push refused/);
 });
 
-test("watchdog le o estado e devolve alertas sem escrever", async () => {
-  const g = await iniciar();
-  const r = await watchdog([g.r], g.raiz);
-  assert.deepEqual(r.alertas, ["T-1 parado"]);
-  assert.equal(chamadas.at(-1), "watchdog");
+test("the watchdog reads the state and returns alerts without writing", async () => {
+  const g = await start();
+  const r = await watchdog([g.r], g.root);
+  assert.deepEqual(r.alerts, ["T-1 stalled"]);
+  assert.equal(calls.at(-1), "watchdog");
 });

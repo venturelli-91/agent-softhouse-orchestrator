@@ -1,114 +1,114 @@
-// Secao 1: regras de fluxo entre nos (constantes + evidencia). Secao 2: defesa dentro de cada no.
+// Section 1: flow rules between nodes (constants + evidence). Section 2: defense inside each node.
 import { execFileSync, execSync } from "node:child_process";
-import type { Consumo } from "./run-agent.ts";
-// No Windows, os.devNull (um caminho \\.\nul) nao e valido para o git; usa NUL.
+import type { Usage } from "./run-agent.ts";
+// On Windows, os.devNull (a \\.\nul path) is not valid for git; use NUL.
 export const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
-// Neste Windows o shell do claude -p e o PowerShell; em POSIX, Bash.
+// On Windows the shell of claude -p is PowerShell; on POSIX, Bash.
 export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
-const sh = (...padroes: string[]) => padroes.map((p) => `${SHELL}(${p})`);
+const sh = (...patterns: string[]) => patterns.map((p) => `${SHELL}(${p})`);
 
-export type Papel = "triagem" | "planejador" | "dev" | "reviewer" | "qa" | "devops" | "watchdog";
+export type Role = "triage" | "planner" | "dev" | "reviewer" | "qa" | "devops" | "watchdog";
 
-// ===== Secao 1: regras de fluxo =====
-export const MAX_REVISOES = 3;
+// ===== Section 1: flow rules =====
+export const MAX_REVISIONS = 3;
 export const RECURSION_LIMIT = 40;
-export const MAX_TICKETS_ATIVOS = 5;
-export const TIMEOUT_POR_NO_MS = 600_000;
+export const MAX_ACTIVE_TICKETS = 5;
+export const NODE_TIMEOUT_MS = 600_000;
 
-export const tokens = (c: Consumo) => c.tokens_in + c.tokens_out + c.cache_read + c.cache_create;
+export const tokens = (c: Usage) => c.tokens_in + c.tokens_out + c.cache_read + c.cache_create;
 
-// Orcamento de tokens do ticket (TOKEN_BUDGET_TICKET). Ausente = falha fechada.
-export function orcamentoEstourado(consumos: (Consumo | undefined)[], env: NodeJS.ProcessEnv = process.env): string | null {
-  const teto = Number(env.TOKEN_BUDGET_TICKET);
-  if (!teto) throw new Error("env ausente: TOKEN_BUDGET_TICKET");
-  const usado = consumos.reduce((a, c) => a + (c ? tokens(c) : 0), 0);
-  return usado > teto ? `orcamento de tokens estourado (${usado} > ${teto})` : null;
+// Per-ticket token budget (TOKEN_BUDGET_TICKET). Missing = fail closed.
+export function budgetExceeded(usages: (Usage | undefined)[], env: NodeJS.ProcessEnv = process.env): string | null {
+  const cap = Number(env.TOKEN_BUDGET_TICKET);
+  if (!cap) throw new Error("missing env: TOKEN_BUDGET_TICKET");
+  const used = usages.reduce((a, c) => a + (c ? tokens(c) : 0), 0);
+  return used > cap ? `token budget exceeded (${used} > ${cap})` : null;
 }
 
-// Ninguem aprova a propria entrega: quem revisa/testa nao pode ser o autor do commit.
-export function autoaprovacao(autor: string | null, quem: string): string | null {
-  if (!autor) return "autor do commit desconhecido";
-  return autor === quem ? `${quem} nao pode aprovar a propria entrega` : null;
+// Nobody approves their own delivery: whoever reviews/tests cannot be the commit author.
+export function selfApproval(author: string | null, who: string): string | null {
+  if (!author) return "commit author unknown";
+  return author === who ? `${who} cannot approve its own delivery` : null;
 }
 
-// Tickets ativos = worktrees ticket/* do repo-alvo (estado no proprio git, sem outro banco).
-export function ticketsAtivos(repo: string): number {
-  return gitSeguro(repo, "worktree", "list", "--porcelain").split("\n").filter((l) => l.startsWith("branch refs/heads/ticket/")).length;
+// Active tickets = ticket/* worktrees of the target repo (state lives in git itself, no other database).
+export function activeTickets(repo: string): number {
+  return safeGit(repo, "worktree", "list", "--porcelain").split("\n").filter((l) => l.startsWith("branch refs/heads/ticket/")).length;
 }
 
-// Caminhos que nenhum agente pode alterar: segredos, CI e o proprio orquestrador.
-const PROIBIDOS = /(^|\/)\.env|^\.github\/|^orchestrator\/|(^|\/)(\.git-credentials|\.npmrc|id_rsa[^/]*)$|\.(pem|key)$|credential|secret/i;
+// Paths no agent may change: secrets, CI and the orchestrator itself.
+const FORBIDDEN = /(^|\/)\.env|^\.github\/|^orchestrator\/|(^|\/)(\.git-credentials|\.npmrc|id_rsa[^/]*)$|\.(pem|key)$|credential|secret/i;
 
-// Git do lado do host sobre repo que o agente mexeu: sem fsmonitor, pager, config de sistema ou diff externo.
-export function gitSeguro(cwd: string, ...args: string[]): string {
+// Host-side git over a repo the agent touched: no fsmonitor, pager, system config or external diff.
+export function safeGit(cwd: string, ...args: string[]): string {
   const env = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_EXTERNAL_DIFF: "", GIT_TERMINAL_PROMPT: "0" };
   return execFileSync("git", ["-c", "core.fsmonitor=false", "-c", "core.pager=cat", ...args], { cwd, env, encoding: "utf8" }).trim();
 }
 
-// Arquivos que o npm executa no host: alterados pelo agente, o ticket vai ao CEO em vez de rodar.
-const EXECUTA_NO_HOST = /(^|\/)(package\.json|\.npmrc)$/i;
+// Files npm runs on the host: if the agent changed them, the ticket goes to the CEO instead of running.
+const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc)$/i;
 
-// Evidencia verificada por codigo (custo zero de token): o que o agente declara nao conta.
-export function verificarEvidencia(wt: string, base: string): { ok: true; autor: string; sha: string; evidencias: string[] } | { ok: false; motivo: string } {
-  const git = (...a: string[]) => gitSeguro(wt, ...a);
+// Evidence verified by code (zero token cost): what the agent claims does not count.
+export function verifyEvidence(wt: string, base: string): { ok: true; author: string; sha: string; evidence: string[] } | { ok: false; reason: string } {
+  const git = (...a: string[]) => safeGit(wt, ...a);
   const sha = git("rev-parse", "HEAD");
-  if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, motivo: "nenhum commit novo no worktree" };
-  // npm test roda sobre a working tree: so vale o que esta commitado, sem sujeira e sem arquivo executavel ignorado.
-  const sujeira = git("status", "--porcelain", "--untracked-files=all", "--ignored").split("\n").filter(Boolean);
-  if (sujeira.some((l) => !l.startsWith("!!"))) return { ok: false, motivo: "worktree com alteracoes nao commitadas" };
-  if (sujeira.some((l) => EXECUTA_NO_HOST.test(l.slice(3)))) return { ok: false, motivo: "arquivo que executa codigo no host fora do commit (ignorado)" };
-  const arquivos = git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", `${base}..HEAD`).split("\0").filter(Boolean);
-  const proibidos = arquivos.filter((f) => PROIBIDOS.test(f));
-  if (proibidos.length) return { ok: false, motivo: `diff toca caminho proibido (${proibidos.join(", ")})` };
-  const perigosos = arquivos.filter((f) => EXECUTA_NO_HOST.test(f));
-  if (perigosos.length) return { ok: false, motivo: `diff toca arquivo que executa codigo no host (${perigosos.join(", ")}): exige revisao do CEO` };
+  if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, reason: "no new commit in the worktree" };
+  // npm test runs over the working tree: only what is committed counts, with no dirt and no ignored executable file.
+  const dirt = git("status", "--porcelain", "--untracked-files=all", "--ignored").split("\n").filter(Boolean);
+  if (dirt.some((l) => !l.startsWith("!!"))) return { ok: false, reason: "worktree has uncommitted changes" };
+  if (dirt.some((l) => RUNS_ON_HOST.test(l.slice(3)))) return { ok: false, reason: "file that runs code on the host is outside the commit (ignored)" };
+  const files = git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", `${base}..HEAD`).split("\0").filter(Boolean);
+  const forbidden = files.filter((f) => FORBIDDEN.test(f));
+  if (forbidden.length) return { ok: false, reason: `diff touches forbidden path (${forbidden.join(", ")})` };
+  const risky = files.filter((f) => RUNS_ON_HOST.test(f));
+  if (risky.length) return { ok: false, reason: `diff touches a file that runs code on the host (${risky.join(", ")}): requires CEO review` };
   try {
-    // execSync (shell) porque npm e npm.cmd no Windows; o comando e fixo.
-    execSync("npm test", { cwd: wt, env: envMinimo("dev"), stdio: "pipe", timeout: TIMEOUT_POR_NO_MS });
+    // execSync (shell) because npm is npm.cmd on Windows; the command is fixed.
+    execSync("npm test", { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
   } catch (e) {
-    return { ok: false, motivo: `npm test falhou: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}` };
+    return { ok: false, reason: `npm test failed: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}` };
   }
-  // npm test executa codigo do repo: se ele moveu o HEAD ou sujou a arvore, a verificacao nao vale.
-  if (git("rev-parse", "HEAD") !== sha) return { ok: false, motivo: "HEAD mudou durante a verificacao" };
-  if (git("status", "--porcelain", "--untracked-files=all").length) return { ok: false, motivo: "worktree alterado durante a verificacao" };
-  return { ok: true, sha, autor: git("log", "-1", "--format=%an", sha), evidencias: [`commit:${git("rev-parse", "--short", sha)}`, "testes:npm test ok"] };
+  // npm test runs repo code: if it moved HEAD or dirtied the tree, the verification is void.
+  if (git("rev-parse", "HEAD") !== sha) return { ok: false, reason: "HEAD changed during verification" };
+  if (git("status", "--porcelain", "--untracked-files=all").length) return { ok: false, reason: "worktree changed during verification" };
+  return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence: [`commit:${git("rev-parse", "--short", sha)}`, "tests:npm test ok"] };
 }
 
-// ===== Secao 2: defesa dentro de cada no =====
-const LEITURA = ["Read", "Grep", "Glob"];
-const SEGREDOS = [
+// ===== Section 2: defense inside each node =====
+const READ_ONLY = ["Read", "Grep", "Glob"];
+const SECRETS = [
   "Read(**/.env*)", "Edit(**/.env*)", "Write(**/.env*)",
   "Read(~/.ssh/**)", "Read(~/.claude/**)", "Read(~/.npmrc)", "Read(~/.git-credentials)", "Read(**/.git/config)",
 ];
-// Hooks, filtros e fsmonitor do git executam codigo: o dev nao pode escrever neles.
-const GIT_INTERNO = ["Write(**/.git/**)", "Edit(**/.git/**)", "Write(**/.git)", "Edit(**/.git)", "Write(**/.gitattributes)", "Edit(**/.gitattributes)", "Write(**/.gitmodules)", "Edit(**/.gitmodules)"];
+// Git hooks, filters and fsmonitor run code: the dev must not write to them.
+const GIT_INTERNALS = ["Write(**/.git/**)", "Edit(**/.git/**)", "Write(**/.git)", "Edit(**/.git)", "Write(**/.gitattributes)", "Edit(**/.gitattributes)", "Write(**/.gitmodules)", "Edit(**/.gitmodules)"];
 
-// tools = ferramentas built-in disponiveis; allow = auto-aprovadas; deny = sempre negadas.
-// Bash com allowlist e fraco por natureza: a barreira real e worktree sem .env + env sem credenciais.
-export const PERMISSOES: Record<Papel, { tools: string[]; allow: string[]; deny: string[] }> = {
-  triagem: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
-  planejador: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
-  reviewer: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
-  qa: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
-  devops: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
-  watchdog: { tools: LEITURA, allow: LEITURA, deny: SEGREDOS },
+// tools = built-in tools available; allow = auto-approved; deny = always denied.
+// Bash with an allowlist is inherently weak: the real barrier is a worktree without .env + an env without credentials.
+export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny: string[] }> = {
+  triage: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
+  planner: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
+  reviewer: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
+  qa: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
+  devops: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
+  watchdog: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   dev: {
-    tools: [...LEITURA, "Write", "Edit", SHELL],
-    allow: [...LEITURA, "Write(./**)", "Edit(./**)", ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*", "npm test*", "npm run typecheck*")],
-    deny: [...SEGREDOS, ...GIT_INTERNO, ...sh("npm exec*", "npx*", "npm config*", "npm publish*", "npm pkg*", "git push*", "git log*--output*", "git diff*--output*", "git remote*", "git config*", "rm *", "Remove-Item*", "del *", "rmdir*")],
+    tools: [...READ_ONLY, "Write", "Edit", SHELL],
+    allow: [...READ_ONLY, "Write(./**)", "Edit(./**)", ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*", "npm test*", "npm run typecheck*")],
+    deny: [...SECRETS, ...GIT_INTERNALS, ...sh("npm exec*", "npx*", "npm config*", "npm publish*", "npm pkg*", "git push*", "git log*--output*", "git diff*--output*", "git remote*", "git config*", "rm *", "Remove-Item*", "del *", "rmdir*")],
   },
 };
 
-const ENV_PERMITIDO = [
+const ALLOWED_ENV = [
   "PATH", "PATHEXT", "SystemRoot", "windir", "COMSPEC", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH",
   "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "LANG", "SystemDrive", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CLAUDE_CODE_GIT_BASH_PATH",
 ];
 
-// Whitelist: ANTHROPIC_*, tokens e qualquer outra variavel nao entram no subprocesso.
-// O git ganha identidade por papel (vira o autor_id verificavel) e perde credential helper.
-export function envMinimo(papel: Papel, src: NodeJS.ProcessEnv = process.env): Record<string, string> {
+// Whitelist: ANTHROPIC_*, tokens and any other variable stay out of the subprocess.
+// Git gets a per-role identity (it becomes the verifiable author_id) and loses the credential helper.
+export function minimalEnv(role: Role, src: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const k of ENV_PERMITIDO) if (src[k] !== undefined) env[k] = src[k];
+  for (const k of ALLOWED_ENV) if (src[k] !== undefined) env[k] = src[k];
   return {
     ...env,
     GIT_CONFIG_GLOBAL: devNull,
@@ -123,22 +123,22 @@ export function envMinimo(papel: Papel, src: NodeJS.ProcessEnv = process.env): R
     GIT_EXTERNAL_DIFF: "",
     NPM_CONFIG_USERCONFIG: devNull,
     GIT_TERMINAL_PROMPT: "0",
-    GIT_AUTHOR_NAME: `agente-${papel}`,
-    GIT_AUTHOR_EMAIL: `${papel}@orchestrator.local`,
-    GIT_COMMITTER_NAME: `agente-${papel}`,
-    GIT_COMMITTER_EMAIL: `${papel}@orchestrator.local`,
+    GIT_AUTHOR_NAME: `agent-${role}`,
+    GIT_AUTHOR_EMAIL: `${role}@orchestrator.local`,
+    GIT_COMMITTER_NAME: `agent-${role}`,
+    GIT_COMMITTER_EMAIL: `${role}@orchestrator.local`,
   };
 }
 
-// MODEL, EFFORT, TURNOS: <NOME>_<PAPEL> sobrescreve <NOME>_DEFAULT. Ausente = falha (fechado).
-export function lerEnv(nome: "MODEL" | "EFFORT" | "TURNOS", papel: Papel, src: NodeJS.ProcessEnv = process.env): string {
-  const v = src[`${nome}_${papel.toUpperCase()}`] ?? src[`${nome}_DEFAULT`];
-  if (!v) throw new Error(`env ausente: ${nome}_${papel.toUpperCase()} ou ${nome}_DEFAULT`);
+// MODEL, EFFORT, TURNS: <NAME>_<ROLE> overrides <NAME>_DEFAULT. Missing = failure (closed).
+export function readEnv(name: "MODEL" | "EFFORT" | "TURNS", role: Role, src: NodeJS.ProcessEnv = process.env): string {
+  const v = src[`${name}_${role.toUpperCase()}`] ?? src[`${name}_DEFAULT`];
+  if (!v) throw new Error(`missing env: ${name}_${role.toUpperCase()} or ${name}_DEFAULT`);
   return v;
 }
 
-export function permissoesArgs(papel: Papel): string[] {
-  const p = PERMISSOES[papel];
+export function permissionArgs(role: Role): string[] {
+  const p = PERMISSIONS[role];
   return [
     "--permission-mode", "dontAsk",
     "--tools", p.tools.join(","),

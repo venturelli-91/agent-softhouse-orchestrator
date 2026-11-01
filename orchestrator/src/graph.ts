@@ -1,207 +1,207 @@
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
-import { autoaprovacao, gitSeguro, MAX_REVISOES, MAX_TICKETS_ATIVOS, orcamentoEstourado, RECURSION_LIMIT, ticketsAtivos, tokens, verificarEvidencia } from "./guardrails.ts";
-import { publicar } from "./publicar.ts";
-import { FalhaDeNo, runAgent, type Consumo } from "./run-agent.ts";
+import { selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
+import { publish } from "./publish.ts";
+import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
 
-const ESPECIALIDADES = ["frontend", "backend", "fullstack", "mobile", "integracoes", "ia", "dados"] as const;
-const ARQUIVO_DEV: Record<(typeof ESPECIALIDADES)[number], string> = {
+const SPECIALTIES = ["frontend", "backend", "fullstack", "mobile", "integrations", "ai", "data"] as const;
+const DEV_FILE: Record<(typeof SPECIALTIES)[number], string> = {
   frontend: "dev-frontend", backend: "dev-backend", fullstack: "dev-fullstack", mobile: "dev-mobile",
-  integracoes: "dev-integracoes", ia: "engenheiro-ia", dados: "engenheiro-dados",
+  integrations: "dev-integrations", ai: "ai-engineer", data: "data-engineer",
 };
-const resumo = z.string().refine((s) => s.split("\n").length <= 10, "resumo acima de 10 linhas");
+const summary = z.string().refine((s) => s.split("\n").length <= 10, "summary over 10 lines");
 const FlagsSchema = z.object({
-  toca_seguranca: z.boolean(), toca_performance: z.boolean(), toca_ia: z.boolean(), toca_schema: z.boolean(),
-  toca_api_publica: z.boolean(), toca_permissoes: z.boolean(), toca_integracao_externa: z.boolean(), toca_custo: z.boolean(),
+  touches_security: z.boolean(), touches_performance: z.boolean(), touches_ai: z.boolean(), touches_schema: z.boolean(),
+  touches_public_api: z.boolean(), touches_permissions: z.boolean(), touches_external_integration: z.boolean(), touches_cost: z.boolean(),
 });
-const FLAGS_VAZIAS = Object.fromEntries(Object.keys(FlagsSchema.shape).map((k) => [k, false])) as z.infer<typeof FlagsSchema>;
+const EMPTY_FLAGS = Object.fromEntries(Object.keys(FlagsSchema.shape).map((k) => [k, false])) as z.infer<typeof FlagsSchema>;
 
-// Unico estado do grafo. `pedido`, `criterios`, `worktree` e `base` sao os extras minimos que o codigo precisa.
+// The graph's only state. `request`, `criteria`, `worktree` and `base` are the minimal extras the code needs.
 export const Ticket = z.object({
   id: z.string(),
-  pedido: z.string(),
+  request: z.string(),
   worktree: z.string(),
   base: z.string(),
-  titulo: z.string().default(""),
-  prioridade: z.enum(["P0", "P1", "P2", "Bug"]).default("P2"),
-  especialidade: z.enum(ESPECIALIDADES).default("fullstack"),
-  flags: FlagsSchema.default(FLAGS_VAZIAS),
-  criterios: z.array(z.string()).default([]),
-  status: z.string().default("novo"),
-  resumo: z.string().default(""),
-  autor_id: z.string().nullable().default(null),
-  revisor_id: z.string().nullable().default(null),
+  title: z.string().default(""),
+  priority: z.enum(["P0", "P1", "P2", "Bug"]).default("P2"),
+  specialty: z.enum(SPECIALTIES).default("fullstack"),
+  flags: FlagsSchema.default(EMPTY_FLAGS),
+  criteria: z.array(z.string()).default([]),
+  status: z.string().default("new"),
+  summary: z.string().default(""),
+  author_id: z.string().nullable().default(null),
+  reviewer_id: z.string().nullable().default(null),
   qa_id: z.string().nullable().default(null),
-  revisoes: z.number().default(0),
-  evidencias: z.array(z.string()).default([]),
-  historico: z.array(z.object({ no: z.string(), hora: z.string(), resultado: z.string(), ms: z.number(), consumo: z.custom<Consumo>().optional() })).default([]),
+  revisions: z.number().default(0),
+  evidence: z.array(z.string()).default([]),
+  history: z.array(z.object({ node: z.string(), time: z.string(), result: z.string(), ms: z.number(), usage: z.custom<Usage>().optional() })).default([]),
 });
 type T = z.infer<typeof Ticket>;
 
-const SaidaTriagem = z.object({
-  titulo: z.string(), prioridade: z.enum(["P0", "P1", "P2", "Bug"]), especialidade: z.enum(ESPECIALIDADES),
-  claro: z.boolean(), flags: FlagsSchema, criterios: z.array(z.string()), resumo,
+const TriageOutput = z.object({
+  title: z.string(), priority: z.enum(["P0", "P1", "P2", "Bug"]), specialty: z.enum(SPECIALTIES),
+  clear: z.boolean(), flags: FlagsSchema, criteria: z.array(z.string()), summary,
 });
-// `pergunta` vazia quando claro; senao e o que falta para o CEO responder.
-const SaidaPlano = SaidaTriagem.extend({ pergunta: z.string() });
-const SaidaDev = z.object({ resumo });
-const SaidaRevisao = z.object({ veredito: z.enum(["aprovado", "reprovado"]), comentarios: z.string(), resumo });
+// `question` is empty when clear; otherwise it is what the CEO needs to answer.
+const PlanOutput = TriageOutput.extend({ question: z.string() });
+const DevOutput = z.object({ summary });
+const ReviewOutput = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary });
 
-const log = (t: T, no: string, resultado: string, consumo?: Consumo) =>
-  [...t.historico, { no, hora: new Date().toISOString(), resultado, ms: consumo?.ms ?? 0, consumo }];
+const log = (t: T, node: string, result: string, usage?: Usage) =>
+  [...t.history, { node, time: new Date().toISOString(), result, ms: usage?.ms ?? 0, usage }];
 
-const sh = gitSeguro;
+const sh = safeGit;
 
-// Contexto minimo: so o que o papel precisa, nunca o historico de conversas.
-const contexto = (...partes: string[]) =>
-  [...partes, "Responda apenas no formato estruturado. `resumo`: ate 10 linhas, so o necessario para o proximo no."].join("\n\n");
-const dadosTicket = (t: T) => `Ticket ${t.id}: ${t.titulo}\nCriterios de aceite:\n${t.criterios.map((c) => `- ${c}`).join("\n")}\nResumo atual:\n${t.resumo}`;
+// Minimal context: only what the role needs, never the conversation history.
+const context = (...parts: string[]) =>
+  [...parts, "Answer only in the structured format. `summary`: up to 10 lines, only what the next node needs."].join("\n\n");
+const ticketData = (t: T) => `Ticket ${t.id}: ${t.title}\nAcceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
 const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
 
-const escalar = (t: T, nome: string, motivo: string): Partial<T> =>
-  ({ status: "escalado", resumo: `${nome}: ${motivo}`.split("\n").slice(0, 10).join("\n"), historico: log(t, nome, `escalado: ${motivo}`) });
+const escalate = (t: T, name: string, reason: string): Partial<T> =>
+  ({ status: "escalated", summary: `${name}: ${reason}`.split("\n").slice(0, 10).join("\n"), history: log(t, name, `escalated: ${reason}`) });
 
-// Falha do executor (erro, timeout, saida invalida) ou orcamento estourado nao quebra o grafo:
-// o ticket para e vai ao CEO via aprovacao_ceo.
-const protegido = (nome: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T): Promise<Partial<T>> => {
-  const estouro = orcamentoEstourado(t.historico.map((h) => h.consumo));
-  if (estouro) return escalar(t, nome, estouro);
+// An executor failure (error, timeout, invalid output) or an exceeded budget does not break the graph:
+// the ticket stops and goes to the CEO via ceo_approval.
+const guarded = (name: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T): Promise<Partial<T>> => {
+  const overrun = budgetExceeded(t.history.map((h) => h.usage));
+  if (overrun) return escalate(t, name, overrun);
   try {
     return await fn(t);
   } catch (e) {
-    if (!(e instanceof FalhaDeNo)) throw e;
-    return escalar(t, nome, e.message);
+    if (!(e instanceof NodeFailure)) throw e;
+    return escalate(t, name, e.message);
   }
 };
 
-const triagem = protegido("triagem", async (t) => {
-  const { saida, consumo } = await runAgent({ papel: "triagem", arquivos: ["triagem"], cwd: t.worktree, schema: SaidaTriagem, contexto: contexto(`Pedido do CEO: ${t.pedido}`) });
-  const { claro, resumo, ...resto } = saida;
-  return { ...resto, criterios: claro ? resto.criterios : [], resumo, status: claro ? "dev" : "ambiguo", historico: log(t, "triagem", claro ? "claro" : "ambiguo", consumo) };
+const triage = guarded("triage", async (t) => {
+  const { output, usage } = await runAgent({ role: "triage", files: ["triage"], cwd: t.worktree, schema: TriageOutput, context: context(`CEO request: ${t.request}`) });
+  const { clear, summary, ...rest } = output;
+  return { ...rest, criteria: clear ? rest.criteria : [], summary, status: clear ? "dev" : "ambiguous", history: log(t, "triage", clear ? "clear" : "ambiguous", usage) };
 });
 
-// analista-demanda -> product-manager -> tech-lead num unico turno de agente (tokens: um contexto so).
-// Sem criterios fechados nao ha ticket: a pergunta vai ao CEO e a resposta volta para ca.
-const planejador = protegido("planejador", async (t) => {
-  const { saida, consumo } = await runAgent({
-    papel: "planejador", arquivos: ["analista-demanda", "product-manager", "tech-lead"], cwd: t.worktree, schema: SaidaPlano,
-    contexto: contexto(`Pedido do CEO: ${t.pedido}`, `Triagem (pedido ambiguo): ${t.resumo}`, "Se faltar informacao que impede criterios de aceite verificaveis, claro=false e `pergunta` com o que falta."),
+// demand-analyst -> product-manager -> tech-lead in a single agent turn (tokens: one context only).
+// Without closed criteria there is no ticket: the question goes to the CEO and the answer comes back here.
+const planner = guarded("planner", async (t) => {
+  const { output, usage } = await runAgent({
+    role: "planner", files: ["demand-analyst", "product-manager", "tech-lead"], cwd: t.worktree, schema: PlanOutput,
+    context: context(`CEO request: ${t.request}`, `Triage (ambiguous request): ${t.summary}`, "If missing information prevents verifiable acceptance criteria, set clear=false and put what is missing in `question`."),
   });
-  const { claro, pergunta, ...plano } = saida;
-  if (!claro || !plano.criterios.length) return { status: "ambiguo", resumo: pergunta || plano.resumo, historico: log(t, "planejador", "ambiguo", consumo) };
-  return { ...plano, status: "dev", historico: log(t, "planejador", "claro", consumo) };
+  const { clear, question, ...plan } = output;
+  if (!clear || !plan.criteria.length) return { status: "ambiguous", summary: question || plan.summary, history: log(t, "planner", "ambiguous", usage) };
+  return { ...plan, status: "dev", history: log(t, "planner", "clear", usage) };
 });
 
-const dev = protegido("dev", async (t) => {
-  const { saida, consumo } = await runAgent({
-    papel: "dev", arquivos: [ARQUIVO_DEV[t.especialidade]], cwd: t.worktree, schema: SaidaDev,
-    contexto: contexto(dadosTicket(t), "Implemente no worktree atual, rode npm test e faca commit (git add/git commit). Nao faca push."),
+const dev = guarded("dev", async (t) => {
+  const { output, usage } = await runAgent({
+    role: "dev", files: [DEV_FILE[t.specialty]], cwd: t.worktree, schema: DevOutput,
+    context: context(ticketData(t), "Implement in the current worktree, run npm test and commit (git add/git commit). Do not push."),
   });
-  const v = verificarEvidencia(t.worktree, t.base);
-  if (!v.ok) return { status: "dev_falhou", revisoes: t.revisoes + 1, resumo: `verificacao: ${v.motivo}`, historico: log(t, "dev", `verificacao falhou`, consumo) };
-  return { status: "revisao", resumo: saida.resumo, autor_id: v.autor, evidencias: v.evidencias, historico: log(t, "dev", "commit verificado", consumo) };
+  const v = verifyEvidence(t.worktree, t.base);
+  if (!v.ok) return { status: "dev_failed", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
+  return { status: "review", summary: output.summary, author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
 });
 
-function revisor(nome: "reviewer" | "qa", arquivos: (t: T) => string[], proximo: string) {
-  return protegido(nome, async (t) => {
-    // Regras de fluxo em codigo: independencia e evidencia verificada antes de gastar token.
-    const quem = `agente-${nome}`;
-    const bloqueio = autoaprovacao(t.autor_id, quem);
-    if (bloqueio) throw new FalhaDeNo(bloqueio);
-    const v = t.evidencias.length ? verificarEvidencia(t.worktree, t.base) : { ok: false as const, motivo: "sem evidencias" };
-    if (!v.ok) throw new FalhaDeNo(`evidencia invalida: ${v.motivo}`);
-    const { saida, consumo } = await runAgent({
-      papel: nome, arquivos: arquivos(t), cwd: t.worktree, schema: SaidaRevisao,
-      contexto: contexto(dadosTicket(t), `Diff:\n${diff(t)}`),
+function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: string) {
+  return guarded(name, async (t) => {
+    // Flow rules in code: independence and verified evidence before spending tokens.
+    const who = `agent-${name}`;
+    const block = selfApproval(t.author_id, who);
+    if (block) throw new NodeFailure(block);
+    const v = t.evidence.length ? verifyEvidence(t.worktree, t.base) : { ok: false as const, reason: "no evidence" };
+    if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
+    const { output, usage } = await runAgent({
+      role: name, files: files(t), cwd: t.worktree, schema: ReviewOutput,
+      context: context(ticketData(t), `Diff:\n${diff(t)}`),
     });
-    const id = nome === "reviewer" ? { revisor_id: `agente-${nome}` } : { qa_id: `agente-${nome}` };
-    if (saida.veredito === "aprovado") return { ...id, status: proximo, resumo: saida.resumo, historico: log(t, nome, "aprovado", consumo) };
-    return { status: "dev_falhou", revisoes: t.revisoes + 1, resumo: saida.comentarios.split("\n").slice(0, 10).join("\n"), historico: log(t, nome, "reprovado", consumo) };
+    const id = name === "reviewer" ? { reviewer_id: `agent-${name}` } : { qa_id: `agent-${name}` };
+    if (output.verdict === "approved") return { ...id, status: next, summary: output.summary, history: log(t, name, "approved", usage) };
+    return { status: "dev_failed", revisions: t.revisions + 1, summary: output.comments.split("\n").slice(0, 10).join("\n"), history: log(t, name, "rejected", usage) };
   });
 }
-const reviewer = revisor("reviewer", (t) => [
+const reviewer = reviewStep("reviewer", (t) => [
   "code-reviewer",
-  ...(t.flags.toca_seguranca ? ["seguranca"] : []),
-  ...(t.flags.toca_performance ? ["performance"] : []),
-  ...(t.flags.toca_ia ? ["engenheiro-evals"] : []),
+  ...(t.flags.touches_security ? ["security"] : []),
+  ...(t.flags.touches_performance ? ["performance"] : []),
+  ...(t.flags.touches_ai ? ["evals-engineer"] : []),
 ], "qa");
-const qa = revisor("qa", () => ["qa-automation"], "publicar");
+const qa = reviewStep("qa", () => ["qa-automation"], "publish");
 
-// Push da branch e PR (rascunho) pelo codigo, nao pelo agente; so com a evidencia ainda valida.
-const publicarNo = protegido("publicar", async (t) => {
-  const v = t.evidencias.length ? verificarEvidencia(t.worktree, t.base) : { ok: false as const, motivo: "sem evidencias" };
-  if (!v.ok) throw new FalhaDeNo(`evidencia invalida: ${v.motivo}`);
-  const corpo = [t.resumo, "Criterios:", ...t.criterios.map((c) => `- ${c}`), `Evidencias: ${v.evidencias.join(", ")}`].join("\n\n");
-  const pr = publicar({ cwd: t.worktree, id: t.id, sha: v.sha, titulo: `${t.id}: ${t.titulo}`, corpo });
-  return { status: "aprovacao", evidencias: [...v.evidencias, pr], historico: log(t, "publicar", pr) };
+// Branch push and (draft) PR done by code, not by the agent; only while the evidence still holds.
+const publishNode = guarded("publish", async (t) => {
+  const v = t.evidence.length ? verifyEvidence(t.worktree, t.base) : { ok: false as const, reason: "no evidence" };
+  if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
+  const body = [t.summary, "Criteria:", ...t.criteria.map((c) => `- ${c}`), `Evidence: ${v.evidence.join(", ")}`].join("\n\n");
+  const pr = publish({ cwd: t.worktree, id: t.id, sha: v.sha, title: `${t.id}: ${t.title}`, body });
+  return { status: "approval", evidence: [...v.evidence, pr], history: log(t, "publish", pr) };
 });
 
-// Merge/deploy so depois do CEO; sem permissao de escrita, o agente descreve o plano e o rollback.
-const devops = protegido("devops", async (t) => {
-  const { saida, consumo } = await runAgent({
-    papel: "devops", arquivos: ["devops-sre"], cwd: t.worktree, schema: SaidaDev,
-    contexto: contexto(dadosTicket(t), "O CEO aprovou. Simulacao: NAO execute deploy nem merge. Descreva status, plano de rollback e observabilidade."),
+// Merge/deploy only after the CEO; with no write permission, the agent describes the plan and the rollback.
+const devops = guarded("devops", async (t) => {
+  const { output, usage } = await runAgent({
+    role: "devops", files: ["devops-sre"], cwd: t.worktree, schema: DevOutput,
+    context: context(ticketData(t), "The CEO approved. Simulation: do NOT run a deploy or a merge. Describe status, rollback plan and observability."),
   });
-  return { status: "deploy_simulado", resumo: saida.resumo, historico: log(t, "devops", "deploy simulado", consumo) };
+  return { status: "simulated_deploy", summary: output.summary, history: log(t, "devops", "simulated deploy", usage) };
 });
 
-// Unico ponto de merge/deploy e de escalada. Aprovacao so conta se a evidencia ainda se sustenta.
-const aprovacaoCeo = async (t: T): Promise<Partial<T>> => {
-  const v = t.status === "aprovacao" && t.evidencias.length ? verificarEvidencia(t.worktree, t.base) : null;
-  const motivo = t.status === "aprovacao" ? (v?.ok ? null : `evidencia invalida: ${v ? v.motivo : "sem evidencias"}`)
-    : t.status === "dev_falhou" ? `teto de ${MAX_REVISOES} revisoes atingido: ${t.resumo}` : `${t.status}: ${t.resumo}`;
+// The only merge/deploy and escalation point. Approval only counts if the evidence still holds.
+const ceoApproval = async (t: T): Promise<Partial<T>> => {
+  const v = t.status === "approval" && t.evidence.length ? verifyEvidence(t.worktree, t.base) : null;
+  const reason = t.status === "approval" ? (v?.ok ? null : `invalid evidence: ${v ? v.reason : "no evidence"}`)
+    : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
-    tipo: motivo ? "escalada" : "aprovacao", motivo, ticket: t.id, titulo: t.titulo, resumo: t.resumo, evidencias: t.evidencias,
-    flags_ativas: Object.entries(t.flags).filter(([, ativa]) => ativa).map(([k]) => k),
+    type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, evidence: t.evidence,
+    active_flags: Object.entries(t.flags).filter(([, active]) => active).map(([k]) => k),
   }) as string;
-  const h = (res: string) => log(t, "aprovacao_ceo", res);
-  if (!motivo) {
-    if (r === "aprovar") return { status: "aprovado", historico: h("aprovado") };
-    return { status: "dev_falhou", revisoes: t.revisoes + 1, resumo: `CEO rejeitou: ${r}`.slice(0, 500), historico: h("rejeitado") };
+  const h = (res: string) => log(t, "ceo_approval", res);
+  if (!reason) {
+    if (r === "approve") return { status: "approved", history: h("approved") };
+    return { status: "dev_failed", revisions: t.revisions + 1, summary: `CEO rejected: ${r}`.slice(0, 500), history: h("rejected") };
   }
-  if (r === "abortar") return { status: "abortado", historico: h("abortado") };
-  // Falta informacao: a resposta do CEO complementa o pedido e o planejador tenta de novo.
-  if (t.status === "ambiguo") return { status: "replanejar", pedido: `${t.pedido}\n\nEsclarecimento do CEO: ${r}`, historico: h("esclarecido") };
-  // Demais escaladas: o CEO instrui o dev (so se ja existem criterios).
-  if (!t.criterios.length) return { status: "abortado", historico: h("abortado") };
-  return { status: "dev_falhou", revisoes: 0, resumo: `CEO instruiu: ${r}`.slice(0, 500), historico: h("retomado") };
+  if (r === "abort") return { status: "aborted", history: h("aborted") };
+  // Missing information: the CEO's answer supplements the request and the planner tries again.
+  if (t.status === "ambiguous") return { status: "replan", request: `${t.request}\n\nCEO clarification: ${r}`, history: h("clarified") };
+  // Any other escalation: the CEO instructs the dev (only if criteria already exist).
+  if (!t.criteria.length) return { status: "aborted", history: h("aborted") };
+  return { status: "dev_failed", revisions: 0, summary: `CEO instructed: ${r}`.slice(0, 500), history: h("resumed") };
 };
 
-// Laco de revisao: acima do teto, ou em qualquer escalada/ambiguidade, o ticket vai ao CEO.
-const rota = (ok: string, no: string) => (t: T) =>
-  t.status === ok ? no : t.status === "dev_falhou" && t.revisoes < MAX_REVISOES ? "dev" : "aprovacao_ceo";
-const aposTriagem = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguo" ? "planejador" : "aprovacao_ceo");
-const aposCeo = (t: T) => (t.status === "dev_falhou" ? "dev" : t.status === "replanejar" ? "planejador" : t.status === "aprovado" ? "devops" : END);
+// Review loop: above the cap, or on any escalation/ambiguity, the ticket goes to the CEO.
+const route = (ok: string, node: string) => (t: T) =>
+  t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval";
+const afterTriage = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguous" ? "planner" : "ceo_approval");
+const afterCeo = (t: T) => (t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "devops" : END);
 
-export function montarGrafo(checkpointer = new MemorySaver()) {
+export function buildGraph(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
-    .addNode("triagem", triagem).addNode("planejador", planejador).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publicar", publicarNo).addNode("aprovacao_ceo", aprovacaoCeo).addNode("devops", devops)
-    .addEdge(START, "triagem")
-    .addConditionalEdges("triagem", aposTriagem, ["dev", "planejador", "aprovacao_ceo"])
-    .addConditionalEdges("planejador", rota("dev", "dev"), ["dev", "aprovacao_ceo"])
-    .addConditionalEdges("dev", rota("revisao", "reviewer"), ["reviewer", "dev", "aprovacao_ceo"])
-    .addConditionalEdges("reviewer", rota("qa", "qa"), ["qa", "dev", "aprovacao_ceo"])
-    .addConditionalEdges("qa", rota("publicar", "publicar"), ["publicar", "dev", "aprovacao_ceo"])
-    .addConditionalEdges("publicar", rota("aprovacao", "aprovacao_ceo"), ["aprovacao_ceo"])
-    .addConditionalEdges("aprovacao_ceo", aposCeo, ["dev", "planejador", "devops", END])
+    .addNode("triage", triage).addNode("planner", planner).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publish", publishNode).addNode("ceo_approval", ceoApproval).addNode("devops", devops)
+    .addEdge(START, "triage")
+    .addConditionalEdges("triage", afterTriage, ["dev", "planner", "ceo_approval"])
+    .addConditionalEdges("planner", route("dev", "dev"), ["dev", "ceo_approval"])
+    .addConditionalEdges("dev", route("review", "reviewer"), ["reviewer", "dev", "ceo_approval"])
+    .addConditionalEdges("reviewer", route("qa", "qa"), ["qa", "dev", "ceo_approval"])
+    .addConditionalEdges("qa", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
+    .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval"])
+    .addConditionalEdges("ceo_approval", afterCeo, ["dev", "planner", "devops", END])
     .addEdge("devops", END)
     .compile({ checkpointer });
 }
 
 export const config = (id: string) => ({ configurable: { thread_id: id }, recursionLimit: RECURSION_LIMIT });
-export const retomar = (resposta: string) => new Command({ resume: resposta });
+export const resume = (answer: string) => new Command({ resume: answer });
 
-export function criarWorktree(repo: string, id: string, dir: string): { worktree: string; base: string } {
-  if (ticketsAtivos(repo) >= MAX_TICKETS_ATIVOS) throw new Error(`limite de ${MAX_TICKETS_ATIVOS} tickets ativos atingido`);
+export function createWorktree(repo: string, id: string, dir: string): { worktree: string; base: string } {
+  if (activeTickets(repo) >= MAX_ACTIVE_TICKETS) throw new Error(`limit of ${MAX_ACTIVE_TICKETS} active tickets reached`);
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   return { worktree: dir, base: sh(repo, "rev-parse", "HEAD") };
 }
 
-export function relatorio(t: T): string {
-  const linhas = t.historico.filter((h) => h.consumo).map((h) => {
-    const c = h.consumo!;
-    return `${h.no.padEnd(10)} tokens=${tokens(c)} (ctx ${c.cache_create + c.cache_read + c.tokens_in}, saida ${c.tokens_out}) turnos=${c.turnos} ${(c.ms / 1000).toFixed(1)}s US$${c.custo_usd.toFixed(3)}`;
+export function report(t: T): string {
+  const lines = t.history.filter((h) => h.usage).map((h) => {
+    const c = h.usage!;
+    return `${h.node.padEnd(10)} tokens=${tokens(c)} (ctx ${c.cache_create + c.cache_read + c.tokens_in}, output ${c.tokens_out}) turns=${c.turns} ${(c.ms / 1000).toFixed(1)}s US$${c.cost_usd.toFixed(3)}`;
   });
-  const total = t.historico.reduce((a, h) => ({ tok: a.tok + (h.consumo ? tokens(h.consumo) : 0), usd: a.usd + (h.consumo?.custo_usd ?? 0), ms: a.ms + h.ms }), { tok: 0, usd: 0, ms: 0 });
-  return [...linhas, `TOTAL ${t.id} status=${t.status} revisoes=${t.revisoes} tokens=${total.tok} ${(total.ms / 1000).toFixed(1)}s US$${total.usd.toFixed(3)}`].join("\n");
+  const total = t.history.reduce((a, h) => ({ tok: a.tok + (h.usage ? tokens(h.usage) : 0), usd: a.usd + (h.usage?.cost_usd ?? 0), ms: a.ms + h.ms }), { tok: 0, usd: 0, ms: 0 });
+  return [...lines, `TOTAL ${t.id} status=${t.status} revisions=${t.revisions} tokens=${total.tok} ${(total.ms / 1000).toFixed(1)}s US$${total.usd.toFixed(3)}`].join("\n");
 }

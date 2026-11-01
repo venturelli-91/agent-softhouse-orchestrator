@@ -1,31 +1,31 @@
-// Tracer bullet: ticket trivial num repo-fixture descartavel, com o modelo real e worktree isolado.
+// Tracer bullet: trivial ticket in a disposable fixture repo, with the real model and an isolated worktree.
 import { mkdtempSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { criarFixture } from "./fixture.ts";
-import { config, criarWorktree, montarGrafo, relatorio, retomar } from "../src/graph.ts";
+import { createFixture } from "./fixture.ts";
+import { config, createWorktree, buildGraph, report, resume } from "../src/graph.ts";
 
-const raiz = mkdtempSync(join(tmpdir(), "orch-"));
-const repo = criarFixture(raiz);
+const root = mkdtempSync(join(tmpdir(), "orch-"));
+const repo = createFixture(root);
 
 const id = "T-001";
-const wt = criarWorktree(repo, id, join(raiz, `wt-${id}`));
-const grafo = montarGrafo();
+const wt = createWorktree(repo, id, join(root, `wt-${id}`));
+const graph = buildGraph();
 const cfg = config(id);
-const pedido = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "Trocar o texto do botao 'Enviar' para 'Enviar pedido' na tela de checkout (checkout.html).";
+const request = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "Change the text of the 'Submit' button to 'Submit order' on the checkout screen (checkout.html).";
 
-let r = await grafo.invoke({ id, pedido, ...wt }, cfg);
-const pausa = (x: unknown) => (x as { __interrupt__?: { value: unknown }[] }).__interrupt__;
-if (pausa(r)) {
-  console.log(JSON.stringify(pausa(r)![0].value, null, 1));
+let r = await graph.invoke({ id, request, ...wt }, cfg);
+const paused = (x: unknown) => (x as { __interrupt__?: { value: unknown }[] }).__interrupt__;
+if (paused(r)) {
+  console.log(JSON.stringify(paused(r)![0].value, null, 1));
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const resp = (await rl.question("CEO (aprovar / motivo da rejeicao): ")).trim();
+  const answer = (await rl.question("CEO (approve / rejection reason): ")).trim();
   rl.close();
-  r = await grafo.invoke(retomar(resp) as never, cfg);
+  r = await graph.invoke(resume(answer) as never, cfg);
 }
-console.log(relatorio(r));
-if (r.status !== "deploy_simulado") console.log(`motivo (${r.status}): ${r.resumo}`);
-if (process.argv.includes("--mermaid")) console.log((await grafo.getGraphAsync()).drawMermaid());
-console.log(`worktree mantido em ${raiz} (remova com rm -rf)`);
-if (process.argv.includes("--limpar")) rmSync(raiz, { recursive: true, force: true });
+console.log(report(r));
+if (r.status !== "simulated_deploy") console.log(`reason (${r.status}): ${r.summary}`);
+if (process.argv.includes("--mermaid")) console.log((await graph.getGraphAsync()).drawMermaid());
+console.log(`worktree kept at ${root} (remove with rm -rf)`);
+if (process.argv.includes("--clean")) rmSync(root, { recursive: true, force: true });

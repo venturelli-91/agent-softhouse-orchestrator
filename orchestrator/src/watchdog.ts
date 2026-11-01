@@ -3,17 +3,17 @@ import { tokens } from "./guardrails.ts";
 import { runAgent } from "./run-agent.ts";
 import type { Ticket } from "./graph.ts";
 
-const SaidaWatchdog = z.object({ alertas: z.array(z.string()), resumo: z.string() });
+const WatchdogOutput = z.object({ alerts: z.array(z.string()), summary: z.string() });
 
-// Fora do caminho principal, por comando. Somente leitura: recebe so uma linha por ticket, derivada do estado.
+// Off the main path, on demand. Read-only: receives just one line per ticket, derived from the state.
 export async function watchdog(tickets: z.infer<typeof Ticket>[], cwd: string) {
-  const linhas = tickets.map((t) => {
-    const tok = t.historico.reduce((a, h) => a + (h.consumo ? tokens(h.consumo) : 0), 0);
-    return `${t.id} [${t.prioridade}] status=${t.status} revisoes=${t.revisoes} tokens=${tok} ultimo=${t.historico.at(-1)?.no ?? "-"}:${t.historico.at(-1)?.resultado ?? "-"}`;
+  const lines = tickets.map((t) => {
+    const tok = t.history.reduce((a, h) => a + (h.usage ? tokens(h.usage) : 0), 0);
+    return `${t.id} [${t.priority}] status=${t.status} revisions=${t.revisions} tokens=${tok} last=${t.history.at(-1)?.node ?? "-"}:${t.history.at(-1)?.result ?? "-"}`;
   });
-  const { saida, consumo } = await runAgent({
-    papel: "watchdog", arquivos: ["watchdog"], cwd, schema: SaidaWatchdog,
-    contexto: `Tickets:\n${linhas.join("\n")}\n\nApenas leitura. Liste alertas (bloqueados, laco de revisao, custo anormal, P0 parado). Responda no formato estruturado.`,
+  const { output, usage } = await runAgent({
+    role: "watchdog", files: ["watchdog"], cwd, schema: WatchdogOutput,
+    context: `Tickets:\n${lines.join("\n")}\n\nRead-only. List alerts (blocked, review loop, abnormal cost, stalled P0). Answer in the structured format.`,
   });
-  return { ...saida, consumo };
+  return { ...output, usage };
 }
