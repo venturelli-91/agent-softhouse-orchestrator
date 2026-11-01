@@ -18,6 +18,12 @@ What the evals in `08-real-repo-validation.md` turned into, and what was left ou
   escalated. No model, no tokens; `--llm` adds the Watchdog agent.
 - **Model choice per stage** is data now: `npm run eval:review|eval:stages|eval:dev`.
 
+## Daily use on real repos
+
+- **Test command per repo** (`src/repo-config.ts`): `.orchestrator.json` `test` replaces the hard-coded `npm test` in the evidence check and in the dev's allowlist. Only a plain command is accepted (no `;`, `&&`, pipes, quotes, expansions). Files that run code on the host (`package.json`, `conftest.py`, `pyproject.toml`, `Makefile`...) still send the ticket to the CEO instead of running.
+- **Merge after approval** (`merge_pr` node, `merge: auto` only): squash-merge of the commit that was published and approved (`approved_sha`, set by `publish`; a different HEAD voids the approval and the ticket is re-reviewed). CI must show at least one passing check, none failing or pending, and the same set of checks on two consecutive polls; no checks at all means no automatic merge. `gh` runs outside the local repo, so it does not touch your checkout. Validated for real on the sandbox repo (PR #6 merged after CI, branch deleted). Two earlier problems found there: `gh pr merge` merged but failed on local branch cleanup (reported as a failure), and the 5-active-tickets limit was hit by worktrees left over from old tickets.
+- **Not done yet:** global `orch` command (run/status/approve/reject/clean/init from any repo), daily token cap, cleanup of finished worktrees.
+
 ## Left out on purpose
 
 | Item | Why |
