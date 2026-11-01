@@ -1,19 +1,24 @@
-// Tracer bullet: trivial ticket in a disposable fixture repo, with the real model and an isolated worktree.
+// Tracer bullet: one ticket with the real model and an isolated worktree, in a disposable fixture or in --repo <path>.
 import { mkdtempSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
 import { createFixture } from "./fixture.ts";
 import { config, createWorktree, buildGraph, report, resume } from "../src/graph.ts";
 
+const { values, positionals } = parseArgs({
+  allowPositionals: true,
+  options: { repo: { type: "string" }, id: { type: "string", default: "T-001" }, mermaid: { type: "boolean" }, clean: { type: "boolean" } },
+});
 const root = mkdtempSync(join(tmpdir(), "orch-"));
-const repo = createFixture(root);
+const repo = values.repo ?? createFixture(root);
 
-const id = "T-001";
+const id = values.id!;
 const wt = createWorktree(repo, id, join(root, `wt-${id}`));
 const graph = buildGraph();
 const cfg = config(id);
-const request = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "Change the text of the 'Submit' button to 'Submit order' on the checkout screen (checkout.html).";
+const request = positionals[0] ?? "Change the text of the 'Submit' button to 'Submit order' on the checkout screen (checkout.html).";
 
 let r = await graph.invoke({ id, request, ...wt }, cfg);
 const paused = (x: unknown) => (x as { __interrupt__?: { value: unknown }[] }).__interrupt__;
@@ -26,6 +31,6 @@ if (paused(r)) {
 }
 console.log(report(r));
 if (r.status !== "simulated_deploy") console.log(`reason (${r.status}): ${r.summary}`);
-if (process.argv.includes("--mermaid")) console.log((await graph.getGraphAsync()).drawMermaid());
+if (values.mermaid) console.log((await graph.getGraphAsync()).drawMermaid());
 console.log(`worktree kept at ${root} (remove with rm -rf)`);
-if (process.argv.includes("--clean")) rmSync(root, { recursive: true, force: true });
+if (values.clean) rmSync(root, { recursive: true, force: true });
