@@ -4,31 +4,44 @@ import { devNull, safeGit } from "./guardrails.ts";
 import { NodeFailure } from "./run-agent.ts";
 
 // `sha` is the commit the verification checked; the target ref is derived from the id, never from HEAD.
-export type Pub = { cwd: string; id: string; sha: string; title: string; body: string };
+export type Pub = { cwd: string; id: string; sha: string; title: string; body: string; remote: string; baseRepo: string; disclosure: boolean };
 // Returns the evidence (e.g. "pr:<url>"). Push and PR are done by the graph's code, never by the agent.
 export interface Publisher {
   publish(p: Pub): string;
   // Squash-merge a PR already approved by the CEO. Throws unless the CI is green and the PR is still at `sha`.
-  merge?(m: { cwd: string; pr: string; sha: string }): Promise<string>;
+  merge?(m: { cwd: string; pr: string; sha: string; baseRepo?: string }): Promise<string>;
 }
 
 const gh = (cwd: string, ...args: string[]) => execFileSync("gh", args, { cwd, encoding: "utf8" }).trim();
 
-// The ticket/<id> branch goes to origin and the PR is always a draft: merging is up to the CEO.
+export const DISCLOSURE = "Produced with an agent orchestrator and approved by a human before publishing.";
+export const prBody = (body: string, disclosure: boolean) => (disclosure ? `${body}\n\n---\n${DISCLOSURE}` : body);
+export const remoteOwner = (url: string) => url.replace(/\.git$/, "").split(/[/:]/).slice(-2)[0];
+export function ghPrCreateArgs(p: Pub, owner: string): string[] {
+  const branch = `ticket/${p.id}`;
+  return [
+    "pr", "create", "--draft", ...(p.baseRepo ? ["--repo", p.baseRepo] : []),
+    "--head", p.baseRepo ? `${owner}:${branch}` : branch, "--title", p.title, "--body", prBody(p.body, p.disclosure),
+  ];
+}
+
+// The ticket/<id> branch goes to the ticket's push remote and the PR is always a draft: merging is up to the CEO.
 const github: Publisher = {
-  publish({ cwd, id, sha, title, body }) {
-    const branch = `ticket/${id}`;
-    safeGit(cwd, "-c", `core.hooksPath=${devNull}`, "push", "--no-verify", "origin", `${sha}:refs/heads/${branch}`);
+  publish(p) {
+    const branch = `ticket/${p.id}`;
+    safeGit(p.cwd, "-c", `core.hooksPath=${devNull}`, "push", "--no-verify", p.remote, `${p.sha}:refs/heads/${branch}`);
+    const repo = p.baseRepo ? ["--repo", p.baseRepo] : [];
     let url: string;
     try {
-      url = gh(cwd, "pr", "view", branch, "--json", "url", "-q", ".url");
+      url = gh(p.cwd, "pr", "view", branch, ...repo, "--json", "url", "-q", ".url");
     } catch {
-      url = gh(cwd, "pr", "create", "--draft", "--head", branch, "--title", title, "--body", body);
+      url = gh(p.cwd, ...ghPrCreateArgs(p, remoteOwner(safeGit(p.cwd, "remote", "get-url", p.remote).trim())));
     }
     return `pr:${url.split("\n").pop()}`;
   },
 };
 
+type Merge = { cwd: string; pr: string; sha: string; baseRepo?: string };
 type Check = { bucket: string };
 
 // CI verdict from two consecutive polls. Green needs at least one passing check, none failing or pending, and the
@@ -41,9 +54,10 @@ export function ciVerdict(prev: number | null, checks: Check[]): "fail" | "wait"
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 // Waits for the CI (MERGE_WAIT_MS, default 10 min). No checks at all = no proof, so no automatic merge.
-async function mergeGithub({ cwd, pr, sha }: { cwd: string; pr: string; sha: string }): Promise<string> {
+async function mergeGithub({ cwd, pr, sha, baseRepo }: Merge): Promise<string> {
   // A retry after a merge that went through but failed afterwards must not fail again.
-  const merged = JSON.parse(gh(cwd, "pr", "view", pr, "--json", "state,headRefOid")) as { state: string; headRefOid: string };
+  const repo = baseRepo ? ["--repo", baseRepo] : [];
+  const merged = JSON.parse(gh(cwd, "pr", "view", pr, ...repo, "--json", "state,headRefOid")) as { state: string; headRefOid: string };
   if (merged.state === "MERGED" && merged.headRefOid === sha) return `merged:${pr}`;
   const head = merged.headRefOid;
   if (head !== sha) throw new Error(`PR head ${head.slice(0, 7)} is not the verified commit ${sha.slice(0, 7)}`);
@@ -52,7 +66,7 @@ async function mergeGithub({ cwd, pr, sha }: { cwd: string; pr: string; sha: str
   for (;;) {
     let checks: Check[] = [];
     try {
-      checks = JSON.parse(gh(cwd, "pr", "checks", pr, "--json", "bucket"));
+      checks = JSON.parse(gh(cwd, "pr", "checks", pr, ...repo, "--json", "bucket"));
     } catch {
       // gh exits non-zero when there are no checks yet
     }
@@ -65,8 +79,8 @@ async function mergeGithub({ cwd, pr, sha }: { cwd: string; pr: string; sha: str
   }
   // Outside any local repo: gh would otherwise try to check out the base branch here (and fail if another worktree has it).
   // No --admin and no --auto: branch protection on the remote still decides.
-  gh(tmpdir(), "pr", "ready", pr);
-  gh(tmpdir(), "pr", "merge", pr, "--squash", "--delete-branch", "--match-head-commit", sha);
+  gh(tmpdir(), "pr", "ready", pr, ...repo);
+  gh(tmpdir(), "pr", "merge", pr, ...repo, "--squash", "--delete-branch", "--match-head-commit", sha);
   return `merged:${pr}`;
 }
 github.merge = mergeGithub;
@@ -74,8 +88,8 @@ github.merge = mergeGithub;
 const publishers: Record<string, Publisher> = { github, none: { publish: () => "pr:none" } };
 export const registerPublisher = (name: string, p: Publisher) => void (publishers[name] = p);
 
-export async function mergePr(m: { cwd: string; pr: string; sha: string }): Promise<string> {
-  const pub = publishers[process.env.PUBLISHER ?? ""];
+export async function mergePr(m: Merge, publisher?: string): Promise<string> {
+  const pub = publishers[publisher || process.env.PUBLISHER || ""];
   if (!pub?.merge) throw new NodeFailure("merge: the configured PUBLISHER cannot merge");
   try {
     return await pub.merge(m);
@@ -85,8 +99,8 @@ export async function mergePr(m: { cwd: string; pr: string; sha: string }): Prom
 }
 
 // Missing PUBLISHER = failure (closed): nothing goes to the remote by default.
-export function publish(p: Pub): string {
-  const name = process.env.PUBLISHER;
+export function publish(p: Pub, publisher?: string): string {
+  const name = publisher || process.env.PUBLISHER;
   if (!name) throw new NodeFailure("missing env: PUBLISHER");
   const pub = publishers[name];
   if (!pub) throw new NodeFailure(`unknown PUBLISHER: ${name}`);

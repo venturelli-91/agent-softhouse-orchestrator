@@ -150,7 +150,7 @@ const publishNode = guarded("publish", async (t) => {
   const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : { ok: false as const, reason: "no evidence" };
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   const body = [t.summary, "Criteria:", ...t.criteria.map((c) => `- ${c}`), `Evidence: ${v.evidence.join(", ")}`].join("\n\n");
-  const pr = publish({ cwd: t.worktree, id: t.id, sha: v.sha, title: `${t.id}: ${t.title}`, body });
+  const pr = publish({ cwd: t.worktree, id: t.id, sha: v.sha, title: `${t.id}: ${t.title}`, body, remote: t.push_remote, baseRepo: t.base_repo, disclosure: t.disclosure }, t.publisher);
   return { status: "approval", approved_sha: v.sha, evidence: [...v.evidence, pr], history: log(t, "publish", pr) };
 });
 
@@ -172,7 +172,7 @@ const mergeNode = guarded("merge_pr", async (t) => {
   if (!t.approved_sha || v.sha !== t.approved_sha) throw new NodeFailure("merge: commit changed since it was published");
   const pr = t.evidence.find((e) => e.startsWith("pr:"))?.slice(3);
   if (!pr || pr === "none") throw new NodeFailure("merge: no PR to merge");
-  const merged = await mergePr({ cwd: t.worktree, pr, sha: t.approved_sha });
+  const merged = await mergePr({ cwd: t.worktree, pr, sha: t.approved_sha, baseRepo: t.base_repo }, t.publisher);
   return { evidence: [...t.evidence, merged], history: log(t, "merge_pr", merged) };
 });
 
