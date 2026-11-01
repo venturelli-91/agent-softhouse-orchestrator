@@ -9,6 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "orch": "node scripts/orch.ts",
     "tracer": "node --env-file=.env scripts/tracer.ts",
     "watchdog": "node --env-file=.env scripts/watchdog.ts",
     "eval:review": "node --env-file=.env scripts/eval-review.ts",
@@ -24,5 +25,8 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
+  },
+  "bin": {
+    "orch": "scripts/orch.ts"
   }
 }
