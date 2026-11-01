@@ -1,39 +1,39 @@
 # Orchestrator
 
-Controle de fluxo em código, não em prompt: um grafo LangGraph.js orquestra agentes `claude -p` com guardrails verificados por código.
+Flow control in code, not in prompts: a LangGraph.js graph orchestrates `claude -p` agents with code-verified guardrails.
 
 ```mermaid
 graph TD;
-  triagem(triagem)
-  planejador(planejador)
+  triage(triage)
+  planner(planner)
   dev(dev)
   reviewer(reviewer)
   qa(qa)
-  publicar(publicar)
-  aprovacao_ceo(aprovacao_ceo)
+  publish(publish)
+  ceo_approval(ceo_approval)
   devops(devops)
-  triagem -.-> dev;
-  triagem -.-> planejador;
-  triagem -.-> aprovacao_ceo;
-  planejador -.-> dev;
-  planejador -.-> aprovacao_ceo;
+  triage -.-> dev;
+  triage -.-> planner;
+  triage -.-> ceo_approval;
+  planner -.-> dev;
+  planner -.-> ceo_approval;
   dev -.-> reviewer;
-  dev -.-> aprovacao_ceo;
+  dev -.-> ceo_approval;
   reviewer -.-> qa;
   reviewer -.-> dev;
-  reviewer -.-> aprovacao_ceo;
-  qa -.-> publicar;
+  reviewer -.-> ceo_approval;
+  qa -.-> publish;
   qa -.-> dev;
-  qa -.-> aprovacao_ceo;
-  publicar -.-> aprovacao_ceo;
-  aprovacao_ceo -.-> dev;
-  aprovacao_ceo -.-> planejador;
-  aprovacao_ceo -.-> devops;
+  qa -.-> ceo_approval;
+  publish -.-> ceo_approval;
+  ceo_approval -.-> dev;
+  ceo_approval -.-> planner;
+  ceo_approval -.-> devops;
   dev -.-> dev;
 ```
 
-- **Rodar:** `cp .env.example .env && npm ci && npm test`; ticket de ponta a ponta: `echo aprovar | npm run tracer -- --limpar` (usa o login do Claude Code, sem chave).
-- **ENV:** `AGENTS_DIR` (padrão `../.claude/agents`; `examples/agents` roda sozinho), `MODEL_*`/`EFFORT_*`/`TURNOS_*` por papel, `TOKEN_BUDGET_TICKET`, `EXECUTOR`, `PUBLICADOR`.
-- **Voltar ao fluxo antigo:** apague `orchestrator/`; nada fora dele depende disso.
-- **Defesas:** worktree por ticket, env mínimo, permissões por papel, evidência (commit, `npm test`, diff) conferida em código, autor ≠ revisor ≠ QA, máx. 3 revisões e 5 tickets, orçamento de tokens, merge/deploy só com o CEO.
-- **Limites:** `Bash` com allowlist é fraco (a barreira real é worktree sem segredos); checkpointer em memória; deploy é simulado; publicador `github` não testado contra remoto; uso individual e local, não é serviço para terceiros.
+- **Run:** `cp .env.example .env && npm ci && npm test`; end-to-end ticket: `echo approve | npm run tracer -- --clean` (uses the Claude Code login, no key).
+- **ENV:** `AGENTS_DIR` (default `../.claude/agents`; `examples/agents` runs on its own), `MODEL_*`/`EFFORT_*`/`TURNS_*` per role, `TOKEN_BUDGET_TICKET`, `EXECUTOR`, `PUBLISHER`.
+- **Back to the old flow:** delete `orchestrator/`; nothing outside it depends on it.
+- **Defenses:** worktree per ticket, minimal env, per-role permissions, evidence (commit, `npm test`, diff) checked in code, author ≠ reviewer ≠ QA, max 3 revisions and 5 tickets, token budget, merge/deploy only with the CEO.
+- **Limits:** a `Bash` allowlist is weak (the real barrier is a worktree without secrets); in-memory checkpointer; deploy is simulated; the `github` publisher is untested against a remote; individual and local use, not a service for third parties.

@@ -1,28 +1,33 @@
-# Task 4 — Nó planejador
+# Task 4 — Planner node
 
-Rota ambígua do enunciado: `triagem -> planejador -> dev`, e `aprovacao_ceo -> planejador` quando falta informação.
+Ambiguous route from the brief: `triage -> planner -> dev`, and `ceo_approval -> planner`
+when information is missing.
 
-## Comportamento
+## Behavior
 
-- Roda só quando a triagem devolve `claro=false` (`aposTriagem` em `graph.ts`). A triagem ambígua não passa mais
-  critérios adiante (`criterios=[]`).
-- **Uma chamada** com `analista-demanda` + `product-manager` + `tech-lead` concatenados como prompt de sistema
-  (a "sequência" é a ordem dos arquivos). Três chamadas triplicariam o contexto; o enunciado prioriza tokens.
-- Saída (`SaidaPlano`) = saída da triagem + `pergunta`. `claro=true` com critérios: preenche título, prioridade,
-  especialidade, flags e critérios, e segue ao dev. Sem critérios fechados: `status=ambiguo`, `resumo=pergunta`.
-- **Esclarecimento:** `status=ambiguo` vai ao `aprovacao_ceo` como escalada com a pergunta. Resposta diferente de
-  `abortar` é anexada ao `pedido` (`Esclarecimento do CEO: ...`) e o ticket volta ao planejador; `abortar` encerra.
-  Falhas de nó (erro, timeout, saída inválida) continuam só abortando enquanto não há critérios.
-- Papel `planejador`: somente leitura (mesma tabela da triagem). Turnos em `TURNOS_PLANEJADOR`; modelo/esforço
-  herdam `*_DEFAULT`.
-- Sem teto próprio de rodadas de esclarecimento: cada volta exige resposta humana, e o orçamento de tokens e o
-  `RECURSION_LIMIT` continuam valendo.
+- Runs only when triage returns `clear=false` (the post-triage router in `graph.ts`). An
+  ambiguous triage no longer passes criteria on (`criteria=[]`).
+- **One call** with `demand-analyst` + `product-manager` + `tech-lead` concatenated as
+  the system prompt (the "sequence" is the order of the files). Three calls would triple
+  the context; the brief prioritizes tokens.
+- Output (`PlanOutput`) = triage output + `question`. `clear=true` with criteria: fills
+  title, priority, specialty, flags and criteria, and proceeds to the dev. Without closed
+  criteria: `status=ambiguous`, `summary=question`.
+- **Clarification:** `status=ambiguous` goes to `ceo_approval` as an escalation with the
+  question. An answer other than `abort` is appended to the `request` (`CEO
+  clarification: ...`) and the ticket returns to the planner; `abort` ends it. Node
+  failures (error, timeout, invalid output) still only abort while there are no criteria.
+- `planner` role: read-only (same table as triage). Turns in `TURNS_PLANNER`;
+  model/effort inherit `*_DEFAULT`.
+- No cap of its own on clarification rounds: each loop requires a human answer, and the
+  token budget and `RECURSION_LIMIT` still apply.
 
-## Testes (nós falsos)
+## Tests (fake nodes)
 
-`pedido ambiguo passa pelo planejador...`, `planejador sem criterios escala com a pergunta...`,
-`CEO aborta quando o planejador pede esclarecimento`. Total: 26 testes.
+`an ambiguous request goes through the planner ...`, `a planner without criteria
+escalates with the question ...`, `the CEO aborts when the planner asks for
+clarification`. Total: 26 tests.
 
-## Fora do escopo
+## Out of scope
 
-devops, watchdog, push da branch e abertura do PR pelo código (próximas tasks da Fase 2).
+devops, watchdog, branch push and PR opening by the code (next tasks of Phase 2).

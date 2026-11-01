@@ -1,37 +1,46 @@
-# Fase 2 (restante) — publicar, devops e watchdog
+# Phase 2 (remainder) — publish, devops and watchdog
 
-## Fluxo
+## Flow
 
-`qa -> publicar -> aprovacao_ceo -> (aprovado) devops -> END`. Rejeição volta ao dev; `devops` só é alcançável
-com `status=aprovado`, que só `aprovacao_ceo` produz após `interrupt()`.
+`qa -> publish -> ceo_approval -> (approved) devops -> END`. Rejection goes back to the
+dev; `devops` is only reachable with `status=approved`, which only `ceo_approval`
+produces after `interrupt()`.
 
-## publicar (código, sem agente) — `src/publicar.ts`
+## publish (code, no agent) — `src/publish.ts`
 
-- Reverifica a evidência (commit, worktree limpo, caminhos permitidos, `npm test`), faz `git push --set-upstream
-  origin ticket/<id>` e abre PR **rascunho** com `gh pr create --draft`; se o PR já existe (ciclo de revisão),
-  só atualiza a branch. Merge continua sendo do CEO.
-- A URL entra em `evidencias` (`pr:<url>`) e aparece na payload da aprovação.
-- `PUBLICADOR` (env): `github` | `nenhum`. Ausente ou desconhecido = `FalhaDeNo` (escala ao CEO, nada é enviado).
-  `.env.example` traz `nenhum`; troque para `github` só ao usar um repo-alvo real com `origin` e `gh` autenticado.
-  Mesmo encaixe do executor (`registrarPublicador`), usado pelos testes.
-- O push roda no host com as credenciais do usuário (`gitSeguro`, hooks desligados, `--no-verify`) e envia exatamente o SHA verificado para `refs/heads/ticket/<id>`, nunca o HEAD atual; o agente dev continua sem `git push`.
+- Re-verifies the evidence (commit, clean worktree, allowed paths, `npm test`), runs
+  `git push --set-upstream origin ticket/<id>` and opens a **draft** PR with
+  `gh pr create --draft`; if the PR already exists (review cycle), it only updates the
+  branch. Merging remains the CEO's.
+- The URL goes into `evidence` (`pr:<url>`) and shows up in the approval payload.
+- `PUBLISHER` (env): `github` | `none`. Missing or unknown = `NodeFailure` (escalates to
+  the CEO, nothing is sent). `.env.example` ships `none`; switch to `github` only when
+  using a real target repo with `origin` and an authenticated `gh`. Same hook as the
+  executor (`registerPublisher`), used by the tests.
+- The push runs on the host with the user's credentials (`safeGit`, hooks disabled,
+  `--no-verify`) and sends exactly the verified SHA to `refs/heads/ticket/<id>`, never
+  the current HEAD; the dev agent still has no `git push`.
 
 ## devops
 
-`devops-sre.md`, papel somente leitura. Simulação: o agente descreve status, rollback e observabilidade; não
-executa deploy nem merge. Falha do nó termina em `status=escalado` (sem nova pausa).
+`devops-sre.md`, read-only role. Simulation: the agent describes status, rollback and
+observability; it does not run a deploy or a merge. A node failure ends in
+`status=escalated` (no new pause).
 
 ## watchdog — `src/watchdog.ts`
 
-`watchdog(tickets, cwd)`: fora do grafo, por chamada. Recebe uma linha por ticket (id, prioridade, status, revisões,
-tokens, último nó), papel somente leitura, devolve `{alertas, resumo}`. Não há script/CLI: o estado vive no
-checkpointer em memória; o comando entra quando houver checkpointer persistente.
+`watchdog(tickets, cwd)`: outside the graph, per call. Receives one line per ticket (id,
+priority, status, revisions, tokens, last node), read-only role, returns
+`{alerts, summary}`. There is no script/CLI: the state lives in the in-memory
+checkpointer; the command arrives when there is a persistent checkpointer.
 
-## Testes (nós e publicador falsos)
+## Tests (fake nodes and publisher)
 
-push/PR antes do CEO e devops só depois; rejeição não aciona devops; `PUBLICADOR` ausente escala sem publicar;
-publicador que falha escala; watchdog devolve alertas. Total: 31 testes.
+push/PR before the CEO and devops only after; rejection does not trigger devops; a
+missing `PUBLISHER` escalates without publishing; a failing publisher escalates; the
+watchdog returns alerts. Total: 31 tests.
 
-## Não validado
+## Not validated
 
-O publicador `github` real (push + `gh pr create`) não foi exercitado contra um remoto: depende de `origin` e `gh`.
+The real `github` publisher (push + `gh pr create`) was not exercised against a remote:
+it depends on `origin` and `gh`.

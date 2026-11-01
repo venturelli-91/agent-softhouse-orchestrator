@@ -1,42 +1,44 @@
-# Orchestrator (LangGraph.js) — visão geral
+# Orchestrator (LangGraph.js) — overview
 
-Camada fina de orquestração sobre a softhouse. Mora em `orchestrator/` e **não altera**
-`.claude/agents`, `.claude/commands` nem `CLAUDE.md`: o grafo só lê esses arquivos.
-Apagar `orchestrator/` (e `.claude/docs/orchestrator/`) devolve o sistema ao estado anterior;
-`/pedir`, `/ticket` e `/demanda` seguem funcionando.
+A thin orchestration layer over the software house. It lives in `orchestrator/` and
+**does not change** `.claude/agents`, `.claude/commands` or `CLAUDE.md`: the graph only
+reads those files. Deleting `orchestrator/` (and `.claude/docs/orchestrator/`) returns
+the system to its previous state; `/request`, `/ticket` and `/demand` keep working.
 
-Tese: **controle de fluxo em código, não em prompt.** O prompt do agente é a camada mais
-fraca; as barreiras reais são código, permissões do CLI, worktree isolado e env mínimo.
+Thesis: **flow control in code, not in prompts.** The agent prompt is the weakest layer;
+the real barriers are code, CLI permissions, an isolated worktree and a minimal env.
 
-## Índice
+## Index
 
-| Doc | Conteúdo |
+| Doc | Contents |
 |---|---|
-| [01-executor.md](01-executor.md) | `run-agent.ts`, `guardrails.ts` (Seção 2), flags reais do `claude -p`, medições |
-| [02-grafo-tracer-bullet.md](02-grafo-tracer-bullet.md) | `graph.ts`, estado, nós, arestas, tracer com modelo real, linha de base de consumo, bugs |
-| [03-guardrails-de-fluxo.md](03-guardrails-de-fluxo.md) | `guardrails.ts` Seção 1, escalada ao CEO, testes com nós falsos, CI, regressão ao vivo |
-| [04-planejador.md](04-planejador.md) | nó planejador, esclarecimento de escopo com o CEO |
-| [05-publicar-devops-watchdog.md](05-publicar-devops-watchdog.md) | push/PR pelo código, devops pós-CEO, watchdog |
-| [06-fase-3-e-relatorio-final.md](06-fase-3-e-relatorio-final.md) | publicação, regressão ao vivo, relatório final |
-| [07-metricas.md](07-metricas.md) | métricas consolidadas de consumo, testes, código e processo |
+| [01-executor.md](01-executor.md) | `run-agent.ts`, `guardrails.ts` (Section 2), real `claude -p` flags, measurements |
+| [02-tracer-bullet-graph.md](02-tracer-bullet-graph.md) | `graph.ts`, state, nodes, edges, tracer with a real model, consumption baseline, bugs |
+| [03-flow-guardrails.md](03-flow-guardrails.md) | `guardrails.ts` Section 1, escalation to the CEO, tests with fake nodes, CI, live regression |
+| [04-planner.md](04-planner.md) | planner node, scope clarification with the CEO |
+| [05-publish-devops-watchdog.md](05-publish-devops-watchdog.md) | push/PR by code, post-CEO devops, watchdog |
+| [06-phase-3-and-final-report.md](06-phase-3-and-final-report.md) | publishing, live regression, final report |
+| [07-metrics.md](07-metrics.md) | consolidated metrics for consumption, tests, code and process |
 
-(Os próximos docs entram junto com cada task: publicação.)
+(The next docs arrive with each task: publishing.)
 
-## Decisões e achados (task 1)
+## Decisions and findings (task 1)
 
-- **Dependências de runtime:** `@langchain/langgraph` 1.6.0, `@langchain/core` 1.3.2 (peer
-  *obrigatório* do langgraph; não é o pacote `langchain`) e `zod` 4. Dev: `typescript`,
-  `@types/node`. Nada de vitest/tsx: o teste usa `node:test` e o Node 24 executa `.ts`.
-  Árvore do LangGraph: `@langchain/langgraph-checkpoint`, `-sdk`, `protocol`, `standard-schema`.
-- **Checkpointer:** `MemorySaver` na Fase 1 (aprovação do CEO respondida no mesmo processo).
-  O SQLite oficial (`@langchain/langgraph-checkpoint-sqlite`) puxa `better-sqlite3` (módulo
-  nativo) e fica para quando houver necessidade de aprovar de forma assíncrona.
-- **Repositório de tickets:** não existe (`playbooks/` só tem `.gitkeep`, sem GitHub issues
-  configuradas aqui). O estado do ticket é o do próprio grafo.
-- **Git:** a pasta não era um repo. Foi feito `git init`, `origin` apontando para o GitHub
-  (sem push). O `~/.config/git/ignore` global exclui `.claude/`; o `.gitignore` do repo
-  nega isso (`!.claude/`) sem mexer na config global.
-- **CEO** = o usuário humano (ver `CLAUDE.md`). O nó `aprovacao_ceo` é a pausa em que o
-  grafo espera a decisão dele.
-- **Commits:** atômicos, em inglês, sem prefixo de ticket (não há ticket), estilo
+- **Runtime dependencies:** `@langchain/langgraph` 1.6.0, `@langchain/core` 1.3.2
+  (*required* peer of langgraph; not the `langchain` package) and `zod` 4. Dev:
+  `typescript`, `@types/node`. No vitest/tsx: the tests use `node:test` and Node 24 runs
+  `.ts`. LangGraph tree: `@langchain/langgraph-checkpoint`, `-sdk`, `protocol`,
+  `standard-schema`.
+- **Checkpointer:** `MemorySaver` in Phase 1 (CEO approval answered in the same
+  process). The official SQLite one (`@langchain/langgraph-checkpoint-sqlite`) pulls in
+  `better-sqlite3` (a native module) and is left for when asynchronous approval is
+  needed.
+- **Ticket repository:** there is none (`playbooks/` only has `.gitkeep`, no GitHub
+  issues configured here). The ticket state is the graph's own.
+- **Git:** the folder was not a repo. `git init` was run, with `origin` pointing to
+  GitHub (no push). The global `~/.config/git/ignore` excludes `.claude/`; the repo's
+  `.gitignore` negates that (`!.claude/`) without touching the global config.
+- **CEO** = the human user (see `CLAUDE.md`). The `ceo_approval` node is the pause where
+  the graph waits for their decision.
+- **Commits:** atomic, in English, no ticket prefix (there is no ticket), in the style
   `feat(orchestrator): ...`.

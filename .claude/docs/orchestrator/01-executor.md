@@ -1,98 +1,115 @@
-# Task 1 — Executor (`run-agent.ts`) e defesas por nó (`guardrails.ts`, Seção 2)
+# Task 1 — Executor (`run-agent.ts`) and per-node defenses (`guardrails.ts`, Section 2)
 
-## O que existe
+## What exists
 
-- `orchestrator/src/guardrails.ts` — tabela de permissões por papel, env mínimo do
-  subprocesso, leitura de modelo/esforço/turnos do ambiente.
-- `orchestrator/src/run-agent.ts` — interface `Executor`, executor `claude-subscription`,
-  `runAgent` (escolhe pelo `EXECUTOR`, padrão `claude-subscription`), `FalhaDeNo`.
-- `orchestrator/tests/run-agent.test.ts` — 6 testes, sem modelo e sem credencial.
-- `orchestrator/.env.example` — modelo, esforço, turnos, `AGENTS_DIR`, orçamento.
+- `orchestrator/src/guardrails.ts` — per-role permission table, minimal subprocess env,
+  reading model/effort/turns from the environment.
+- `orchestrator/src/run-agent.ts` — `Executor` interface, `claude-subscription`
+  executor, `runAgent` (picks by `EXECUTOR`, default `claude-subscription`),
+  `NodeFailure`.
+- `orchestrator/tests/run-agent.test.ts` — 6 tests, no model and no credentials.
+- `orchestrator/.env.example` — model, effort, turns, `AGENTS_DIR`, budget.
 
-## Fluxo de uma chamada
+## Flow of a call
 
-1. O **nó** (task 2) monta `Req`: `papel`, `arquivos` (nomes de `AGENTS_DIR`, sem `.md`),
-   `contexto` (texto mínimo montado pelo código), `schema` (zod) e `cwd` (worktree).
-2. `carregarPrompt` lê os `.md`, remove o frontmatter (a linha `tools:` é do Claude Code,
-   não do executor) e concatena. Nenhum prompt é duplicado.
-3. `argsClaude` monta os argumentos do `claude -p`; o contexto vai por **stdin**.
-4. O subprocesso roda com `envMinimo` e `AbortSignal.timeout(TIMEOUT_POR_NO_MS)`.
-5. A saída `--output-format json` é lida; `structured_output` passa pelo zod.
-6. Qualquer erro (exit ≠ 0, timeout, `is_error`, `error_max_turns`, JSON fora do schema)
-   vira `FalhaDeNo`. O grafo trata isso como falha fechada e escala ao CEO.
+1. The **node** (task 2) builds `Req`: `role`, `files` (names in `AGENTS_DIR`, without
+   `.md`), `context` (minimal text assembled by the code), `schema` (zod) and `cwd`
+   (worktree).
+2. `loadPrompt` reads the `.md` files, strips the frontmatter (the `tools:` line belongs
+   to Claude Code, not to the executor) and concatenates them. No prompt is duplicated.
+3. `claudeArgs` builds the `claude -p` arguments; the context goes through **stdin**.
+4. The subprocess runs with `minimalEnv` and `AbortSignal.timeout(NODE_TIMEOUT_MS)`.
+5. The `--output-format json` output is read; `structured_output` goes through zod.
+6. Any error (exit ≠ 0, timeout, `is_error`, `error_max_turns`, JSON outside the schema)
+   becomes `NodeFailure`. The graph treats it as a fail-closed failure and escalates to
+   the CEO.
 
-## Flags usadas (confirmadas em `claude --help` 2.1.316 e na doc oficial CLI reference)
+## Flags used (confirmed in `claude --help` 2.1.316 and the official CLI reference)
 
-| Objetivo | Flag |
+| Goal | Flag |
 |---|---|
-| Não interativo | `-p` |
-| Modelo / esforço | `--model`, `--effort` (low, medium, high, xhigh, max) |
-| Limite de turnos | `--max-turns N` (**documentado, mas ausente do `--help` local**) |
-| Prompt do papel | `--system-prompt` (substitui o prompt padrão) |
-| Saída | `--output-format json`, `--json-schema` |
-| Permissões | `--permission-mode dontAsk`, `--tools`, `--allowedTools`, `--disallowedTools` |
-| Enxugar contexto | `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands` |
-| Sem disco | `--no-session-persistence` |
+| Non-interactive | `-p` |
+| Model / effort | `--model`, `--effort` (low, medium, high, xhigh, max) |
+| Turn limit | `--max-turns N` (**documented, but absent from the local `--help`**) |
+| Role prompt | `--system-prompt` (replaces the default prompt) |
+| Output | `--output-format json`, `--json-schema` |
+| Permissions | `--permission-mode dontAsk`, `--tools`, `--allowedTools`, `--disallowedTools` |
+| Trim context | `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands` |
+| No disk | `--no-session-persistence` |
 
-Descartadas de propósito:
+Deliberately discarded:
 
-- `--bare`: pula hooks e CLAUDE.md, mas **só aceita `ANTHROPIC_API_KEY`** (nunca lê OAuth
-  nem keychain), o que quebra o objetivo de usar a assinatura.
-- `--max-budget-usd`: orçamento em dólar; o orçamento do projeto é em tokens, medido pelo código.
+- `--bare`: skips hooks and CLAUDE.md, but **only accepts `ANTHROPIC_API_KEY`** (never
+  reads OAuth or the keychain), which defeats the goal of using the subscription.
+- `--max-budget-usd`: a dollar budget; the project's budget is in tokens, measured by
+  the code.
 
-## Pegadinhas encontradas
+## Pitfalls found
 
-- `z.toJSONSchema` emite `$schema` draft 2020-12 e o CLI rejeita
-  (`no schema with key or ref ...2020-12/schema`). O `$schema` é removido.
-- O `--json-schema` consome 1 turno (tool `StructuredOutput`). Por isso
-  `--max-turns = TURNOS_<PAPEL> + 1`.
-- `ANTHROPIC_*` não é "removido": a env do subprocesso é uma **whitelist**
-  (`PATH`, `USERPROFILE`, `APPDATA`, ...), então nada fora dela chega ao `claude`. O login da
-  assinatura continua achável via `USERPROFILE`/`APPDATA`.
+- `z.toJSONSchema` emits a draft 2020-12 `$schema` and the CLI rejects it
+  (`no schema with key or ref ...2020-12/schema`). The `$schema` is removed.
+- `--json-schema` consumes 1 turn (the `StructuredOutput` tool). Hence
+  `--max-turns = TURNS_<ROLE> + 1`.
+- `ANTHROPIC_*` is not "removed": the subprocess env is a **whitelist** (`PATH`,
+  `USERPROFILE`, `APPDATA`, ...), so nothing outside it reaches `claude`. The
+  subscription login is still findable via `USERPROFILE`/`APPDATA`.
 
-## Tabela de permissões
+## Permission table
 
-| Papel | Ferramentas | Observação |
+| Role | Tools | Note |
 |---|---|---|
-| triagem, reviewer, qa | `Read, Grep, Glob` | somente leitura; reviewer/qa recebem o diff no contexto |
-| dev | + `Write(./**)`, `Edit(./**)` e shell (`PowerShell` no Windows, `Bash` em POSIX; ver `SHELL`) | shell só com `git add/commit/status/diff`, `npm test`, `npm run typecheck`; nega `git push/remote/config`, `rm -r`, `npm exec/npx/config/publish/pkg`, escrita em `.git/**`, `.gitattributes`, `.gitmodules`; todos os papéis negam leitura de `.env*`, `~/.ssh`, `~/.claude`, `~/.npmrc`, `~/.git-credentials`, `.git/config` |
+| triage, reviewer, qa | `Read, Grep, Glob` | read-only; reviewer/qa receive the diff in the context |
+| dev | + `Write(./**)`, `Edit(./**)` and shell (`PowerShell` on Windows, `Bash` on POSIX; see `SHELL`) | shell only with `git add/commit/status/diff`, `npm test`, `npm run typecheck`; denies `git push/remote/config`, `rm -r`, `npm exec/npx/config/publish/pkg`, writes to `.git/**`, `.gitattributes`, `.gitmodules`; all roles deny reading `.env*`, `~/.ssh`, `~/.claude`, `~/.npmrc`, `~/.git-credentials`, `.git/config` |
 
-**Limite conhecido:** allowlist/denylist de `Bash` é uma barreira fraca (comandos
-alternativos podem contornar um padrão). As barreiras fortes são: worktree sem `.env` (arquivos
-ignorados não existem no checkout), env sem credenciais e `GIT_CONFIG_GLOBAL`/`NOSYSTEM`
-neutralizados (sem credential helper, então `git push` não autentica). O push e o PR são feitos
-pelo código do grafo (Fase 2), nunca pelo agente.
+**Known limit:** a `Bash` allowlist/denylist is a weak barrier (alternative commands
+can bypass a pattern). The strong barriers are: a worktree without `.env` (ignored files
+do not exist in the checkout), an env without credentials and `GIT_CONFIG_GLOBAL`/
+`NOSYSTEM` neutralized (no credential helper, so `git push` does not authenticate). The
+push and the PR are done by the graph's code (Phase 2), never by the agent.
 
-**Hardening pós-review de segurança:** `GIT_CONFIG_COUNT` força `core.hooksPath` e `core.fsmonitor` neutros (config por env vence a do repo) e `NPM_CONFIG_USERCONFIG` aponta para o null device.
+**Hardening after the security review:** `GIT_CONFIG_COUNT` forces neutral
+`core.hooksPath` and `core.fsmonitor` (config by env beats the repo's) and
+`NPM_CONFIG_USERCONFIG` points to the null device.
 
-`Write`/`Edit` do dev ficam restritos ao worktree (`./**`); **não** há deny de `~/**` porque o worktree no temp do Windows fica dentro do home; `core.pager` e `GIT_EXTERNAL_DIFF` são neutralizados por env. Filtros/textconv/`sshCommand` exigem definição em config que o agente não consegue escrever (`.git/**` negado, config global nula, sem `git config`/`git -c` na allowlist).
+The dev's `Write`/`Edit` are restricted to the worktree (`./**`); there is **no** deny
+of `~/**` because the Windows temp worktree lives inside the home; `core.pager` and
+`GIT_EXTERNAL_DIFF` are neutralized by env. Filters/textconv/`sshCommand` require a
+definition in a config the agent cannot write (`.git/**` denied, null global config, no
+`git config`/`git -c` in the allowlist).
 
-**Riscos residuais (aceitos e documentados):** (1) `npm test`/`typecheck` executam scripts do `package.json`, que o dev pode editar; a mitigação é o diff recusar `package.json` scripts fora do escopo (task 3) e, idealmente, sandbox de SO/container; (2) `HOME`/`USERPROFILE` reais permanecem no env porque o login da assinatura vive lá; as negações de `~/...` são best-effort; (3) a semântica exata dos padrões de deny será exercitada no tracer bullet com um dev que tenta `git push` e ler `.env`.
+**Residual risks (accepted and documented):** (1) `npm test`/`typecheck` run
+`package.json` scripts, which the dev can edit; the mitigation is for the diff to reject
+`package.json` scripts outside the scope (task 3) and, ideally, an OS/container
+sandbox; (2) the real `HOME`/`USERPROFILE` remain in the env because the subscription
+login lives there; the `~/...` denies are best-effort; (3) the exact semantics of the
+deny patterns will be exercised in the tracer bullet with a dev that tries `git push`
+and reading `.env`.
 
-O git do subprocesso recebe identidade `agente-<papel>`; isso vira o `autor_id` verificável
-por código (task 3).
+The subprocess's git gets the identity `agent-<role>`; this becomes the `author_id`
+verifiable by code (task 3).
 
-## Medição de referência (smoke real, papel `triagem`, pedido trivial)
+## Reference measurement (real smoke, `triage` role, trivial request)
 
-| Métrica | Valor |
+| Metric | Value |
 |---|---|
-| Contexto criado (`cache_create`) | 4.400 tokens |
-| Saída | 650 tokens |
-| Turnos | 2 |
-| Tempo | 7,4 s |
-| Custo equivalente | US$ 0,024 |
+| Context created (`cache_create`) | 4,400 tokens |
+| Output | 650 tokens |
+| Turns | 2 |
+| Time | 7.4 s |
+| Equivalent cost | US$ 0.024 |
 
-Com Haiku e prompt vazio o piso do `claude -p` enxuto foi ~1.900 tokens, ou seja, o prompt do
-papel, o schema e o pedido somam o restante. Isso é a linha de base da Fase 1.
+With Haiku and an empty prompt, the floor of a lean `claude -p` was ~1,900 tokens, so
+the role prompt, the schema and the request make up the rest. This is the Phase 1
+baseline.
 
-## Variáveis de ambiente
+## Environment variables
 
-`EXECUTOR`, `AGENTS_DIR`, `MODEL_DEFAULT`, `EFFORT_DEFAULT`, `TURNOS_DEFAULT`,
-`TOKEN_BUDGET_TICKET`, e overrides `MODEL_<PAPEL>`, `EFFORT_<PAPEL>`, `TURNOS_<PAPEL>`.
-Ausente = erro (falha fechada). Nenhum nome de modelo no código (um teste garante isso).
-O `.env` real é ignorado pelo git.
+`EXECUTOR`, `AGENTS_DIR`, `MODEL_DEFAULT`, `EFFORT_DEFAULT`, `TURNS_DEFAULT`,
+`TOKEN_BUDGET_TICKET`, and overrides `MODEL_<ROLE>`, `EFFORT_<ROLE>`, `TURNS_<ROLE>`.
+Missing = error (fail closed). No model name in the code (a test guarantees this). The
+real `.env` is ignored by git.
 
-## Como rodar
+## How to run
 
 ```
 cd orchestrator
