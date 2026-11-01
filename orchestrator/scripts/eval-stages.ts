@@ -74,7 +74,12 @@ for (const model of values.models.split(",")) {
           if ("failed" in res) { lines.push(`FAIL "${r.text.slice(0, 40)}": ${res.failed}`); continue; }
           const { output, usage } = res;
           // The planner is only judged on routing and on having criteria when it says clear.
-          const ok = check(output, planner ? { clear: r.exp.clear } : r.exp) && (!planner || !output.clear || output.criteria.length >= 2);
+          // Planner: a vague request must come back unclear with a question; a well-specified one may either close the criteria (>= 2) or ask.
+          const ok = planner
+            ? r.exp.clear
+              ? (output.clear && output.criteria.length >= 2) || (!output.clear && (output as z.infer<typeof PlanQ>).question.length > 0)
+              : !output.clear && (output as z.infer<typeof PlanQ>).question.length > 0
+            : check(output, r.exp);
           hits += +ok;
           tokens += sum(usage);
           usd += usage.cost_usd;

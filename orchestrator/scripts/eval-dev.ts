@@ -59,6 +59,35 @@ const tickets = [
       '  assert.deepEqual(mergeItems(input), [{ sku: "a", cents: 100, qty: 4 }, { sku: "b", cents: 50, qty: 2 }]); assert.deepEqual(input, copy); });\n' +
       'test("no sku", () => { const input = [{ cents: 10, qty: 1 }, { cents: 10, qty: 1 }]; assert.equal(mergeItems(input).length, 2); });\n',
   },
+  {
+    title: "Coupon codes",
+    criteria: [
+      "src/coupons.js exports applyCoupon(items, code, now = new Date()) returning the total in cents after the coupon",
+      "codes are case-insensitive and trimmed: 'SAVE10' returns the total after 10% off, with that final total rounded down (995 cents becomes 895); 'FIVE' takes 500 cents off but never below 0",
+      "'OLD20' (total after 20% off, final total rounded down) expired on 2020-01-01: it throws an Error whose message contains 'expired' when now is after that date",
+      "an unknown code throws an Error whose message contains 'unknown'; no code (undefined or empty) returns the plain total",
+      "tests cover each rule",
+    ],
+    hidden: head + 'import { applyCoupon } from "../src/coupons.js";\nconst items = [{ cents: 1000, qty: 2 }, { cents: 250, qty: 1 }];\n' +
+      'test("percent", () => { assert.equal(applyCoupon(items, "SAVE10"), 2025); assert.equal(applyCoupon(items, "  save10 "), 2025); assert.equal(applyCoupon([{ cents: 995, qty: 1 }], "SAVE10"), 895); });\n' +
+      'test("fixed", () => { assert.equal(applyCoupon(items, "FIVE"), 1750); assert.equal(applyCoupon([{ cents: 300, qty: 1 }], "five"), 0); });\n' +
+      'test("expired", () => { assert.throws(() => applyCoupon(items, "OLD20", new Date("2021-01-01")), /expired/i); assert.equal(applyCoupon(items, "OLD20", new Date("2019-06-01")), 1800); });\n' +
+      'test("unknown and none", () => { assert.throws(() => applyCoupon(items, "NOPE"), /unknown/i); assert.equal(applyCoupon(items), 2250); assert.equal(applyCoupon(items, ""), 2250); });\n',
+  },
+  {
+    title: "Paginate cart lines",
+    criteria: [
+      "src/cart.js exports paginate(items, page, size) returning { items, page, pages, total } where pages = ceil(total / size) and total = items.length",
+      "pages are 1-based; a page past the last one returns an empty items array; an empty list has pages = 0",
+      "page < 1, non-integer page, size < 1 or non-integer size throws RangeError",
+      "the input array is not mutated; tests cover each rule",
+    ],
+    hidden: head + 'import { paginate } from "../src/cart.js";\nconst l = [1, 2, 3, 4, 5].map((n) => ({ cents: n, qty: 1 }));\n' +
+      'test("pages", () => { assert.deepEqual(paginate(l, 1, 2), { items: l.slice(0, 2), page: 1, pages: 3, total: 5 }); assert.deepEqual(paginate(l, 3, 2).items, l.slice(4)); });\n' +
+      'test("edges", () => { assert.deepEqual(paginate(l, 4, 2).items, []); assert.deepEqual(paginate([], 1, 2), { items: [], page: 1, pages: 0, total: 0 }); });\n' +
+      'test("range", () => { for (const [p, z] of [[0, 2], [1.5, 2], [1, 0], [1, 2.5], [-1, 2]]) assert.throws(() => paginate(l, p, z), RangeError); });\n' +
+      'test("no mutation", () => { const c = JSON.stringify(l); paginate(l, 1, 2); assert.equal(JSON.stringify(l), c); });\n',
+  },
 ];
 
 const Out = z.object({ summary: z.string().describe("at most 10 lines") });
@@ -93,13 +122,15 @@ for (const model of values.models.split(",")) {
       // Hidden acceptance tests run on the committed result.
       mkdirSync(join(worktree, "hidden"), { recursive: true });
       writeFileSync(join(worktree, "hidden", "acceptance.test.js"), tk.hidden);
-      let pass = false;
+      let pass = false, why = "";
       try {
         execFileSync("node", ["--test", "hidden/acceptance.test.js"], { cwd: worktree, stdio: "pipe" });
         pass = true;
-      } catch {}
+      } catch (e) {
+        why = String((e as { stdout?: Buffer }).stdout ?? "").split("\n").filter((l) => /not ok|expected|actual|Error/i.test(l)).slice(0, 4).join(" | ");
+      }
       ok += +(v.ok && pass);
-      if (!(v.ok && pass)) lines.push(`MISS T${n + 1}: evidence ${v.ok ? "ok" : "failed (" + v.reason + ")"}, hidden tests ${pass ? "pass" : "FAIL"}; dev said: ${res.output.summary.replaceAll("\n", " ").slice(0, 900)}`);
+      if (!(v.ok && pass)) lines.push(`MISS T${n + 1}: evidence ${v.ok ? "ok" : "failed (" + v.reason + ")"}, hidden tests ${pass ? "pass" : "FAIL: " + why}; dev said: ${res.output.summary.replaceAll("\n", " ").slice(0, 900)}`);
     }
   }
   console.log(`${model} dev: ${ok}/${runs} accepted (${verified} with verified evidence), ${tokens} tokens, ${turns} turns, ${(ms / 1000).toFixed(0)} s, US$${usd.toFixed(3)}${lines.length ? "\n  " + lines.join("\n  ") : ""}`);

@@ -114,8 +114,9 @@ runs the agent there (`--reps 3`). 15 runs per model and role.
 ## Model matrix per stage
 
 Scripts: `eval-review.ts` (reviewer, qa), `eval-stages.ts` (triage, planner, devops),
-`eval-dev.ts` (dev). 3 runs per case; Fable not tested (it costs real dollars and no stage
-shows a failure that a stronger model would fix). Correct / runs, US$ for all runs:
+`eval-dev.ts` (dev). 3 runs per case, only models covered by the Claude Code subscription
+(Haiku, Sonnet, Opus). Fable was deliberately not tested (billed in dollars; no stage shows a
+failure that a stronger model would fix). The US$ is the cost Claude Code reports, for comparison only. Correct / runs, US$ for all runs:
 
 | Stage | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
 |---|---|---|---|
@@ -123,7 +124,9 @@ shows a failure that a stronger model would fix). Correct / runs, US$ for all ru
 | QA (5 diffs) | 12/15, 0.016 | 15/15, 0.198 | 15/15, 0.642 |
 | Triage (9 requests) | 14/27, 0.031 | 24/27, 0.235 | 26/27, 0.793 |
 | Devops (3 x 3) | 9/9, 0.008 | 9/9, 0.067 | 9/9, 0.331 |
-| Dev (4 tickets, hidden tests) | 12/12, 0.032 | 12/12, 0.414 | 12/12, 0.945 |
+| Planner (9 requests) | 27/27, 0.029 | 27/27, 0.271 | 27/27, 1.056 |
+| Dev, 4 small tickets (hidden tests) | 12/12, 0.032 | 12/12, 0.414 | 12/12, 0.945 |
+| Dev, 2 harder tickets (coupon rules, pagination edges) | 6/6, 0.019 | 6/6, 0.229 | 6/6, 0.604 |
 
 Reading:
 - **Reviewer, devops: Haiku.** Same accuracy at 1/10 to 1/30 of the cost.
@@ -132,13 +135,15 @@ Reading:
 - **Triage: keep the default model.** Haiku calls explicit, well-specified requests
   "unclear" in most runs (14/27), which would push them through the costlier planner route.
   Sonnet 24/27 and Opus 26/27 (the only Opus miss: a P0 outage called unclear).
-- **Planner: no usable signal.** The planner only runs on requests triage already found
-  ambiguous, and its prompt makes every model ask questions even on well-specified requests
-  (Opus 14/27, Haiku 16/27, Sonnet 22/27 on "clear" requests). The vague requests were
-  handled right by all. The eval cannot rank models here; keep the default model.
-- **Dev: all three pass 12/12, Haiku at 1/13 of Sonnet's cost.** Caveat: four small tickets
-  in one tiny repo; a hard multi-file change could separate them. Not made the default;
-  try `MODEL_DEV=claude-haiku-5-5` and watch the revision rate. Dev stays the default model.
+- **Planner: Haiku is enough on this test.** Scored as: a vague request must come back
+  unclear with a question; a well-specified one may close its criteria (>= 2) or ask. All
+  three models got 27/27, so the eval does not separate them; it only shows nobody fails
+  the basics. Quality of the criteria themselves is not measured.
+- **Dev: all three pass every ticket, Haiku at 1/12 to 1/30 of the cost.** 6 tickets in one
+  tiny repo (the 2 harder ones have rule edges: rounding, expiry, validation, no mutation) and
+  hidden tests the dev never sees. Nobody separated, so the test has a ceiling: it cannot
+  say Haiku equals Sonnet on a real multi-file feature. Dev stays on the default model; try
+  `MODEL_DEV=claude-haiku-5-5` and watch the revision rate.
 
 ## Bugs found by the evals (all fixed)
 
