@@ -37,7 +37,7 @@ export function activeTickets(repo: string): number {
 }
 
 // Paths no agent may change: secrets, CI and the orchestrator itself.
-const FORBIDDEN = /(^|\/)\.env|^\.github\/|^orchestrator\/|(^|\/)(\.git-credentials|\.npmrc|id_rsa[^/]*)$|\.(pem|key)$|credential|secret/i;
+const FORBIDDEN = /(^|\/)\.env|^\.github\/|^orchestrator\/|^\.orchestrator\.json$|(^|\/)(\.git-credentials|\.npmrc|id_rsa[^/]*)$|\.(pem|key)$|credential|secret/i;
 
 // Host-side git over a repo the agent touched: no fsmonitor, pager, system config or external diff.
 export function safeGit(cwd: string, ...args: string[]): string {
@@ -46,10 +46,10 @@ export function safeGit(cwd: string, ...args: string[]): string {
 }
 
 // Files npm runs on the host: if the agent changed them, the ticket goes to the CEO instead of running.
-const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc)$/i;
+const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc|conftest\.py|setup\.py|setup\.cfg|pyproject\.toml|pytest\.ini|tox\.ini|Makefile)$/i;
 
 // Evidence verified by code (zero token cost): what the agent claims does not count.
-export function verifyEvidence(wt: string, base: string): { ok: true; author: string; sha: string; evidence: string[] } | { ok: false; reason: string } {
+export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST):{ ok: true; author: string; sha: string; evidence: string[] } | { ok: false; reason: string } {
   const git = (...a: string[]) => safeGit(wt, ...a);
   const sha = git("rev-parse", "HEAD");
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, reason: "no new commit in the worktree" };
@@ -63,15 +63,16 @@ export function verifyEvidence(wt: string, base: string): { ok: true; author: st
   const risky = files.filter((f) => RUNS_ON_HOST.test(f));
   if (risky.length) return { ok: false, reason: `diff touches a file that runs code on the host (${risky.join(", ")}): requires CEO review` };
   try {
-    // execSync (shell) because npm is npm.cmd on Windows; the command is fixed.
-    execSync("npm test", { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
+    // execSync (shell) because npm is npm.cmd on Windows. `test` comes from .orchestrator.json at the base commit
+    // (a ticket cannot edit it) and RepoConfig only accepts a plain command with no shell operators.
+    execSync(test, { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
   } catch (e) {
-    return { ok: false, reason: `npm test failed: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}` };
+    return { ok: false, reason: `${test} failed: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}` };
   }
   // npm test runs repo code: if it moved HEAD or dirtied the tree, the verification is void.
   if (git("rev-parse", "HEAD") !== sha) return { ok: false, reason: "HEAD changed during verification" };
   if (git("status", "--porcelain", "--untracked-files=all").length) return { ok: false, reason: "worktree changed during verification" };
-  return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence: [`commit:${git("rev-parse", "--short", sha)}`, "tests:npm test ok"] };
+  return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence: [`commit:${git("rev-parse", "--short", sha)}`, `tests:${test} ok`] };
 }
 
 // ===== Section 2: defense inside each node =====
@@ -137,12 +138,16 @@ export function readEnv(name: "MODEL" | "EFFORT" | "TURNS", role: Role, src: Nod
   return v;
 }
 
-export function permissionArgs(role: Role): string[] {
+export const DEFAULT_TEST = "npm test";
+
+// `test` is the repo's own test command (from .orchestrator.json); the dev may run exactly that.
+export function permissionArgs(role: Role, test = DEFAULT_TEST): string[] {
   const p = PERMISSIONS[role];
+  const allow = role === "dev" ? [...p.allow.filter((a) => a !== `${SHELL}(${DEFAULT_TEST}*)`), `${SHELL}(${test}*)`] : p.allow;
   return [
     "--permission-mode", "dontAsk",
     "--tools", p.tools.join(","),
-    "--allowedTools", ...p.allow,
+    "--allowedTools", ...allow,
     "--disallowedTools", ...p.deny,
   ];
 }

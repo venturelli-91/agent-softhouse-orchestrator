@@ -2,6 +2,7 @@ import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langch
 import { z } from "zod";
 import { selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
 import { publish } from "./publish.ts";
+import { loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
 
 const SPECIALTIES = ["frontend", "backend", "fullstack", "mobile", "integrations", "ai", "data"] as const;
@@ -23,6 +24,8 @@ export const Ticket = z.object({
   request: z.string(),
   worktree: z.string(),
   base: z.string(),
+  test: z.string().default("npm test"),
+  merge: z.enum(["pr", "auto"]).default("pr"),
   title: z.string().default(""),
   priority: z.enum(["P0", "P1", "P2", "Bug"]).default("P2"),
   specialty: z.enum(SPECIALTIES).default("fullstack"),
@@ -57,9 +60,10 @@ const sh = safeGit;
 const context = (...parts: string[]) =>
   [...parts, "Answer only in the structured format. `summary`: up to 10 lines, only what the next node needs."].join("\n\n");
 const ticketData = (t: T) => `Ticket ${t.id}: ${t.title}\nAcceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
-export const DEV_RULES =
-  "Implement in the current worktree, run npm test and commit (git add/git commit). Do not push. " +
-  "Shell: one simple command per call (git add, git commit, git status, git diff, git log, npm test); no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.";
+export const devRules = (test = "npm test") =>
+  `Implement in the current worktree, run ${test} and commit (git add/git commit). Do not push. ` +
+  `Shell: one simple command per call (git add, git commit, git status, git diff, git log, ${test}); no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.`;
+export const DEV_RULES = devRules();
 export const evidenceNote = (evidence: string[]) =>
   `Evidence checked by the orchestrator in code (not by you): ${evidence.join(", ")}. Do not reject only because you cannot run the tests yourself; judge the diff and the code against the criteria.`;
 const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
@@ -101,9 +105,9 @@ const planner = guarded("planner", async (t) => {
 const dev = guarded("dev", async (t) => {
   const { output, usage } = await runAgent({
     role: "dev", files: [DEV_FILE[t.specialty]], cwd: t.worktree, schema: DevOutput,
-    context: context(ticketData(t), DEV_RULES),
+    context: context(ticketData(t), devRules(t.test)), test: t.test,
   });
-  const v = verifyEvidence(t.worktree, t.base);
+  const v = verifyEvidence(t.worktree, t.base, t.test);
   if (!v.ok) return { status: "dev_failed", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
   return { status: "review", summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
 });
@@ -114,7 +118,7 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
     const who = `agent-${name}`;
     const block = selfApproval(t.author_id, who);
     if (block) throw new NodeFailure(block);
-    const v = t.evidence.length ? verifyEvidence(t.worktree, t.base) : { ok: false as const, reason: "no evidence" };
+    const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : { ok: false as const, reason: "no evidence" };
     if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
     const { output, usage } = await runAgent({
       role: name, files: files(t), cwd: t.worktree, schema: ReviewOutput,
@@ -135,7 +139,7 @@ const qa = reviewStep("qa", () => ["qa-automation"], "publish");
 
 // Branch push and (draft) PR done by code, not by the agent; only while the evidence still holds.
 const publishNode = guarded("publish", async (t) => {
-  const v = t.evidence.length ? verifyEvidence(t.worktree, t.base) : { ok: false as const, reason: "no evidence" };
+  const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : { ok: false as const, reason: "no evidence" };
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   const body = [t.summary, "Criteria:", ...t.criteria.map((c) => `- ${c}`), `Evidence: ${v.evidence.join(", ")}`].join("\n\n");
   const pr = publish({ cwd: t.worktree, id: t.id, sha: v.sha, title: `${t.id}: ${t.title}`, body });
@@ -153,7 +157,7 @@ const devops = guarded("devops", async (t) => {
 
 // The only merge/deploy and escalation point. Approval only counts if the evidence still holds.
 const ceoApproval = async (t: T): Promise<Partial<T>> => {
-  const v = t.status === "approval" && t.evidence.length ? verifyEvidence(t.worktree, t.base) : null;
+  const v = t.status === "approval" && t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : null;
   const reason = t.status === "approval" ? (v?.ok ? null : `invalid evidence: ${v ? v.reason : "no evidence"}`)
     : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
@@ -197,10 +201,12 @@ export function buildGraph(checkpointer = new MemorySaver()) {
 export const config = (id: string) => ({ configurable: { thread_id: id }, recursionLimit: RECURSION_LIMIT });
 export const resume = (answer: string) => new Command({ resume: answer });
 
-export function createWorktree(repo: string, id: string, dir: string): { worktree: string; base: string } {
+export function createWorktree(repo: string, id: string, dir: string): { worktree: string; base: string; test: string; merge: "pr" | "auto" } {
   if (activeTickets(repo) >= MAX_ACTIVE_TICKETS) throw new Error(`limit of ${MAX_ACTIVE_TICKETS} active tickets reached`);
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
-  return { worktree: dir, base: sh(repo, "rev-parse", "HEAD") };
+  const base = sh(repo, "rev-parse", "HEAD");
+  const { test, merge } = loadRepoConfig(repo, base);
+  return { worktree: dir, base, test, merge };
 }
 
 export function report(t: T): string {
