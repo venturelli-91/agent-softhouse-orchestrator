@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { devNull, safeGit } from "./guardrails.ts";
 import { NodeFailure } from "./run-agent.ts";
 
@@ -29,13 +30,25 @@ const github: Publisher = {
 };
 
 type Check = { bucket: string };
+
+// CI verdict from two consecutive polls. Green needs at least one passing check, none failing or pending, and the
+// same set of checks as the previous poll (a check that registers late would otherwise be missed).
+export function ciVerdict(prev: number | null, checks: Check[]): "fail" | "wait" | "green" {
+  if (checks.some((c) => c.bucket === "fail" || c.bucket === "cancel")) return "fail";
+  const done = checks.length > 0 && checks.every((c) => c.bucket === "pass" || c.bucket === "skipping") && checks.some((c) => c.bucket === "pass");
+  return done && prev === checks.length ? "green" : "wait";
+}
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 // Waits for the CI (MERGE_WAIT_MS, default 10 min). No checks at all = no proof, so no automatic merge.
 async function mergeGithub({ cwd, pr, sha }: { cwd: string; pr: string; sha: string }): Promise<string> {
-  const head = gh(cwd, "pr", "view", pr, "--json", "headRefOid", "-q", ".headRefOid");
+  // A retry after a merge that went through but failed afterwards must not fail again.
+  const merged = JSON.parse(gh(cwd, "pr", "view", pr, "--json", "state,headRefOid")) as { state: string; headRefOid: string };
+  if (merged.state === "MERGED" && merged.headRefOid === sha) return `merged:${pr}`;
+  const head = merged.headRefOid;
   if (head !== sha) throw new Error(`PR head ${head.slice(0, 7)} is not the verified commit ${sha.slice(0, 7)}`);
   const deadline = Date.now() + (Number(process.env.MERGE_WAIT_MS) || 600_000);
+  let prev: number | null = null;
   for (;;) {
     let checks: Check[] = [];
     try {
@@ -43,13 +56,17 @@ async function mergeGithub({ cwd, pr, sha }: { cwd: string; pr: string; sha: str
     } catch {
       // gh exits non-zero when there are no checks yet
     }
-    if (checks.some((c) => c.bucket === "fail" || c.bucket === "cancel")) throw new Error("CI checks failed");
-    if (checks.length && checks.every((c) => c.bucket === "pass" || c.bucket === "skipping")) break;
+    const verdict = ciVerdict(prev, checks);
+    if (verdict === "fail") throw new Error("CI checks failed");
+    if (verdict === "green") break;
+    prev = checks.length;
     if (Date.now() > deadline) throw new Error(checks.length ? "CI checks still pending" : "no CI checks found, not merging automatically");
     await sleep(15_000);
   }
-  gh(cwd, "pr", "ready", pr);
-  gh(cwd, "pr", "merge", pr, "--squash", "--delete-branch", "--match-head-commit", sha);
+  // Outside any local repo: gh would otherwise try to check out the base branch here (and fail if another worktree has it).
+  // No --admin and no --auto: branch protection on the remote still decides.
+  gh(tmpdir(), "pr", "ready", pr);
+  gh(tmpdir(), "pr", "merge", pr, "--squash", "--delete-branch", "--match-head-commit", sha);
   return `merged:${pr}`;
 }
 github.merge = mergeGithub;

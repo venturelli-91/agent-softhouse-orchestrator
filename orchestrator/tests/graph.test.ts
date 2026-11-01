@@ -8,7 +8,7 @@ import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { FileSaver } from "../src/file-saver.ts";
 import { config, createWorktree, buildGraph, resume, DEV_RULES } from "../src/graph.ts";
-import { registerPublisher } from "../src/publish.ts";
+import { ciVerdict, registerPublisher } from "../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
 import { alerts, watchdog } from "../src/watchdog.ts";
 
@@ -300,4 +300,31 @@ test("a failed merge escalates to the CEO; retry merges, anything else goes back
   const back = await answer(h, "fix the failing check");
   assert.equal(paused(back)?.type, "approval", "the dev reran and a new approval was requested");
   assert.equal(merges.length, 1);
+});
+
+test("the merge is bound to the commit that was published and approved", async () => {
+  const g = await start("T-1", new MemorySaver(), { merge: "auto" });
+  assert.equal(paused(g.r)?.type, "approval");
+  // someone adds a commit after the PR was opened and before the CEO answers
+  commit(join(g.root, "wt"), "agent-dev", "extra.txt", "x\n");
+  const r = await answer(g, "approve");
+  // the old approval is void: the ticket is re-reviewed, republished and needs a new approval of the new commit
+  assert.equal(paused(r)?.type, "approval");
+  assert.notEqual(r.approved_sha, g.r.approved_sha);
+  assert.deepEqual(merges, []);
+  assert.equal((await answer(g, "approve")).status, "simulated_deploy");
+  assert.equal(merges.length, 1);
+  assert.ok((merges as string[])[0].endsWith(r.approved_sha));
+});
+
+test("CI is green only with a passing check, no failures, and a stable set of checks", () => {
+  const c = (...b: string[]) => b.map((bucket) => ({ bucket }));
+  assert.equal(ciVerdict(null, c("pass")), "wait", "first poll never merges");
+  assert.equal(ciVerdict(1, c("pass")), "green");
+  assert.equal(ciVerdict(1, c("pass", "pass")), "wait", "a check appeared since the last poll");
+  assert.equal(ciVerdict(1, c("pass", "pending")), "wait");
+  assert.equal(ciVerdict(1, c("skipping")), "wait", "all skipped is not proof");
+  assert.equal(ciVerdict(0, c()), "wait", "no checks");
+  assert.equal(ciVerdict(2, c("pass", "fail")), "fail");
+  assert.equal(ciVerdict(2, c("pass", "cancel")), "fail");
 });

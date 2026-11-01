@@ -26,6 +26,7 @@ export const Ticket = z.object({
   base: z.string(),
   test: z.string().default("npm test"),
   merge: z.enum(["pr", "auto"]).default("pr"),
+  approved_sha: z.string().default(""),
   title: z.string().default(""),
   priority: z.enum(["P0", "P1", "P2", "Bug"]).default("P2"),
   specialty: z.enum(SPECIALTIES).default("fullstack"),
@@ -143,7 +144,7 @@ const publishNode = guarded("publish", async (t) => {
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   const body = [t.summary, "Criteria:", ...t.criteria.map((c) => `- ${c}`), `Evidence: ${v.evidence.join(", ")}`].join("\n\n");
   const pr = publish({ cwd: t.worktree, id: t.id, sha: v.sha, title: `${t.id}: ${t.title}`, body });
-  return { status: "approval", evidence: [...v.evidence, pr], history: log(t, "publish", pr) };
+  return { status: "approval", approved_sha: v.sha, evidence: [...v.evidence, pr], history: log(t, "publish", pr) };
 });
 
 // Merge/deploy only after the CEO; with no write permission, the agent describes the plan and the rollback.
@@ -160,16 +161,18 @@ const mergeNode = guarded("merge_pr", async (t) => {
   if (t.merge !== "auto") return { history: log(t, "merge_pr", "skipped (merge=pr)") };
   const v = verifyEvidence(t.worktree, t.base, t.test);
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
+  // What the CEO approved is the commit that was published, not whatever HEAD is now.
+  if (!t.approved_sha || v.sha !== t.approved_sha) throw new NodeFailure("merge: commit changed since it was published");
   const pr = t.evidence.find((e) => e.startsWith("pr:"))?.slice(3);
   if (!pr || pr === "none") throw new NodeFailure("merge: no PR to merge");
-  const merged = await mergePr({ cwd: t.worktree, pr, sha: v.sha });
+  const merged = await mergePr({ cwd: t.worktree, pr, sha: t.approved_sha });
   return { evidence: [...t.evidence, merged], history: log(t, "merge_pr", merged) };
 });
 
 // The only merge/deploy and escalation point. Approval only counts if the evidence still holds.
 const ceoApproval = async (t: T): Promise<Partial<T>> => {
   const v = t.status === "approval" && t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : null;
-  const reason = t.status === "approval" ? (v?.ok ? null : `invalid evidence: ${v ? v.reason : "no evidence"}`)
+  const reason = t.status === "approval" ? (v?.ok ? (v.sha === t.approved_sha ? null : "commit changed since it was published") : `invalid evidence: ${v ? v.reason : "no evidence"}`)
     : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
     type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, evidence: t.evidence,
