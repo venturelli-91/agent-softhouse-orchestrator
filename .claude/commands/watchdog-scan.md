@@ -1,17 +1,17 @@
 ---
-description: Roda uma varredura ad-hoc do Watchdog a qualquer momento, sem esperar o ritual diário completo.
+description: Runs an ad-hoc Watchdog sweep at any time, without waiting for the full daily ritual.
 ---
 
-Invoque o subagente `watchdog` agora, fora do ritual diário, para checar: erros,
-alertas, custos, PRs parados, falhas de CI, tickets bloqueados, degradação de IA e
-backlog P0. Reporte no formato:
+Invoke the `watchdog` subagent now, outside the daily ritual, to check: errors, alerts,
+costs, stalled PRs, CI failures, blocked tickets, AI degradation and the P0 backlog.
+Report in the format:
 
 ```
-- top 3 problemas
-- impacto
+- top 3 problems
+- impact
 - status
-- responsável sugerido
-- próxima ação recomendada
+- suggested owner
+- recommended next action
 ```
 
 $ARGUMENTS

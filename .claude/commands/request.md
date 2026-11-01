@@ -1,21 +1,21 @@
 ---
-description: Porta de entrada única para qualquer pedido do CEO — roda a Triagem e encaminha automaticamente para /ticket (direto) ou /demanda (precisa de escopo).
+description: Single entry point for any CEO request — runs Triage and automatically routes to /ticket (direct) or /demand (needs scope).
 ---
 
-Pedido do CEO: $ARGUMENTS
+CEO request: $ARGUMENTS
 
-1. Invoque o subagente `triagem` com o pedido acima.
-2. Se a triagem concluir que o pedido **já está claro o suficiente para ticket direto**:
-   invoque a skill `ticket` (`Skill(skill: "ticket")`) passando o ticket resumido que a
-   triagem produziu, já indicando o agente/área sugerido.
-3. Se a triagem concluir que **falta escopo** (objetivo, usuário, critérios de aceite):
-   invoque a skill `demanda` (`Skill(skill: "demanda")`) passando o pedido original e o
-   que a triagem identificou como faltante, para o Analista de Demanda não repetir
-   trabalho já feito.
-4. Se a triagem identificar **mais de uma área** no mesmo pedido, avise o CEO e sugira a
-   quebra em tickets separados antes de prosseguir — não rode as duas cadeias ao mesmo
-   tempo sem confirmação.
+1. Invoke the `triage` subagent with the request above.
+2. If triage concludes the request is **already clear enough for a direct ticket**:
+   invoke the `ticket` skill (`Skill(skill: "ticket")`) passing the summarized ticket
+   that triage produced, already indicating the suggested agent/area.
+3. If triage concludes **scope is missing** (goal, user, acceptance criteria): invoke
+   the `demand` skill (`Skill(skill: "demand")`) passing the original request and what
+   triage identified as missing, so the Demand Analyst does not repeat work already
+   done.
+4. If triage identifies **more than one area** in the same request, warn the CEO and
+   suggest splitting into separate tickets before proceeding — do not run both chains at
+   the same time without confirmation.
 
-Use `/pedir` como padrão quando não tiver certeza se o pedido já é um ticket ou ainda
-precisa de escopo. Se você (CEO) já sabe exatamente o que quer e qual área, pode ir
-direto em `/ticket` ou `/demanda` e pular a triagem.
+Use `/request` as the default when you are not sure whether the request is already a
+ticket or still needs scope. If you (the CEO) already know exactly what you want and
+which area, you can go straight to `/ticket` or `/demand` and skip triage.

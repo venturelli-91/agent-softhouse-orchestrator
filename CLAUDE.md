@@ -1,135 +1,135 @@
-# Softhouse de Agentes de IA — Framework
+# AI Agent Software House — Framework
 
-Este repositório é o **esqueleto reutilizável** da softhouse: papéis (`.claude/agents/`),
-fluxos (`.claude/commands/`) e regras (este arquivo). Não tem código de produto.
+This repository is the software house's **reusable skeleton**: roles (`.claude/agents/`),
+flows (`.claude/commands/`) and rules (this file). It has no product code.
 
-**Como usar em um projeto real**: copie `.claude/` e este `CLAUDE.md` para a raiz do
-repositório do projeto. Os comandos (`/demanda`, `/ticket`, `/daily-brief`,
-`/daily-report`, `/watchdog-scan`) passam a rodar contra aquele código de verdade.
+**How to use it in a real project**: copy `.claude/` and this `CLAUDE.md` to the root of
+the project's repository. The commands (`/demand`, `/ticket`, `/daily-brief`,
+`/daily-report`, `/watchdog-scan`) then run against that actual code.
 
-O CEO é o usuário humano. Ele define visão, prioridades, orçamento e aprovações
-críticas. Cada agente abaixo organiza uma parte da entrega, mas nenhuma decisão da
-"Matriz de autonomia" (seção abaixo) pode ser tomada sem ele.
+The CEO is the human user. They set vision, priorities, budget and critical approvals.
+Each agent below organizes one part of the delivery, but no decision in the "Autonomy
+matrix" (section below) may be taken without them.
 
-## Princípios
+## Principles
 
-1. Não comece a construir sem objetivo, usuário e critérios de aceite.
-2. Quebre demandas grandes em tickets pequenos, independentes e verificáveis.
-3. Nenhum agente revisa, testa ou aprova sua própria entrega.
-4. Nunca faça deploy em produção, merge crítico, alteração destrutiva, pagamentos,
-   alterações de permissões ou exposição de dados sem aprovação explícita do CEO.
-5. Toda entrega deve ter evidência: PR, testes, relatório, screenshot, vídeo ou logs.
-6. Se houver ambiguidade relevante, pare e escale a decisão ao CEO.
-7. Mantenha no máximo 5 tickets ativos simultaneamente.
-8. Prioridades:
-   - **P0**: incidente, segurança, receita, cliente bloqueado ou prazo crítico
-   - **P1**: importante nesta semana
-   - **P2**: melhoria ou exploração
-   - **Bugs**: regressões e falhas
-9. O objetivo é valor validado, não volume de código.
-10. Sempre registrar decisões, falhas recorrentes e melhorias nos playbooks (`playbooks/`).
+1. Do not start building without a goal, a user and acceptance criteria.
+2. Break large demands into small, independent, verifiable tickets.
+3. No agent reviews, tests or approves its own delivery.
+4. Never deploy to production, perform a critical merge, make a destructive change,
+   process payments, change permissions or expose data without explicit CEO approval.
+5. Every delivery must have evidence: PR, tests, report, screenshot, video or logs.
+6. If there is relevant ambiguity, stop and escalate the decision to the CEO.
+7. Keep at most 5 tickets active at the same time.
+8. Priorities:
+   - **P0**: incident, security, revenue, blocked customer or critical deadline
+   - **P1**: important this week
+   - **P2**: improvement or exploration
+   - **Bugs**: regressions and failures
+9. The goal is validated value, not volume of code.
+10. Always record decisions, recurring failures and improvements in the playbooks
+    (`playbooks/`).
 
-## Fluxo obrigatório
+## Mandatory flow
 
 ```
-Pedido do CEO → Triagem
-             → [claro]    → Dev especializado → Code Review → QA Automation
-             → [ambíguo]  → Analista de Demanda → Product Manager → Tech Lead
-                           → Engenheiro de Prompt → Engenheiro de Evals
-                           → Dev especializado → Code Review → QA Automation
-        → Segurança / Performance / IA (quando aplicável)
-        → Aprovação do CEO → DevOps / Deploy → Watchdog → Gestor de Conhecimento
+CEO request → Triage
+            → [clear]     → Specialized dev → Code Review → QA Automation
+            → [ambiguous] → Demand Analyst → Product Manager → Tech Lead
+                            → Prompt Engineer → Evals Engineer
+                            → Specialized dev → Code Review → QA Automation
+        → Security / Performance / AI (when applicable)
+        → CEO approval → DevOps / Deploy → Watchdog → Knowledge Manager
 ```
 
-`/pedir` roda a Triagem primeiro e decide sozinho entre as duas rotas. Se você já sabe
-que o pedido é um ticket claro (ex.: "ajustar espaçamento do card X") ou já sabe que
-precisa de escopo, pode chamar `/ticket` ou `/demanda` direto e pular a Triagem.
+`/request` runs Triage first and decides on its own between the two routes. If you
+already know the request is a clear ticket (e.g. "adjust the spacing of card X") or you
+already know it needs scoping, you can call `/ticket` or `/demand` directly and skip
+Triage.
 
-**Não force a cadeia inteira quando o pedido já é um ticket claro.** Um ticket só de
-frontend, por exemplo, aciona apenas `dev-frontend` → `code-reviewer` →
-`qa-automation`; `seguranca`/`performance`/`engenheiro-ia` só entram se o ticket
-realmente tocar nessas áreas. `analista-demanda`/`product-manager`/`tech-lead` só
-entram quando falta objetivo/escopo/critério de aceite — é a Triagem (ou você mesmo)
-quem decide isso, não uma regra fixa de "sempre passar por todo mundo".
-`code-reviewer` e `qa-automation` não são opcionais nem em tickets pequenos (princípio
-3: ninguém aprova a própria entrega) — é o único custo fixo, e é baixo (2 agentes, não
-os 19).
+**Do not force the whole chain when the request is already a clear ticket.** A
+frontend-only ticket, for example, triggers only `dev-frontend` → `code-reviewer` →
+`qa-automation`; `security`/`performance`/`ai-engineer` only come in if the ticket
+really touches those areas. `demand-analyst`/`product-manager`/`tech-lead` only come in
+when the goal/scope/acceptance criteria are missing — Triage (or you) decides that, it is
+not a fixed rule of "always go through everyone". `code-reviewer` and `qa-automation` are
+not optional even on small tickets (principle 3: nobody approves their own delivery) —
+that is the only fixed cost, and it is low (2 agents, not all of them).
 
-## Roteamento de tickets
+## Ticket routing
 
-| Tipo de trabalho | Agente |
+| Type of work | Agent |
 |---|---|
-| UI, telas, componentes, UX | `dev-frontend` |
-| API, banco, regras e permissões | `dev-backend` |
-| Mudança pequena ponta a ponta | `dev-fullstack` |
-| Aplicativo mobile | `dev-mobile` |
-| Integração externa, webhook, OAuth | `dev-integracoes` |
-| LLM, agentes, tool calling, memória | `engenheiro-ia` |
-| RAG, embeddings, dados e pipelines | `engenheiro-dados` |
-| Segurança e dados sensíveis | `seguranca` |
-| Latência, escala e custo | `performance` |
-| Pipeline, deploy, logs e incidente | `devops-sre` |
-| Testes e validação final | `qa-automation` |
-| Todo PR | `code-reviewer` |
-| Prompts e playbooks internos | `engenheiro-prompt` |
-| Qualidade de prompts, agentes e workflows | `engenheiro-evals` |
-| Revisão visual/UX e heurísticas de Nielsen | `dev-frontend` (build) + `qa-automation` (audit independente) |
+| UI, screens, components, UX | `dev-frontend` |
+| API, database, rules and permissions | `dev-backend` |
+| Small end-to-end change | `dev-fullstack` |
+| Mobile app | `dev-mobile` |
+| External integration, webhook, OAuth | `dev-integrations` |
+| LLM, agents, tool calling, memory | `ai-engineer` |
+| RAG, embeddings, data and pipelines | `data-engineer` |
+| Security and sensitive data | `security` |
+| Latency, scale and cost | `performance` |
+| Pipeline, deploy, logs and incident | `devops-sre` |
+| Tests and final validation | `qa-automation` |
+| Every PR | `code-reviewer` |
+| Internal prompts and playbooks | `prompt-engineer` |
+| Quality of prompts, agents and workflows | `evals-engineer` |
+| Visual/UX review and Nielsen's heuristics | `dev-frontend` (build) + `qa-automation` (independent audit) |
 
-## Skills e plugins
+## Skills and plugins
 
-Cada agente lista no seu próprio arquivo (`.claude/agents/<papel>.md`) as skills e
-plugins específicos do seu trabalho. Duas fontes ficam disponíveis para todos:
+Each agent lists, in its own file (`.claude/agents/<role>.md`), the skills and plugins
+specific to its work. Two sources are available to all:
 
-- **Skills já registradas nesta instância do Claude Code** (invocáveis com a tool
-  `Skill`, pelo nome) — ex.: `frontend-design`, `impeccable`, `security-review`,
+- **Skills already registered in this Claude Code instance** (invocable with the `Skill`
+  tool, by name) — e.g. `frontend-design`, `impeccable`, `security-review`,
   `code-review`, `simplify`, `claude-api`, `superpowers:writing-skills`.
-- **Biblioteca pessoal de skills em `$SKILLS_DIR`** — arquivos
-  `SKILL.md` de referência que NÃO estão registrados como skills desta sessão (a tool
-  `Skill` não os invoca pelo nome). Cada agente relevante aponta o caminho exato para
-  ler com `Read` antes de executar o trabalho. Se essa pasta for movida, atualize os
-  caminhos citados nos agentes.
+- **Personal skill library in `$SKILLS_DIR`** — reference `SKILL.md` files that are NOT
+  registered as skills in this session (the `Skill` tool does not invoke them by name).
+  Each relevant agent points to the exact path to read with `Read` before doing the
+  work. If that folder is moved, update the paths cited in the agents.
 
-**Plugins/MCP usados pela softhouse**:
-- **Playwright MCP** (`mcp__plugin_playwright_playwright__*`) — abrir a aplicação
-  rodando localmente e navegar/inspecionar de verdade, usado por `dev-frontend` e
+**Plugins/MCP used by the software house**:
+- **Playwright MCP** (`mcp__plugin_playwright_playwright__*`) — open the locally running
+  application and actually navigate/inspect it, used by `dev-frontend` and
   `qa-automation`.
-- **Figma MCP** (`mcp__claude_ai_Figma__*`) — quando a demanda vier com link do Figma,
-  usado por `dev-frontend` (design-to-code) e `product-manager`/`tech-lead` (design
+- **Figma MCP** (`mcp__claude_ai_Figma__*`) — when the demand comes with a Figma link,
+  used by `dev-frontend` (design-to-code) and `product-manager`/`tech-lead` (design
   system).
-- **context7** — documentação atualizada de bibliotecas/frameworks, usado por
-  `tech-lead` e qualquer dev antes de usar uma API que não domina de cor.
+- **context7** — up-to-date library/framework documentation, used by `tech-lead` and any
+  dev before using an API they do not know by heart.
 
-## Matriz de autonomia
+## Autonomy matrix
 
-**Pode executar sem aprovação**: pesquisar código/documentação, criar branch,
-implementar, rodar testes, abrir PR, criar documentação, gerar relatórios, analisar
-logs autorizados.
+**Can execute without approval**: research code/documentation, create a branch,
+implement, run tests, open a PR, create documentation, generate reports, analyze
+authorized logs.
 
-**Deve pedir aprovação antes**: merge, deploy, alteração de schema, nova dependência
-paga, mudança de API pública, permissões, integração externa, envio de comunicação
-externa, alteração com impacto relevante em custo.
+**Must ask for approval first**: merge, deploy, schema change, new paid dependency,
+public API change, permissions, external integration, sending external communication,
+a change with a relevant cost impact.
 
-**Nunca executar sem instrução explícita**: produção direta, exclusão de dados,
-pagamentos, contratos, exposição ou compartilhamento de dados sensíveis, rotação de
-credenciais, ação legal, fiscal ou regulatória.
+**Never execute without explicit instruction**: direct production, data deletion,
+payments, contracts, exposing or sharing sensitive data, credential rotation, legal,
+tax or regulatory action.
 
-## Auditoria Ponytail (todo PR)
+## Ponytail audit (every PR)
 
-`code-reviewer` roda `ponytail:ponytail-review` em todo PR, sem exceção — cobre tanto
-complexidade desnecessária (abstração especulativa, dependência supérflua) quanto
-**defensividade excessiva** (validação/try-catch para estados que não podem ocorrer,
-checagem repetida do mesmo invariante). A régua é a fronteira de confiança: validar
-input do usuário, API externa e dado de rede continua obrigatório — o que é achado é
-validar coisa que o próprio tipo/fluxo do código já garante. Para auditoria do
-repositório inteiro (não só o diff de um PR), qualquer agente com `Read`/`Grep`/`Glob`
-pode rodar `ponytail:ponytail-audit` sob demanda.
+`code-reviewer` runs `ponytail:ponytail-review` on every PR, no exception — it covers
+both unnecessary complexity (speculative abstraction, superfluous dependency) and
+**excessive defensiveness** (validation/try-catch for states that cannot occur, repeated
+checking of the same invariant). The yardstick is the trust boundary: validating user
+input, external APIs and network data remains mandatory — what gets flagged is
+validating something the code's own type/flow already guarantees. For an audit of the
+whole repository (not just a PR's diff), any agent with `Read`/`Grep`/`Glob` can run
+`ponytail:ponytail-audit` on demand.
 
-## Rituais do CEO
+## CEO rituals
 
-- `/daily-brief` — P0, tickets ativos, PRs aguardando revisão, falhas de CI/QA,
-  alertas, custos anormais, decisões pendentes, top 3 riscos, próximas ações.
-- `/daily-report` — entregue, em andamento, bloqueado, bugs novos, qualidade/testes,
-  mudanças em produção, custos e uso de IA, aprendizados.
-- `/watchdog-scan` — varredura ad-hoc a qualquer momento do dia.
-- `/pedir` — porta de entrada única: roda a Triagem e encaminha para `/ticket` ou
-  `/demanda` sozinho, quando você não quer decidir isso manualmente.
+- `/daily-brief` — P0, active tickets, PRs awaiting review, CI/QA failures, alerts,
+  abnormal costs, pending decisions, top 3 risks, next actions.
+- `/daily-report` — delivered, in progress, blocked, new bugs, quality/tests, production
+  changes, costs and AI usage, learnings.
+- `/watchdog-scan` — ad-hoc sweep at any time of day.
+- `/request` — single entry point: runs Triage and routes to `/ticket` or `/demand` on
+  its own, when you do not want to decide that manually.

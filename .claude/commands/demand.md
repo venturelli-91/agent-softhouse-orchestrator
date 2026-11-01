@@ -1,26 +1,26 @@
 ---
-description: Transforma um pedido do CEO em briefing, PRD e tickets técnicos, parando para perguntar quando houver ambiguidade relevante.
+description: Turns a CEO request into a briefing, PRD and technical tickets, stopping to ask when there is relevant ambiguity.
 ---
 
-Demanda do CEO: $ARGUMENTS
+CEO demand: $ARGUMENTS
 
-Rode esta cadeia, em ordem, usando o Agent tool para invocar cada subagente:
+Run this chain, in order, using the Agent tool to invoke each subagent:
 
-1. **`analista-demanda`** — produza o Briefing (template no arquivo do agente). Se
-   objetivo, usuário afetado ou critérios de aceite não puderem ser preenchidos com
-   confiança, pare aqui e pergunte ao CEO antes de continuar (não avance com suposições).
-2. **`product-manager`** — a partir do briefing aprovado, produza PRD + histórias +
-   critérios de aceite + backlog priorizado. Se alguma "decisão pendente" do briefing
-   bloquear o escopo, pare e escale ao CEO.
-3. **`tech-lead`** — a partir do PRD, produza arquitetura + tickets técnicos pequenos
-   (máx. 5 ativos por vez, ver `CLAUDE.md`), cada um já roteado para o agente certo pela
-   tabela de `CLAUDE.md`.
+1. **`demand-analyst`** — produce the Briefing (template in the agent's file). If the
+   goal, affected user or acceptance criteria cannot be filled in with confidence, stop
+   here and ask the CEO before continuing (do not proceed on assumptions).
+2. **`product-manager`** — from the approved briefing, produce PRD + stories +
+   acceptance criteria + prioritized backlog. If any "pending decision" in the briefing
+   blocks the scope, stop and escalate to the CEO.
+3. **`tech-lead`** — from the PRD, produce architecture + small technical tickets (max.
+   5 active at a time, see `CLAUDE.md`), each already routed to the right agent by the
+   `CLAUDE.md` table.
 
-Ao final, apresente ao CEO:
-- o briefing,
-- o PRD resumido,
-- a lista de tickets técnicos prontos, cada um com o agente responsável indicado,
-- qualquer decisão pendente que ainda precise de aprovação antes de rodar `/ticket`.
+At the end, present to the CEO:
+- the briefing,
+- the summarized PRD,
+- the list of ready technical tickets, each with the responsible agent indicated,
+- any pending decision that still needs approval before running `/ticket`.
 
-Não implemente nada nesta etapa — o objetivo é sair com tickets prontos para
-`/ticket <id-ou-descrição>`.
+Do not implement anything at this stage — the goal is to leave with tickets ready for
+`/ticket <id-or-description>`.

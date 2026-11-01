@@ -1,27 +1,27 @@
 ---
-description: Implementa um ticket técnico roteando para o dev certo, depois força code review e QA independentes, sem nunca fazer merge/deploy sozinho.
+description: Implements a technical ticket by routing to the right dev, then forces independent code review and QA, never merging/deploying on its own.
 ---
 
 Ticket: $ARGUMENTS
 
-Rode esta cadeia, em ordem, usando o Agent tool:
+Run this chain, in order, using the Agent tool:
 
-1. Consulte a tabela de roteamento em `CLAUDE.md` e escolha o subagente dev correto
-   (`dev-frontend`, `dev-backend`, `dev-fullstack`, `dev-mobile`, `dev-integracoes`,
-   `engenheiro-ia` ou `engenheiro-dados`). Se o ticket não deixar claro qual agente usar,
-   pergunte ao CEO em vez de adivinhar.
-2. Invoque o dev escolhido com o ticket completo. Ele deve entregar PR pequeno, testes,
-   resumo, instruções de validação e riscos/pendências.
-3. Invoque **`code-reviewer`** (nunca o mesmo agente que implementou) sobre o PR
-   resultante — inclui obrigatoriamente a auditoria Ponytail (complexidade
-   desnecessária **e** defensividade excessiva, ver `code-reviewer.md`). Se vier
-   "comentários bloqueadores", volte ao passo 2 antes de seguir.
-4. Invoque **`qa-automation`** sobre o PR aprovado no review. Se "reprovado", volte ao
-   passo 2 com os bugs reportados.
-5. Se o ticket tocar segurança, dados sensíveis, performance/custo ou IA, invoque também
-   `seguranca` / `performance` / `engenheiro-ia` (o que for aplicável) antes do passo 6.
+1. Check the routing table in `CLAUDE.md` and pick the correct dev subagent
+   (`dev-frontend`, `dev-backend`, `dev-fullstack`, `dev-mobile`, `dev-integrations`,
+   `ai-engineer` or `data-engineer`). If the ticket does not make clear which agent to
+   use, ask the CEO instead of guessing.
+2. Invoke the chosen dev with the full ticket. They must deliver a small PR, tests,
+   summary, validation instructions and risks/open items.
+3. Invoke **`code-reviewer`** (never the same agent that implemented) on the resulting
+   PR — it mandatorily includes the Ponytail audit (unnecessary complexity **and**
+   excessive defensiveness, see `code-reviewer.md`). If it returns "blocking comments",
+   go back to step 2 before proceeding.
+4. Invoke **`qa-automation`** on the PR approved in review. If "rejected", go back to
+   step 2 with the reported bugs.
+5. If the ticket touches security, sensitive data, performance/cost or AI, also invoke
+   `security` / `performance` / `ai-engineer` (whichever applies) before step 6.
 
-6. Pare aqui. Liste para o CEO: o que foi implementado, evidências (testes, review, QA),
-   e o que falta estritamente para aprovação — merge e/ou deploy nunca acontecem sem a
-   aprovação explícita do CEO nesta conversa (matriz de autonomia em `CLAUDE.md`). Só
-   depois de aprovado, se houver deploy envolvido, invoque `devops-sre`.
+6. Stop here. List for the CEO: what was implemented, evidence (tests, review, QA), and
+   what is strictly missing for approval — merge and/or deploy never happen without the
+   CEO's explicit approval in this conversation (autonomy matrix in `CLAUDE.md`). Only
+   after approval, if a deploy is involved, invoke `devops-sre`.
