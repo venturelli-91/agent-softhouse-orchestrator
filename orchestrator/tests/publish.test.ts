@@ -65,11 +65,12 @@ test("option-like push_remote and base_repo are rejected", () => {
   assert.doesNotThrow(() => RepoConfig.parse({ push_remote: "my-fork", base_repo: "up/stream" }));
 });
 
-test("matchesPr accepts only the pushed sha from the expected owner", () => {
+test("matchesPr checks the sha, and the owner only when one is given", () => {
   const pr = { headRefOid: "abc", headRepositoryOwner: { login: "me" } };
   assert.equal(matchesPr(pr, "abc", "me"), true);
   assert.equal(matchesPr(pr, "def", "me"), false);
   assert.equal(matchesPr(pr, "abc", "other"), false);
+  assert.equal(matchesPr(pr, "abc", ""), true);
   assert.equal(matchesPr({ headRefOid: "abc" }, "abc", "me"), true);
-  assert.equal(matchesPr({ headRefOid: "def" }, "abc", "me"), false);
+  assert.equal(matchesPr({ headRefOid: "def" }, "abc", ""), false);
 });

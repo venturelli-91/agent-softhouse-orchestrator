@@ -27,7 +27,7 @@ export function ghPrCreateArgs(p: Pub, owner: string): string[] {
 
 type PrInfo = { url: string; headRefOid: string; headRepositoryOwner?: { login: string } };
 export const matchesPr = (pr: Omit<PrInfo, "url">, sha: string, owner: string) =>
-  pr.headRefOid === sha && (!pr.headRepositoryOwner || pr.headRepositoryOwner.login === owner);
+  pr.headRefOid === sha && (!owner || !pr.headRepositoryOwner || pr.headRepositoryOwner.login === owner);
 
 // The ticket/<id> branch goes to the ticket's push remote and the PR is always a draft: merging is up to the CEO.
 const github: Publisher = {
@@ -36,13 +36,9 @@ const github: Publisher = {
     safeGit(p.cwd, "-c", `core.hooksPath=${devNull}`, "push", "--no-verify", "--", p.remote, `${p.sha}:refs/heads/${branch}`);
     const owner = remoteOwner(safeGit(p.cwd, "remote", "get-url", "--", p.remote).trim());
     const repo = p.baseRepo ? ["--repo", p.baseRepo] : [];
-    let found: PrInfo[] = [];
-    try {
-      found = JSON.parse(gh(p.cwd, "pr", "list", ...repo, "--head", p.baseRepo ? `${owner}:${branch}` : branch, "--state", "open", "--json", "url,headRefOid,headRepositoryOwner"));
-    } catch {
-      // lookup failed: fall through to create
-    }
-    const url = found.find((pr) => matchesPr(pr, p.sha, owner))?.url ?? gh(p.cwd, ...ghPrCreateArgs(p, owner));
+    const found: PrInfo[] = JSON.parse(gh(p.cwd, "pr", "list", ...repo, "--head", branch, "--state", "open", "--json", "url,headRefOid,headRepositoryOwner"));
+    const checkOwner = p.baseRepo ? owner : "";
+    const url = found.find((pr) => matchesPr(pr, p.sha, checkOwner))?.url ?? gh(p.cwd, ...ghPrCreateArgs(p, owner));
     return `pr:${url.split("\n").pop()}`;
   },
 };
