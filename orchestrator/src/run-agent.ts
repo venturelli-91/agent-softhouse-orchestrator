@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { minimalEnv, readEnv, permissionArgs, NODE_TIMEOUT_MS, type Role } from "./guardrails.ts";
+import { dailyCapReached, recordUsage } from "./daily-cap.ts";
+import { minimalEnv, readEnv, permissionArgs, tokens, NODE_TIMEOUT_MS, type Role } from "./guardrails.ts";
 
 export type Usage = {
   tokens_in: number;
@@ -130,9 +131,13 @@ const executors: Record<string, Executor> = { "claude-subscription": claudeSubsc
 // Hook for other executors (and for fake nodes in tests).
 export const registerExecutor = (name: string, ex: Executor) => void (executors[name] = ex);
 
-export function runAgent<T>(req: Req<T>): Promise<Result<T>> {
+export async function runAgent<T>(req: Req<T>): Promise<Result<T>> {
   const name = process.env.EXECUTOR ?? "claude-subscription";
   const ex = executors[name];
   if (!ex) throw new NodeFailure(`unknown EXECUTOR: ${name}`);
-  return withRetry(() => ex.run(req));
+  const capped = dailyCapReached();
+  if (capped) throw new NodeFailure(capped);
+  const result = await withRetry(() => ex.run(req));
+  recordUsage(tokens(result.usage));
+  return result;
 }
