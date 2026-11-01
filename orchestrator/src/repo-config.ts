@@ -12,8 +12,8 @@ export const RepoConfig = z.object({
   // "auto" squash-merges after the CEO approves and the CI checks are green; "pr" leaves the PR to the CEO; "local" merges in the local clone.
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.enum(["github", "none"]).optional(),
-  push_remote: z.string().regex(/^[\w.-]+$/, "push_remote must be a plain remote name").default("origin"),
-  base_repo: z.string().regex(/^([\w.-]+\/[\w.-]+)?$/, "base_repo must be owner/name").default(""),
+  push_remote: z.string().regex(/^[A-Za-z0-9_.][\w.-]*$/, "push_remote must be a plain remote name").default("origin"),
+  base_repo: z.string().regex(/^([A-Za-z0-9_.][\w.-]*\/[A-Za-z0-9_.][\w.-]*)?$/, "base_repo must be owner/name").default(""),
   disclosure: z.boolean().default(true),
 });
 export type RepoConfig = z.infer<typeof RepoConfig>;

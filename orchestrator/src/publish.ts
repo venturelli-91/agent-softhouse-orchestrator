@@ -25,18 +25,24 @@ export function ghPrCreateArgs(p: Pub, owner: string): string[] {
   ];
 }
 
+type PrInfo = { url: string; headRefOid: string; headRepositoryOwner?: { login: string } };
+export const matchesPr = (pr: Omit<PrInfo, "url">, sha: string, owner: string) =>
+  pr.headRefOid === sha && (!pr.headRepositoryOwner || pr.headRepositoryOwner.login === owner);
+
 // The ticket/<id> branch goes to the ticket's push remote and the PR is always a draft: merging is up to the CEO.
 const github: Publisher = {
   publish(p) {
     const branch = `ticket/${p.id}`;
-    safeGit(p.cwd, "-c", `core.hooksPath=${devNull}`, "push", "--no-verify", p.remote, `${p.sha}:refs/heads/${branch}`);
+    safeGit(p.cwd, "-c", `core.hooksPath=${devNull}`, "push", "--no-verify", "--", p.remote, `${p.sha}:refs/heads/${branch}`);
+    const owner = remoteOwner(safeGit(p.cwd, "remote", "get-url", "--", p.remote).trim());
     const repo = p.baseRepo ? ["--repo", p.baseRepo] : [];
-    let url: string;
+    let found: PrInfo[] = [];
     try {
-      url = gh(p.cwd, "pr", "view", branch, ...repo, "--json", "url", "-q", ".url");
+      found = JSON.parse(gh(p.cwd, "pr", "list", ...repo, "--head", p.baseRepo ? `${owner}:${branch}` : branch, "--state", "open", "--json", "url,headRefOid,headRepositoryOwner"));
     } catch {
-      url = gh(p.cwd, ...ghPrCreateArgs(p, remoteOwner(safeGit(p.cwd, "remote", "get-url", p.remote).trim())));
+      // lookup failed: fall through to create
     }
+    const url = found.find((pr) => matchesPr(pr, p.sha, owner))?.url ?? gh(p.cwd, ...ghPrCreateArgs(p, owner));
     return `pr:${url.split("\n").pop()}`;
   },
 };
@@ -88,8 +94,14 @@ github.merge = mergeGithub;
 const publishers: Record<string, Publisher> = { github, none: { publish: () => "pr:none" } };
 export const registerPublisher = (name: string, p: Publisher) => void (publishers[name] = p);
 
+export function effectivePublisher(ticket: string, env: string | undefined): string {
+  if (!env) throw new NodeFailure("missing env: PUBLISHER");
+  if (!ticket || ticket === env || ticket === "none") return ticket || env;
+  throw new NodeFailure(`publisher ${ticket} not allowed by PUBLISHER=${env}`);
+}
+
 export async function mergePr(m: Merge, publisher?: string): Promise<string> {
-  const pub = publishers[publisher || process.env.PUBLISHER || ""];
+  const pub = publishers[effectivePublisher(publisher ?? "", process.env.PUBLISHER)];
   if (!pub?.merge) throw new NodeFailure("merge: the configured PUBLISHER cannot merge");
   try {
     return await pub.merge(m);
@@ -100,8 +112,7 @@ export async function mergePr(m: Merge, publisher?: string): Promise<string> {
 
 // Missing PUBLISHER = failure (closed): nothing goes to the remote by default.
 export function publish(p: Pub, publisher?: string): string {
-  const name = publisher || process.env.PUBLISHER;
-  if (!name) throw new NodeFailure("missing env: PUBLISHER");
+  const name = effectivePublisher(publisher ?? "", process.env.PUBLISHER);
   const pub = publishers[name];
   if (!pub) throw new NodeFailure(`unknown PUBLISHER: ${name}`);
   try {
