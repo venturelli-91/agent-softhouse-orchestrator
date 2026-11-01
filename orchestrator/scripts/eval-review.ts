@@ -1,11 +1,13 @@
 // Does a cheaper model still catch bad diffs? Runs reviewer and qa on hand-made changes with known verdicts,
 // each in its own real git repo (the agents can read the code, like in the graph).
 // Usage: node --env-file=.env scripts/eval-review.ts --models modelA,modelB [--reps 3]
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
+import { evidenceNote } from "../src/graph.ts";
 import { runAgent } from "../src/run-agent.ts";
 import { git } from "./fixture.ts";
 
@@ -34,7 +36,7 @@ const code = (floor = "Math.floor", check = CHECK) =>
   `export const applyDiscount = (items, percent) => {\n${check}  return ${floor}((total(items) * (100 - percent)) / 100);\n};\n`;
 const tests =
   'test("applyDiscount normal", () => assert.equal(applyDiscount(items, 10), 2025));\n' +
-  'test("applyDiscount rounds down", () => assert.equal(applyDiscount([{ cents: 999, qty: 1 }], 10), 899));\n' +
+  'test("applyDiscount rounds down", () => assert.equal(applyDiscount([{ cents: 995, qty: 1 }], 10), 895));\n' +
   'test("applyDiscount RangeError", () => assert.throws(() => applyDiscount(items, 101), RangeError));\n';
 
 type Files = Record<string, string>;
@@ -73,7 +75,13 @@ function makeRepo(files: Files) {
   write(files);
   git(repo, "add", "-A");
   git(repo, "commit", "-q", "-m", "change");
-  return { repo, diff: git(repo, "diff", "--no-ext-diff", "HEAD~1", "HEAD") };
+  let tests = "tests:npm test ok";
+  try {
+    execFileSync("node", ["--test"], { cwd: repo, stdio: "pipe" });
+  } catch {
+    tests = "tests:npm test FAILED";
+  }
+  return { repo, diff: git(repo, "diff", "--no-ext-diff", "HEAD~1", "HEAD"), evidence: ["commit", tests] };
 }
 
 const Out = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary: z.string() });
@@ -88,10 +96,10 @@ for (const model of values.models.split(",")) {
     for (const c of cases) {
       let hits = 0;
       for (let i = 0; i < reps; i++) {
-        const { repo, diff } = makeRepo(c.files);
+        const { repo, diff, evidence } = makeRepo(c.files);
         const { output, usage } = await runAgent({
           role, files: [...files[role]], cwd: repo, schema: Out,
-          context: `${ticket}\n\nDiff:\n${diff}\n\nAnswer only in the structured format. \`summary\`: up to 10 lines.`,
+          context: `${ticket}\n\n${evidenceNote(evidence)}\n\nDiff:\n${diff}\n\nAnswer only in the structured format. \`summary\`: up to 10 lines.`,
         });
         const ok = output.verdict === c.expect;
         hits += +ok;

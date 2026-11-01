@@ -115,3 +115,34 @@ runs the agent there (`--reps 3`). 15 runs per model and role.
 
 Real deploy/merge; QA with a shell or real browser; container sandbox for `npm test`;
 watchdog automation; knowledge manager as a node; more than a handful of real tickets.
+
+## Model matrix (partial: the 5-hour usage limit stopped the run)
+
+Reviewer and QA, real repo per case, 3 runs per case, after two harness fixes found by the
+eval itself (the QA prompt demanded running tests it cannot run, so the graph now passes
+the code-verified evidence with `evidenceNote`; and one "good" case had a rounding test that
+could not tell floor from round):
+
+| Model | Reviewer | QA |
+|---|---|---|
+| Haiku 5.5 | 15/15 (US$ 0.015) | 12/15 (0.016): approves scope creep 3/3 |
+| Sonnet 5.5 | 15/15 (0.167) | 15/15 (0.198) |
+| Opus 5.5 | 15/15 (0.493) | 15/15 (0.642) |
+
+Scope creep is the reviewer's job (15/15 on every model), so Haiku stays on both nodes.
+
+Triage and planner (`scripts/eval-stages.ts`, 9 requests x 3 runs, 6 clear with explicit
+criteria, 3 vague): Haiku 14/27 and 16/27, Sonnet 24/27 and 22/27; Opus not run. Haiku calls
+clear requests "not clear" (`clear=false`) in most runs, which would send them down the
+costlier planner route. So triage/planner should not use Haiku by default; `.env.example`
+keeps Haiku only on reviewer, qa and devops. Devops: Haiku 9/9 (never touched the repo,
+always described a rollback); Sonnet and Opus not run.
+
+**Dev: no valid result.** `scripts/eval-dev.ts` (4 tickets, hidden acceptance tests) got
+36/36 "no commit" because the dev reported the PowerShell tool denied in headless mode,
+for all three models, while the same setup committed fine earlier in the day. Not a model
+difference; cause not isolated (a direct `claude -p` probe with `PowerShell(git status*)`
+worked, then the usage limit hit). Do not read those numbers.
+
+Still to run: Opus on triage/planner/devops, Sonnet on devops, and the dev matrix once the
+PowerShell denial is explained. Fable stays untested.

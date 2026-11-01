@@ -57,6 +57,8 @@ const sh = safeGit;
 const context = (...parts: string[]) =>
   [...parts, "Answer only in the structured format. `summary`: up to 10 lines, only what the next node needs."].join("\n\n");
 const ticketData = (t: T) => `Ticket ${t.id}: ${t.title}\nAcceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
+export const evidenceNote = (evidence: string[]) =>
+  `Evidence checked by the orchestrator in code (not by you): ${evidence.join(", ")}. Do not reject only because you cannot run the tests yourself; judge the diff and the code against the criteria.`;
 const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
 
 const escalate = (t: T, name: string, reason: string): Partial<T> =>
@@ -113,7 +115,7 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
     if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
     const { output, usage } = await runAgent({
       role: name, files: files(t), cwd: t.worktree, schema: ReviewOutput,
-      context: context(ticketData(t), `Diff:\n${diff(t)}`),
+      context: context(ticketData(t), evidenceNote(v.evidence), `Diff:\n${diff(t)}`),
     });
     const id = name === "reviewer" ? { reviewer_id: `agent-${name}` } : { qa_id: `agent-${name}` };
     if (output.verdict === "approved") return { ...id, status: next, summary: cap(output.summary), history: log(t, name, "approved", usage) };
