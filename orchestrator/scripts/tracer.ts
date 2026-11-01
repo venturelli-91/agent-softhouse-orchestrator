@@ -22,13 +22,15 @@ const request = positionals[0] ?? "Change the text of the 'Submit' button to 'Su
 
 let r = await graph.invoke({ id, request, ...wt }, cfg);
 const paused = (x: unknown) => (x as { __interrupt__?: { value: unknown }[] }).__interrupt__;
-if (paused(r)) {
+const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
+while (paused(r)) {
   console.log(JSON.stringify(paused(r)![0].value, null, 1));
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = (await rl.question("CEO (approve / rejection reason): ")).trim();
-  rl.close();
-  r = await graph.invoke(resume(answer) as never, cfg);
+  process.stdout.write("CEO (approve / rejection reason): ");
+  const next = await lines.next();
+  if (next.done) break;
+  r = await graph.invoke(resume(next.value.trim()) as never, cfg);
 }
+process.stdin.destroy();
 console.log(report(r));
 if (r.status !== "simulated_deploy") console.log(`reason (${r.status}): ${r.summary}`);
 if (values.mermaid) console.log((await graph.getGraphAsync()).drawMermaid());
