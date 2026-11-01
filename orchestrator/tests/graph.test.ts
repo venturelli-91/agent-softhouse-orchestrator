@@ -79,6 +79,14 @@ test("deploy only happens after CEO approval; rejection goes back to the dev", a
   assert.equal((await answer(g, "approve")).status, "simulated_deploy");
 });
 
+test("a summary over 10 lines is truncated, not a node failure", async () => {
+  const long = Array.from({ length: 15 }, (_, i) => `line ${i}`).join("\n");
+  override.qa = () => ({ verdict: "approved", comments: "", summary: long });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.equal(String(paused(g.r)?.summary).split("\n").length, 10);
+});
+
 test("an approval flag reaches the CEO as an active flag", async () => {
   override.triage = () => ({ ...(defaults.triage!({} as Req<unknown>) as object), flags: { ...FLAGS, touches_schema: true } });
   const g = await start();

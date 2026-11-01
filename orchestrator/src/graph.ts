@@ -9,7 +9,8 @@ const DEV_FILE: Record<(typeof SPECIALTIES)[number], string> = {
   frontend: "dev-frontend", backend: "dev-backend", fullstack: "dev-fullstack", mobile: "dev-mobile",
   integrations: "dev-integrations", ai: "ai-engineer", data: "data-engineer",
 };
-const summary = z.string().refine((s) => s.split("\n").length <= 10, "summary over 10 lines");
+const summary = z.string().describe("at most 10 lines");
+const cap = (s: string) => s.split("\n").slice(0, 10).join("\n");
 const FlagsSchema = z.object({
   touches_security: z.boolean(), touches_performance: z.boolean(), touches_ai: z.boolean(), touches_schema: z.boolean(),
   touches_public_api: z.boolean(), touches_permissions: z.boolean(), touches_external_integration: z.boolean(), touches_cost: z.boolean(),
@@ -77,7 +78,7 @@ const guarded = (name: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T
 const triage = guarded("triage", async (t) => {
   const { output, usage } = await runAgent({ role: "triage", files: ["triage"], cwd: t.worktree, schema: TriageOutput, context: context(`CEO request: ${t.request}`) });
   const { clear, summary, ...rest } = output;
-  return { ...rest, criteria: clear ? rest.criteria : [], summary, status: clear ? "dev" : "ambiguous", history: log(t, "triage", clear ? "clear" : "ambiguous", usage) };
+  return { ...rest, criteria: clear ? rest.criteria : [], summary: cap(summary), status: clear ? "dev" : "ambiguous", history: log(t, "triage", clear ? "clear" : "ambiguous", usage) };
 });
 
 // demand-analyst -> product-manager -> tech-lead in a single agent turn (tokens: one context only).
@@ -88,8 +89,8 @@ const planner = guarded("planner", async (t) => {
     context: context(`CEO request: ${t.request}`, `Triage (ambiguous request): ${t.summary}`, "If missing information prevents verifiable acceptance criteria, set clear=false and put what is missing in `question`."),
   });
   const { clear, question, ...plan } = output;
-  if (!clear || !plan.criteria.length) return { status: "ambiguous", summary: question || plan.summary, history: log(t, "planner", "ambiguous", usage) };
-  return { ...plan, status: "dev", history: log(t, "planner", "clear", usage) };
+  if (!clear || !plan.criteria.length) return { status: "ambiguous", summary: cap(question || plan.summary), history: log(t, "planner", "ambiguous", usage) };
+  return { ...plan, summary: cap(plan.summary), status: "dev", history: log(t, "planner", "clear", usage) };
 });
 
 const dev = guarded("dev", async (t) => {
@@ -99,7 +100,7 @@ const dev = guarded("dev", async (t) => {
   });
   const v = verifyEvidence(t.worktree, t.base);
   if (!v.ok) return { status: "dev_failed", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
-  return { status: "review", summary: output.summary, author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
+  return { status: "review", summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
 });
 
 function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: string) {
@@ -115,7 +116,7 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
       context: context(ticketData(t), `Diff:\n${diff(t)}`),
     });
     const id = name === "reviewer" ? { reviewer_id: `agent-${name}` } : { qa_id: `agent-${name}` };
-    if (output.verdict === "approved") return { ...id, status: next, summary: output.summary, history: log(t, name, "approved", usage) };
+    if (output.verdict === "approved") return { ...id, status: next, summary: cap(output.summary), history: log(t, name, "approved", usage) };
     return { status: "dev_failed", revisions: t.revisions + 1, summary: output.comments.split("\n").slice(0, 10).join("\n"), history: log(t, name, "rejected", usage) };
   });
 }
@@ -142,7 +143,7 @@ const devops = guarded("devops", async (t) => {
     role: "devops", files: ["devops-sre"], cwd: t.worktree, schema: DevOutput,
     context: context(ticketData(t), "The CEO approved. Simulation: do NOT run a deploy or a merge. Describe status, rollback plan and observability."),
   });
-  return { status: "simulated_deploy", summary: output.summary, history: log(t, "devops", "simulated deploy", usage) };
+  return { status: "simulated_deploy", summary: cap(output.summary), history: log(t, "devops", "simulated deploy", usage) };
 });
 
 // The only merge/deploy and escalation point. Approval only counts if the evidence still holds.
