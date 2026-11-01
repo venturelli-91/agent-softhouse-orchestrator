@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
-import { createWorktree } from "../src/graph.ts";
+import { createWorktree, DEV_RULES } from "../src/graph.ts";
 import { verifyEvidence } from "../src/guardrails.ts";
 import { NodeFailure, runAgent } from "../src/run-agent.ts";
 
@@ -78,7 +78,7 @@ for (const model of values.models.split(",")) {
       execFileSync("git", ["clone", "-q", values.repo, join(root, "repo")]);
       const { worktree, base } = createWorktree(join(root, "repo"), `T-${n + 1}`, join(root, "wt"));
       const context = `Ticket T-${n + 1}: ${tk.title}\nAcceptance criteria:\n${tk.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n\n\n` +
-        "Implement in the current worktree, run npm test and commit (git add/git commit). Do not push.\n\nAnswer only in the structured format. `summary`: up to 10 lines, only what the next node needs.";
+        DEV_RULES + "\n\nAnswer only in the structured format. `summary`: up to 10 lines, only what the next node needs.";
       let res;
       try {
         res = await runAgent({ role: "dev", files: ["dev-fullstack"], cwd: worktree, schema: Out, context });

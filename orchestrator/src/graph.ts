@@ -57,6 +57,9 @@ const sh = safeGit;
 const context = (...parts: string[]) =>
   [...parts, "Answer only in the structured format. `summary`: up to 10 lines, only what the next node needs."].join("\n\n");
 const ticketData = (t: T) => `Ticket ${t.id}: ${t.title}\nAcceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
+export const DEV_RULES =
+  "Implement in the current worktree, run npm test and commit (git add/git commit). Do not push. " +
+  "Shell: one simple command per call (git add, git commit, git status, git diff, git log, npm test); no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.";
 export const evidenceNote = (evidence: string[]) =>
   `Evidence checked by the orchestrator in code (not by you): ${evidence.join(", ")}. Do not reject only because you cannot run the tests yourself; judge the diff and the code against the criteria.`;
 const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
@@ -98,7 +101,7 @@ const planner = guarded("planner", async (t) => {
 const dev = guarded("dev", async (t) => {
   const { output, usage } = await runAgent({
     role: "dev", files: [DEV_FILE[t.specialty]], cwd: t.worktree, schema: DevOutput,
-    context: context(ticketData(t), "Implement in the current worktree, run npm test and commit (git add/git commit). Do not push."),
+    context: context(ticketData(t), DEV_RULES),
   });
   const v = verifyEvidence(t.worktree, t.base);
   if (!v.ok) return { status: "dev_failed", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };

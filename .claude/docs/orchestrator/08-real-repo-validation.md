@@ -111,38 +111,49 @@ runs the agent there (`--reps 3`). 15 runs per model and role.
   ran the tests and attached the result. Until then do not read QA accuracy as model skill.
 - Still one task, 5 cases, no Fable.
 
+## Model matrix per stage
+
+Scripts: `eval-review.ts` (reviewer, qa), `eval-stages.ts` (triage, planner, devops),
+`eval-dev.ts` (dev). 3 runs per case; Fable not tested (it costs real dollars and no stage
+shows a failure that a stronger model would fix). Correct / runs, US$ for all runs:
+
+| Stage | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
+|---|---|---|---|
+| Reviewer (5 diffs) | 15/15, 0.015 | 15/15, 0.167 | 15/15, 0.493 |
+| QA (5 diffs) | 12/15, 0.016 | 15/15, 0.198 | 15/15, 0.642 |
+| Triage (9 requests) | 14/27, 0.031 | 24/27, 0.235 | 26/27, 0.793 |
+| Devops (3 x 3) | 9/9, 0.008 | 9/9, 0.067 | 9/9, 0.331 |
+| Dev (4 tickets, hidden tests) | 12/12, 0.032 | 12/12, 0.414 | 12/12, 0.945 |
+
+Reading:
+- **Reviewer, devops: Haiku.** Same accuracy at 1/10 to 1/30 of the cost.
+- **QA: Haiku is enough in practice.** Its 3 misses approve scope creep, which the reviewer
+  catches 15/15; use Sonnet if QA must also guard scope.
+- **Triage: keep the default model.** Haiku calls explicit, well-specified requests
+  "unclear" in most runs (14/27), which would push them through the costlier planner route.
+  Sonnet 24/27 and Opus 26/27 (the only Opus miss: a P0 outage called unclear).
+- **Planner: no usable signal.** The planner only runs on requests triage already found
+  ambiguous, and its prompt makes every model ask questions even on well-specified requests
+  (Opus 14/27, Haiku 16/27, Sonnet 22/27 on "clear" requests). The vague requests were
+  handled right by all. The eval cannot rank models here; keep the default model.
+- **Dev: all three pass 12/12, Haiku at 1/13 of Sonnet's cost.** Caveat: four small tickets
+  in one tiny repo; a hard multi-file change could separate them. Not made the default;
+  try `MODEL_DEV=claude-haiku-5-5` and watch the revision rate. Dev stays the default model.
+
+## Bugs found by the evals (all fixed)
+
+1. QA prompt demanded running tests the QA cannot run, so a strict model rejected good
+   diffs ("I found no defect, I'm rejecting because I couldn't run the checks"). The graph
+   now passes the code-verified evidence (`evidenceNote`).
+2. The dev sometimes issued a compound PowerShell command (`;`, pipe), the `dontAsk`
+   allowlist denied it, and the dev gave up without committing (about half the runs, all
+   three models, which first looked like 36/36 failures). `DEV_RULES` now tells it to use
+   one simple command per call; Haiku went from about 50% to 12/12.
+3. Two harness flaws of mine: a "good" case whose rounding test could not tell floor from
+   round, and an eval crash on a node failure (now counted as a miss).
+
 ## Still open
 
 Real deploy/merge; QA with a shell or real browser; container sandbox for `npm test`;
-watchdog automation; knowledge manager as a node; more than a handful of real tickets.
-
-## Model matrix (partial: the 5-hour usage limit stopped the run)
-
-Reviewer and QA, real repo per case, 3 runs per case, after two harness fixes found by the
-eval itself (the QA prompt demanded running tests it cannot run, so the graph now passes
-the code-verified evidence with `evidenceNote`; and one "good" case had a rounding test that
-could not tell floor from round):
-
-| Model | Reviewer | QA |
-|---|---|---|
-| Haiku 5.5 | 15/15 (US$ 0.015) | 12/15 (0.016): approves scope creep 3/3 |
-| Sonnet 5.5 | 15/15 (0.167) | 15/15 (0.198) |
-| Opus 5.5 | 15/15 (0.493) | 15/15 (0.642) |
-
-Scope creep is the reviewer's job (15/15 on every model), so Haiku stays on both nodes.
-
-Triage and planner (`scripts/eval-stages.ts`, 9 requests x 3 runs, 6 clear with explicit
-criteria, 3 vague): Haiku 14/27 and 16/27, Sonnet 24/27 and 22/27; Opus not run. Haiku calls
-clear requests "not clear" (`clear=false`) in most runs, which would send them down the
-costlier planner route. So triage/planner should not use Haiku by default; `.env.example`
-keeps Haiku only on reviewer, qa and devops. Devops: Haiku 9/9 (never touched the repo,
-always described a rollback); Sonnet and Opus not run.
-
-**Dev: no valid result.** `scripts/eval-dev.ts` (4 tickets, hidden acceptance tests) got
-36/36 "no commit" because the dev reported the PowerShell tool denied in headless mode,
-for all three models, while the same setup committed fine earlier in the day. Not a model
-difference; cause not isolated (a direct `claude -p` probe with `PowerShell(git status*)`
-worked, then the usage limit hit). Do not read those numbers.
-
-Still to run: Opus on triage/planner/devops, Sonnet on devops, and the dev matrix once the
-PowerShell denial is explained. Fable stays untested.
+watchdog automation; knowledge manager as a node; harder dev tickets; Fable on any stage;
+more than a handful of real tickets.
