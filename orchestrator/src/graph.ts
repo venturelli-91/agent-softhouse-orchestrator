@@ -2,7 +2,7 @@ import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langch
 import { z } from "zod";
 import { selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
 import { mergePr, publish } from "./publish.ts";
-import { loadRepoConfig } from "./repo-config.ts";
+import { loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
 
 const SPECIALTIES = ["frontend", "backend", "fullstack", "mobile", "integrations", "ai", "data"] as const;
@@ -27,6 +27,7 @@ export const Ticket = z.object({
   test: z.string().default("npm test"),
   merge: z.enum(["pr", "auto"]).default("pr"),
   approved_sha: z.string().default(""),
+  rules: z.string().default(""),
   title: z.string().default(""),
   priority: z.enum(["P0", "P1", "P2", "Bug"]).default("P2"),
   specialty: z.enum(SPECIALTIES).default("fullstack"),
@@ -106,7 +107,8 @@ const planner = guarded("planner", async (t) => {
 const dev = guarded("dev", async (t) => {
   const { output, usage } = await runAgent({
     role: "dev", files: [DEV_FILE[t.specialty]], cwd: t.worktree, schema: DevOutput,
-    context: context(ticketData(t), devRules(t.test)), test: t.test,
+    context: context(ticketData(t), devRules(t.test), ...(t.rules ? [`Target repo conventions (its CLAUDE.md; follow them, including the commit message format):
+${t.rules}`] : [])), test: t.test,
   });
   const v = verifyEvidence(t.worktree, t.base, t.test);
   if (!v.ok) return { status: "dev_failed", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
@@ -219,12 +221,12 @@ export function buildGraph(checkpointer = new MemorySaver()) {
 export const config = (id: string) => ({ configurable: { thread_id: id }, recursionLimit: RECURSION_LIMIT });
 export const resume = (answer: string) => new Command({ resume: answer });
 
-export function createWorktree(repo: string, id: string, dir: string): { worktree: string; base: string; test: string; merge: "pr" | "auto" } {
+export function createWorktree(repo: string, id: string, dir: string): { worktree: string; base: string; test: string; merge: "pr" | "auto"; rules: string } {
   if (activeTickets(repo) >= MAX_ACTIVE_TICKETS) throw new Error(`limit of ${MAX_ACTIVE_TICKETS} active tickets reached`);
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
   const { test, merge } = loadRepoConfig(repo, base);
-  return { worktree: dir, base, test, merge };
+  return { worktree: dir, base, test, merge, rules: loadConventions(repo, base) };
 }
 
 export function report(t: T): string {

@@ -22,3 +22,13 @@ export function loadRepoConfig(repo: string, ref: string): RepoConfig {
   if (!parsed.success) throw new Error(`.orchestrator.json: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
   return parsed.data;
 }
+
+// The target repo's CLAUDE.md, from the base commit (a ticket cannot edit its own rules). `claude -p` with our flags
+// does not load it by itself, so the dev gets it in its context. Capped: it is paid for on every dev turn.
+export function loadConventions(repo: string, ref: string, max = 8000): string {
+  try {
+    return safeGit(repo, "show", `${ref}:CLAUDE.md`).slice(0, max);
+  } catch {
+    return "";
+  }
+}
