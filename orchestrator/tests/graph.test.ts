@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../scripts/fixture.ts";
+import { FileSaver } from "../src/file-saver.ts";
 import { config, createWorktree, buildGraph, resume } from "../src/graph.ts";
 import { registerPublisher } from "../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
@@ -56,11 +57,11 @@ beforeEach(() => {
 });
 afterEach(() => roots.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
 
-async function start(id = "T-1") {
+async function start(id = "T-1", saver: MemorySaver = new MemorySaver()) {
   const root = mkdtempSync(join(tmpdir(), "gt-"));
   roots.push(root);
   const repo = createFixture(root);
-  const graph = buildGraph(new MemorySaver());
+  const graph = buildGraph(saver);
   const cfg = config(id);
   const r = await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, "wt")) }, cfg);
   return { graph, cfg, r, repo, root };
@@ -77,6 +78,16 @@ test("deploy only happens after CEO approval; rejection goes back to the dev", a
   assert.equal(rej.revisions, 1);
   assert.notEqual(rej.status, "simulated_deploy");
   assert.equal((await answer(g, "approve")).status, "simulated_deploy");
+});
+
+test("a pending approval survives the process and can be answered by a new graph", async () => {
+  const file = join(mkdtempSync(join(tmpdir(), "gt-")), "state.json");
+  roots.push(join(file, ".."));
+  const g = await start("T-1", new FileSaver(file));
+  assert.equal(paused(g.r)?.type, "approval");
+  const later = buildGraph(new FileSaver(file));
+  assert.equal(((await later.getState(g.cfg)).tasks[0]?.interrupts[0]?.value as { type: string }).type, "approval");
+  assert.equal((await later.invoke(resume("approve") as never, g.cfg)).status, "simulated_deploy");
 });
 
 test("a summary over 10 lines is truncated, not a node failure", async () => {
