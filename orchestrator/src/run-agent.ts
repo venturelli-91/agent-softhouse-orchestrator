@@ -28,6 +28,24 @@ export interface Executor {
 }
 
 export class NodeFailure extends Error {}
+// A failure worth retrying (API busy, overloaded, rate limited). A usage limit is not: waiting seconds will not fix it.
+export class TransientFailure extends NodeFailure {}
+
+const TRANSIENT = /api_error|overloaded|rate.?limit|429|529|503/i;
+const USAGE_LIMIT = /usage limit|hit your .*limit/i;
+
+// RETRY_DELAYS_MS="5000,20000" = up to two retries with those waits; empty disables.
+export async function withRetry<T>(fn: () => Promise<T>, delays = (process.env.RETRY_DELAYS_MS ?? "5000,20000").split(",").filter(Boolean).map(Number)): Promise<T> {
+  for (const wait of [...delays, null]) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!(e instanceof TransientFailure) || wait === null) throw e;
+      await new Promise((ok) => setTimeout(ok, wait));
+    }
+  }
+  throw new Error("unreachable");
+}
 
 export function loadPrompt(files: string[], dir = process.env.AGENTS_DIR): string {
   if (!dir) throw new NodeFailure("missing env: AGENTS_DIR");
@@ -85,7 +103,11 @@ export function parseOutput<T>(role: Role, raw: string, schema: z.ZodType<T>, ms
   } catch {
     throw new NodeFailure(`${role}: output is not JSON`);
   }
-  if (r.is_error || r.subtype !== "success") throw new NodeFailure(`${role}: ${r.subtype ?? "error"} (${r.terminal_reason})`);
+  if (r.is_error || r.subtype !== "success") {
+    const why = `${role}: ${r.subtype ?? "error"} (${r.terminal_reason})`;
+    const text = `${r.terminal_reason} ${typeof r.result === "string" ? r.result : ""}`;
+    throw new (TRANSIENT.test(text) && !USAGE_LIMIT.test(text) ? TransientFailure : NodeFailure)(why);
+  }
   const output = schema.safeParse(r.structured_output);
   if (!output.success) throw new NodeFailure(`${role}: invalid output: ${output.error.message.slice(0, 300)}`);
   const u = r.usage;
@@ -111,5 +133,5 @@ export function runAgent<T>(req: Req<T>): Promise<Result<T>> {
   const name = process.env.EXECUTOR ?? "claude-subscription";
   const ex = executors[name];
   if (!ex) throw new NodeFailure(`unknown EXECUTOR: ${name}`);
-  return ex.run(req);
+  return withRetry(() => ex.run(req));
 }

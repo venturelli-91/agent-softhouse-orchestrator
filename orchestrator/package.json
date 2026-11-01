@@ -10,6 +10,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "tracer": "node --env-file=.env scripts/tracer.ts",
+    "watchdog": "node --env-file=.env scripts/watchdog.ts",
+    "eval:review": "node --env-file=.env scripts/eval-review.ts",
+    "eval:stages": "node --env-file=.env scripts/eval-stages.ts",
+    "eval:dev": "node --env-file=.env scripts/eval-dev.ts",
     "test": "node --test \"tests/**/*.test.ts\""
   },
   "dependencies": {

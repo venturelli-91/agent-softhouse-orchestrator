@@ -7,10 +7,10 @@ import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { FileSaver } from "../src/file-saver.ts";
-import { config, createWorktree, buildGraph, resume } from "../src/graph.ts";
+import { config, createWorktree, buildGraph, resume, DEV_RULES } from "../src/graph.ts";
 import { registerPublisher } from "../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
-import { watchdog } from "../src/watchdog.ts";
+import { alerts, watchdog } from "../src/watchdog.ts";
 
 type Behavior = Partial<Record<string, (req: Req<unknown>) => unknown>>;
 let override: Behavior = {};
@@ -227,4 +227,31 @@ test("the watchdog reads the state and returns alerts without writing", async ()
   const r = await watchdog([g.r], g.root);
   assert.deepEqual(r.alerts, ["T-1 stalled"]);
   assert.equal(calls.at(-1), "watchdog");
+});
+
+test("dev gets the shell rules and qa gets the code-verified evidence", async () => {
+  const ctx: Record<string, string> = {};
+  for (const role of ["dev", "qa"] as const) {
+    const base = defaults[role]!;
+    override[role] = (req) => ((ctx[role] = req.context), base(req));
+  }
+  await start();
+  assert.ok(ctx.dev.includes(DEV_RULES));
+  assert.match(ctx.qa, /Evidence checked by the orchestrator in code.*tests:npm test ok/);
+});
+
+test("alerts flag stalled, looping, over-budget and escalated tickets, and skip finished ones", async () => {
+  const g = await start();
+  const t = (o: object) => ({ ...g.r, ...o });
+  const old = [{ node: "dev", time: "2026-01-01T00:00:00Z", result: "x", ms: 0 }];
+  const now = Date.parse("2026-01-02T12:00:00Z");
+  const env = { TOKEN_BUDGET_TICKET: "100", STALE_HOURS: "24" };
+  assert.deepEqual(alerts([t({ status: "simulated_deploy", history: old })], now, env), []);
+  const found = alerts([t({ id: "A", status: "approval", history: old, revisions: 2 })], now, env).join("|");
+  assert.match(found, /A \[P2\] approval for 36\.0h/);
+  assert.match(found, /A review loop: 2\/3/);
+  const usage = { tokens_in: 90, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 };
+  assert.match(alerts([t({ id: "B", status: "dev", history: [{ ...old[0], time: "2026-01-02T11:30:00Z", usage }] })], now, env).join(), /B token budget at 90%/);
+  assert.match(alerts([t({ id: "C", status: "escalated", summary: "qa: budget", history: [{ ...old[0], time: "2026-01-02T11:30:00Z" }] })], now, env).join(), /C escalated: qa: budget/);
+  assert.match(alerts([t({ id: "D", priority: "P0", status: "dev", history: [{ ...old[0], time: "2026-01-02T10:30:00Z" }] })], now, env).join(), /D \[P0\] dev for 1\.5h/);
 });

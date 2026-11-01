@@ -6,7 +6,7 @@ import { minimalEnv, PERMISSIONS, SHELL } from "../src/guardrails.ts";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { claudeArgs, loadPrompt, NodeFailure, parseOutput } from "../src/run-agent.ts";
+import { claudeArgs, loadPrompt, NodeFailure, parseOutput, TransientFailure, withRetry } from "../src/run-agent.ts";
 
 const schema = z.object({ ok: z.boolean() });
 const env = { MODEL_DEFAULT: "m-x", EFFORT_DEFAULT: "medium", TURNS_DEFAULT: "8", TURNS_QA: "4", MODEL_QA: "m-qa" };
@@ -74,4 +74,20 @@ test("invalid output, turn limit, error and garbage are failures", () => {
   fails({ ...ok, subtype: "error_max_turns", terminal_reason: "max_turns" });
   fails({ ...ok, is_error: true });
   fails("this is not json");
+});
+
+test("an API error is transient and retried; a usage limit or a turn limit is not", async () => {
+  const kind = (o: unknown) => { try { parseOutput("dev", JSON.stringify(o), schema, 1); } catch (e) { return (e as Error).constructor.name; } };
+  assert.equal(kind({ ...ok, is_error: true, terminal_reason: "api_error" }), "TransientFailure");
+  assert.equal(kind({ ...ok, is_error: true, terminal_reason: "api_error", result: "You've hit your 5-hour limit" }), "NodeFailure");
+  assert.equal(kind({ ...ok, subtype: "error_max_turns", terminal_reason: "max_turns" }), "NodeFailure");
+
+  let tries = 0;
+  const flaky = async () => { if (++tries < 3) throw new TransientFailure("busy"); return "done"; };
+  assert.equal(await withRetry(flaky, [0, 0]), "done");
+  tries = 0;
+  await assert.rejects(withRetry(flaky, [0]), TransientFailure);
+  tries = 0;
+  await assert.rejects(withRetry(async () => { tries++; throw new NodeFailure("no"); }, [0, 0]), NodeFailure);
+  assert.equal(tries, 1);
 });

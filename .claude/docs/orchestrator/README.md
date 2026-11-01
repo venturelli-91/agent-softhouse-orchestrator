@@ -19,8 +19,8 @@ the real barriers are code, CLI permissions, an isolated worktree and a minimal 
 | [05-publish-devops-watchdog.md](05-publish-devops-watchdog.md) | push/PR by code, post-CEO devops, watchdog |
 | [06-phase-3-and-final-report.md](06-phase-3-and-final-report.md) | publishing, live regression, final report |
 | [07-metrics.md](07-metrics.md) | consolidated metrics for consumption, tests, code and process |
-
 | [08-real-repo-validation.md](08-real-repo-validation.md) | runs on a real GitHub repo, ambiguous route, persistent approval, model-cost experiment |
+| [09-hardening.md](09-hardening.md) | retry, verified evidence, dev shell rules, rule-based watchdog, what was left out and why |
 
 ## Decisions and findings (task 1)
 
