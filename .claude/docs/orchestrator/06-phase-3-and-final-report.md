@@ -25,7 +25,8 @@
 
 Task 3: 79,631 tokens / 36.0 s / US$ 0.063. The difference is `devops` (+5.3k tokens) and
 the larger triage. The ambiguous route (planner) and the `github` publisher were not
-exercised with a real model/remote.
+exercised with a real model/remote at this point; Phase 4 did it
+(`08-real-repo-validation.md`).
 
 ## What I reused
 

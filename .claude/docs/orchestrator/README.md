@@ -20,7 +20,7 @@ the real barriers are code, CLI permissions, an isolated worktree and a minimal 
 | [06-phase-3-and-final-report.md](06-phase-3-and-final-report.md) | publishing, live regression, final report |
 | [07-metrics.md](07-metrics.md) | consolidated metrics for consumption, tests, code and process |
 
-(The next docs arrive with each task: publishing.)
+| [08-real-repo-validation.md](08-real-repo-validation.md) | runs on a real GitHub repo, ambiguous route, persistent approval, model-cost experiment |
 
 ## Decisions and findings (task 1)
 
@@ -30,9 +30,9 @@ the real barriers are code, CLI permissions, an isolated worktree and a minimal 
   `.ts`. LangGraph tree: `@langchain/langgraph-checkpoint`, `-sdk`, `protocol`,
   `standard-schema`.
 - **Checkpointer:** `MemorySaver` in Phase 1 (CEO approval answered in the same
-  process). The official SQLite one (`@langchain/langgraph-checkpoint-sqlite`) pulls in
-  `better-sqlite3` (a native module) and is left for when asynchronous approval is
-  needed.
+  process). Since Phase 4, `FileSaver` (`src/file-saver.ts`) persists it to a JSON file
+  so approval can come from a later process; the official SQLite one pulls in
+  `better-sqlite3` (a native module) and was not needed.
 - **Ticket repository:** there is none (`playbooks/` only has `.gitkeep`, no GitHub
   issues configured here). The ticket state is the graph's own.
 - **Git:** the folder was not a repo. `git init` was run, with `origin` pointing to

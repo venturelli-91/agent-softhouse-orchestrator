@@ -59,15 +59,22 @@ reviewer 10,714 + 799; qa 10,641 + 1,183; devops 4,722 + 610.
 | Task 4 | 26, ~29 s | + 3 for the planner |
 | Phase 2 (publish/devops/watchdog) | 31 | + 5 |
 | Final (pinned SHA, moved HEAD) | 32 | + 1 in `evidence.test.ts` |
+| Phase 4 (real repo) | 34 | + summary truncation, + persistent approval |
 
-Final distribution: `graph.test.ts` 16, `evidence.test.ts` 8, `run-agent.test.ts` 8. No
+Final distribution: `graph.test.ts` 18, `evidence.test.ts` 8, `run-agent.test.ts` 8. No
 test uses the network, a model or a credential. CI on GitHub Actions: green on `main`.
+
+## 2b. Real-repo runs (Phase 4)
+
+Five tickets on a real GitHub repo with the real model; table, findings and the Haiku
+experiment (US$ 0.160 to 0.035 per ticket on one sample) are in
+[08-real-repo-validation.md](08-real-repo-validation.md).
 
 ## 3. Code size
 
-- `orchestrator/src/`: 532 lines (brief's target: core in ~300; it exceeded through
+- `orchestrator/src/`: 577 lines (was 532 before Phase 4, which added `file-saver.ts`) (brief's target: core in ~300; it exceeded through
   guardrails, publisher and watchdog, which the brief did not count).
-- `tests/` + `scripts/`: 448 lines. `examples/agents/`: 18 prompts, ≤7 lines each
+- `tests/` + `scripts/`: 482 lines. `examples/agents/`: 18 prompts, ≤7 lines each
   (target: 8 prompts ≤15 lines).
 - Runtime dependencies: 3 (`@langchain/langgraph`, `@langchain/core`, `zod`); dev: 2
   (`typescript`, `@types/node`).
@@ -75,7 +82,7 @@ test uses the network, a model or a credential. CI on GitHub Actions: green on `
 
 ## 4. Process
 
-- 22 commits on `main`, 13 of them orchestrator `feat`/`fix`; 100% atomic, in English.
+- 32 commits on `main`, atomic and in English. History was rewritten again in the English migration to drop the AI co-author trailer.
 - Automatic security reviews per phase: 4 rounds in Phase 1/Task 3 (sandbox, `npm test`
   on the host, forbidden paths, renames), plus 2 findings in `publish.ts` and 1 in
   `graph.ts` in Phase 2, all fixed with a test.

@@ -28,6 +28,12 @@ when information is missing.
 escalates with the question ...`, `the CEO aborts when the planner asks for
 clarification`. Total: 26 tests.
 
+## Real-model validation
+
+Exercised in Phase 4 with the request "Add a discount to the cart": the planner asked 5
+scoping questions, the CEO's answer returned it to the planner, which closed the criteria
+and released the dev (`08-real-repo-validation.md`). Planner cost: 2 calls, ~20k tokens.
+
 ## Out of scope
 
 devops, watchdog, branch push and PR opening by the code (next tasks of Phase 2).

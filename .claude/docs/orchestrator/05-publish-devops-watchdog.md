@@ -40,7 +40,8 @@ push/PR before the CEO and devops only after; rejection does not trigger devops;
 missing `PUBLISHER` escalates without publishing; a failing publisher escalates; the
 watchdog returns alerts. Total: 31 tests.
 
-## Not validated
+## Validation
 
-The real `github` publisher (push + `gh pr create`) was not exercised against a remote:
-it depends on `origin` and `gh`.
+The real `github` publisher was first untested; in Phase 4 it was exercised against a
+throwaway private repo (push of the verified SHA plus a draft PR, twice), see
+`08-real-repo-validation.md`. The real watchdog and a real deploy are still not exercised.
