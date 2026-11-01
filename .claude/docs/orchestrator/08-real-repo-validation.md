@@ -87,6 +87,30 @@ One run per case.
 - Limits: 5 cases, 1 run each, only the read-only nodes. Dev, planner, triage and devops
   are not covered, and Fable was not tested.
 
+### Second round: a real git repo per case, 3 runs per case
+
+`eval-review.ts` now builds a base commit plus the candidate change in its own repo and
+runs the agent there (`--reps 3`). 15 runs per model and role.
+
+| Model | Reviewer (correct / US$) | QA (correct / US$) |
+|---|---|---|
+| Haiku 5.5 | 15/15 / 0.015 | 13/15 / 0.023 |
+| Sonnet 5.5 | 15/15 / 0.189 | 15/15 / 0.241 |
+| Opus 5.5 | 15/15 / 0.551 | 13/15 / 0.905 |
+
+- **Reviewer:** 15/15 on all three models, so the Haiku default holds (~1/12 of Sonnet).
+- **QA misses are one case, "good", and they are about the shell, not the code.** Opus said
+  "I found no defect in the code. I'm rejecting because I couldn't run the required
+  checks": the QA prompt's stop rule demands running `npm test`, the QA node has no shell,
+  and a stricter model obeys the rule. Haiku rejected once for the same reason and once
+  for a real point (the rounding test also passes with `Math.round`, so it does not prove
+  "rounded down"). Sonnet approved 3/3.
+- **Consequence:** QA approval depends on how literally the model reads a rule it cannot
+  satisfy, which is a prompt/permission mismatch, not a quality signal. Either give QA a
+  restricted shell for `npm test`, or tell it (in the graph context) that the graph already
+  ran the tests and attached the result. Until then do not read QA accuracy as model skill.
+- Still one task, 5 cases, no Fable.
+
 ## Still open
 
 Real deploy/merge; QA with a shell or real browser; container sandbox for `npm test`;
