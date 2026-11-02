@@ -80,7 +80,7 @@ async function locked(id: string, fn: () => Promise<void>) {
     unlock();
   }
 }
-const DONE = ["simulated_deploy", "aborted"];
+const DONE = ["simulated_deploy", "deployed", "aborted"];
 
 if (cmd === "init") {
   const repo = resolve(positionals[0] ?? process.cwd());

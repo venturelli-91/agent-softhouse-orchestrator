@@ -2,6 +2,8 @@ import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langch
 import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
 import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
+import { orchHome } from "./daily-cap.ts";
+import { getDeployTarget, recordDeploy } from "./deploy.ts";
 import { mergePr, publish } from "./publish.ts";
 import { loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
@@ -49,6 +51,7 @@ export const Ticket = z.object({
   briefing: z.string().default(""),
   stories: z.array(z.string()).default([]),
   incident: z.string().default(""),
+  deploy_target: z.string().default("simulated"),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
   qa_id: z.string().nullable().default(null),
@@ -176,13 +179,17 @@ const publishNode = guarded("publish", async (t) => {
   return { status: "approval", approved_sha: v.sha, evidence: [...v.evidence, pr], history: log(t, "publish", pr) };
 });
 
-// Merge/deploy only after the CEO; with no write permission, the agent describes the plan and the rollback.
-const devops = guarded("devops", async (t) => {
-  const { output, usage } = await runAgent({
-    role: "devops", files: ["devops-sre"], cwd: t.worktree, schema: DevOutput,
-    context: context(ticketData(t), "The CEO approved. Simulation: do NOT run a deploy or a merge. Describe status, rollback plan and observability."),
-  });
-  return { status: "simulated_deploy", summary: cap(output.summary), history: log(t, "devops", "simulated deploy", usage) };
+// Deploy only after the CEO, by code: the ticket's target runs the approved commit and the deploy is recorded for the monitor.
+const deploy = guarded("deploy", async (t) => {
+  let target;
+  try {
+    target = getDeployTarget(t.deploy_target);
+  } catch (e) {
+    throw new NodeFailure((e as Error).message);
+  }
+  const result = target.deploy({ id: t.id, sha: t.approved_sha });
+  recordDeploy(orchHome(), { id: t.id, repo: t.repo || repoOf(t.worktree), sha: t.approved_sha, previous: t.base, target: t.deploy_target, sandbox: target.sandbox });
+  return { status: t.deploy_target === "simulated" ? "simulated_deploy" : "deployed", evidence: [...t.evidence, `deploy:${result}`], history: log(t, "deploy", result) };
 });
 
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
@@ -240,14 +247,14 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
 const route = (ok: string, node: string) => (t: T) =>
   t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval";
 const afterTriage = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguous" ? "planner" : "ceo_approval");
-const RETRYABLE = ["triage", "planner", "dev", "reviewer", "qa", "publish", "devops"];
-const POST_DEV = ["reviewer", "qa", "publish", "devops"];
+const RETRYABLE = ["triage", "planner", "dev", "reviewer", "qa", "publish", "deploy"];
+const POST_DEV = ["reviewer", "qa", "publish", "deploy"];
 const afterCeo = (t: T) => (t.status === "retry" ? t.failed_node : t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END);
-const afterMerge = (t: T) => (t.status === "approved" ? "devops" : "ceo_approval");
+const afterMerge = (t: T) => (t.status === "approved" ? "deploy" : "ceo_approval");
 
 export function buildGraph(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
-    .addNode("triage", triage).addNode("planner", planner).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publish", publishNode).addNode("ceo_approval", ceoApproval).addNode("merge_pr", mergeNode).addNode("devops", devops)
+    .addNode("triage", triage).addNode("planner", planner).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publish", publishNode).addNode("ceo_approval", ceoApproval).addNode("merge_pr", mergeNode).addNode("deploy", deploy)
     .addEdge(START, "triage")
     .addConditionalEdges("triage", afterTriage, ["dev", "planner", "ceo_approval"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "ceo_approval"])
@@ -255,9 +262,9 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("reviewer", route("qa", "qa"), ["qa", "dev", "ceo_approval"])
     .addConditionalEdges("qa", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
     .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval"])
-    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "qa", "publish", "devops", "merge_pr", END])
-    .addConditionalEdges("merge_pr", afterMerge, ["devops", "ceo_approval"])
-    .addEdge("devops", END)
+    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "qa", "publish", "deploy", "merge_pr", END])
+    .addConditionalEdges("merge_pr", afterMerge, ["deploy", "ceo_approval"])
+    .addEdge("deploy", END)
     .compile({ checkpointer });
 }
 

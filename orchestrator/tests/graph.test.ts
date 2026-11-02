@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { FileSaver } from "../src/file-saver.ts";
+import { readDeploy } from "../src/deploy.ts";
 import { config, createWorktree, buildGraph, resume, DEV_RULES } from "../src/graph.ts";
 import { ciVerdict, registerPublisher } from "../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
@@ -30,7 +31,6 @@ const defaults: Behavior = {
   dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok" }),
   reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),
-  devops: () => ({ summary: "simulated deploy" }),
   watchdog: () => ({ alerts: ["T-1 stalled"], summary: "ok" }),
 };
 let publications: string[] = [];
@@ -57,6 +57,9 @@ registerExecutor("fake", {
 
 beforeEach(() => {
   process.env.EXECUTOR = "fake";
+  const orchRoot = mkdtempSync(join(tmpdir(), "oh-"));
+  roots.push(orchRoot);
+  process.env.ORCH_HOME = orchRoot;
   process.env.PUBLISHER = "fake";
   publications = [];
   merges = [];
@@ -200,7 +203,7 @@ test("limit of 5 active tickets", async () => {
   assert.throws(() => createWorktree(repo, "T-6", join(root, "wt6")), /limit of 5/);
 });
 
-test("push and PR come from the graph's code, after QA and before the CEO; devops only after the CEO", async () => {
+test("push and PR come from the graph's code, after QA and before the CEO; deploy only after the CEO", async () => {
   const g = await start();
   assert.equal(publications.length, 1);
   assert.match(publications[0], /^T-1@[0-9a-f]{40}$/);
@@ -208,10 +211,10 @@ test("push and PR come from the graph's code, after QA and before the CEO; devop
   assert.ok(!calls.includes("devops"));
   const end = await answer(g, "approve");
   assert.equal(end.status, "simulated_deploy");
-  assert.equal(calls.at(-1), "devops");
+  assert.ok(!calls.includes("devops"));
 });
 
-test("CEO rejection does not trigger devops", async () => {
+test("CEO rejection does not trigger the deploy", async () => {
   const g = await start();
   await answer(g, "did not like it");
   assert.ok(!calls.includes("devops"));
@@ -461,4 +464,18 @@ test("an explanation from a superseded commit does not reach the approval reques
   const g = await start();
   const expl = String(paused(g.r)?.explanation);
   assert.ok(expl.includes("R2-EXPL") && expl.includes("Q2-EXPL") && !expl.includes("R1-EXPL"), expl);
+});
+
+test("after approval the deploy node runs the ticket's target and ends in simulated_deploy", async () => {
+  const g = await start();
+  assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
+  const end = await answer(g, "approve");
+  assert.equal(end.status, "simulated_deploy");
+  const d = readDeploy(process.env.ORCH_HOME!, "T-1");
+  assert.equal(d.sandbox, true);
+  assert.equal(d.target, "simulated");
+  assert.equal(d.sha, end.approved_sha);
+  assert.equal(d.previous, end.base);
+  assert.ok(end.evidence.some((e: string) => e.startsWith("deploy:simulated:")));
+  assert.ok(!calls.includes("devops"));
 });
