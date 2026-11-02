@@ -46,6 +46,9 @@ export const Ticket = z.object({
   summary_before_failure: z.string().default(""),
   summary: z.string().default(""),
   explanation: z.string().default(""),
+  briefing: z.string().default(""),
+  stories: z.array(z.string()).default([]),
+  incident: z.string().default(""),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
   qa_id: z.string().nullable().default(null),
@@ -60,7 +63,7 @@ const TriageOutput = z.object({
   clear: z.boolean(), flags: FlagsSchema, criteria: z.array(z.string()), summary,
 });
 // `question` is empty when clear; otherwise it is what the CEO needs to answer.
-const PlanOutput = TriageOutput.extend({ question: z.string() });
+const PlanOutput = TriageOutput.extend({ question: z.string(), briefing: z.string().default(""), stories: z.array(z.string()).default([]) });
 const DevOutput = z.object({ summary });
 const ReviewOutput = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary, explanation: z.string().default("") });
 
@@ -72,7 +75,9 @@ const sh = safeGit;
 // Minimal context: only what the role needs, never the conversation history.
 const context = (...parts: string[]) =>
   [...parts, "Answer only in the structured format. `summary`: up to 10 lines, only what the next node needs."].join("\n\n");
-const ticketData = (t: T) => `Ticket ${t.id}: ${t.title}\nAcceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
+const ticketData = (t: T) =>
+  `Ticket ${t.id}: ${t.title}\n${t.briefing ? `Briefing:\n${t.briefing}\n` : ""}${t.stories.length ? `Stories:\n${t.stories.map((s) => `- ${s}`).join("\n")}\n` : ""}` +
+  `Acceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
 export const devRules = (test = "npm test") =>
   `Implement in the current worktree, run ${test} and commit (git add/git commit). Do not push. ` +
   `Shell: one simple command per call (git add, git commit, git status, git diff, git log, ${test}); no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.`;
@@ -100,7 +105,7 @@ const guarded = (name: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T
 const triage = guarded("triage", async (t) => {
   const { output, usage } = await runAgent({ role: "triage", files: ["triage"], cwd: t.worktree, schema: TriageOutput, context: context(`CEO request: ${t.request}`) });
   const { clear, summary, ...rest } = output;
-  return { ...rest, criteria: clear ? rest.criteria : [], summary: cap(summary), status: clear ? "dev" : "ambiguous", history: log(t, "triage", clear ? "clear" : "ambiguous", usage) };
+  return { ...rest, priority: t.incident ? "P0" as const : rest.priority, criteria: clear ? rest.criteria : [], summary: cap(summary), status: clear ? "dev" : "ambiguous", history: log(t, "triage", clear ? "clear" : "ambiguous", usage) };
 });
 
 // demand-analyst -> product-manager -> tech-lead in a single agent turn (tokens: one context only).
@@ -112,7 +117,7 @@ const planner = guarded("planner", async (t) => {
   });
   const { clear, question, ...plan } = output;
   if (!clear || !plan.criteria.length) return { status: "ambiguous", summary: cap(question || plan.summary), history: log(t, "planner", "ambiguous", usage) };
-  return { ...plan, summary: cap(plan.summary), status: "dev", history: log(t, "planner", "clear", usage) };
+  return { ...plan, priority: t.incident ? "P0" as const : plan.priority, summary: cap(plan.summary), status: "dev", history: log(t, "planner", "clear", usage) };
 });
 
 const rulesBlock = (t: T) => (t.rules ? [`Target repo conventions (its CLAUDE.md; follow them, including the commit message format):
@@ -124,8 +129,8 @@ const dev = guarded("dev", async (t) => {
     context: context(ticketData(t), devRules(t.test), ...rulesBlock(t)), test: t.test,
   });
   const v = verifyEvidence(t.worktree, t.base, t.test);
-  if (!v.ok) return { status: "dev_failed", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
-  return { status: "review", summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
+  if (!v.ok) return { status: "dev_failed", explanation: "", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
+  return { status: "review", explanation: "", summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
 });
 
 function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: string) {

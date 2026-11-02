@@ -430,3 +430,35 @@ test("the reviewer and qa explanations reach the approval request", async () => 
   const expl = String(paused(g.r)?.explanation);
   assert.ok(expl.includes("R-EXPL") && expl.includes("Q-EXPL"), expl);
 });
+
+test("the planner's briefing and stories land on the ticket and in the dev context", async () => {
+  let devCtx = "";
+  override = {
+    triage: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), clear: false, criteria: [] }),
+    planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), question: "", briefing: "B-CANARY", stories: ["As a buyer I want X so that Y"] }),
+    dev: (req) => ((devCtx = req.context), commit(req.cwd, "agent-dev"), { summary: "ok" }),
+  };
+  const g = await start();
+  assert.ok(devCtx.includes("B-CANARY") && devCtx.includes("As a buyer I want X so that Y"), devCtx);
+  const s = await g.graph.getState(g.cfg);
+  assert.equal(s.values.briefing, "B-CANARY");
+  assert.deepEqual(s.values.stories, ["As a buyer I want X so that Y"]);
+});
+
+test("a ticket with an incident keeps priority P0 even if triage says P2", async () => {
+  const g = await start("T-1", new MemorySaver(), { incident: "inc-1" });
+  const s = await g.graph.getState(g.cfg);
+  assert.equal(s.values.priority, "P0");
+  assert.equal(s.values.incident, "inc-1");
+});
+
+test("an explanation from a superseded commit does not reach the approval request", async () => {
+  let r = 0, q = 0;
+  override = {
+    reviewer: () => ({ verdict: "approved", comments: "", summary: "ok", explanation: `R${++r}-EXPL` }),
+    qa: () => (++q === 1 ? { verdict: "rejected", comments: "no", summary: "no" } : { verdict: "approved", comments: "", summary: "ok", explanation: "Q2-EXPL" }),
+  };
+  const g = await start();
+  const expl = String(paused(g.r)?.explanation);
+  assert.ok(expl.includes("R2-EXPL") && expl.includes("Q2-EXPL") && !expl.includes("R1-EXPL"), expl);
+});
