@@ -45,6 +45,7 @@ export const Ticket = z.object({
   failed_node: z.string().default(""),
   summary_before_failure: z.string().default(""),
   summary: z.string().default(""),
+  explanation: z.string().default(""),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
   qa_id: z.string().nullable().default(null),
@@ -61,7 +62,7 @@ const TriageOutput = z.object({
 // `question` is empty when clear; otherwise it is what the CEO needs to answer.
 const PlanOutput = TriageOutput.extend({ question: z.string() });
 const DevOutput = z.object({ summary });
-const ReviewOutput = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary });
+const ReviewOutput = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary, explanation: z.string().default("") });
 
 const log = (t: T, node: string, result: string, usage?: Usage) =>
   [...t.history, { node, time: new Date().toISOString(), result, ms: usage?.ms ?? 0, usage }];
@@ -137,10 +138,10 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
     if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
     const { output, usage } = await runAgent({
       role: name, files: files(t), cwd: t.worktree, schema: ReviewOutput,
-      context: context(ticketData(t), evidenceNote(v.evidence), ...(name === "reviewer" ? rulesBlock(t) : []), `Diff:\n${diff(t)}`),
+      context: context(ticketData(t), evidenceNote(v.evidence), "`explanation`: what changed and why, in plain language a non-programmer follows, up to 6 lines.", ...(name === "reviewer" ? rulesBlock(t) : []), `Diff:\n${diff(t)}`),
     });
     const id = name === "reviewer" ? { reviewer_id: `agent-${name}` } : { qa_id: `agent-${name}` };
-    if (output.verdict === "approved") return { ...id, status: next, summary: cap(output.summary), history: log(t, name, "approved", usage) };
+    if (output.verdict === "approved") return { ...id, status: next, summary: cap(output.summary), explanation: [t.explanation, output.explanation.trim().split("\n").slice(0, 6).join("\n")].filter(Boolean).join("\n"), history: log(t, name, "approved", usage) };
     return { status: "dev_failed", revisions: t.revisions + 1, summary: output.comments.split("\n").slice(0, 10).join("\n"), history: log(t, name, "rejected", usage) };
   });
 }
@@ -207,7 +208,7 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
   const reason = t.status === "approval" ? (v?.ok ? (v.sha === t.approved_sha ? null : "commit changed since it was published") : `invalid evidence: ${v ? v.reason : "no evidence"}`)
     : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
-    type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, evidence: t.evidence,
+    type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, explanation: t.explanation, evidence: t.evidence,
     active_flags: Object.entries(t.flags).filter(([, active]) => active).map(([k]) => k),
   }) as string;
   const h = (res: string) => log(t, "ceo_approval", res);

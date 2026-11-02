@@ -420,3 +420,13 @@ test("CI is green only with a passing check, no failures, and a stable set of ch
   assert.equal(ciVerdict(2, c("pass", "fail")), "fail");
   assert.equal(ciVerdict(2, c("pass", "cancel")), "fail");
 });
+
+test("the reviewer and qa explanations reach the approval request", async () => {
+  override = {
+    reviewer: () => ({ verdict: "approved", comments: "", summary: "ok", explanation: "R-EXPL" }),
+    qa: () => ({ verdict: "approved", comments: "", summary: "ok", explanation: "Q-EXPL" }),
+  };
+  const g = await start();
+  const expl = String(paused(g.r)?.explanation);
+  assert.ok(expl.includes("R-EXPL") && expl.includes("Q-EXPL"), expl);
+});
