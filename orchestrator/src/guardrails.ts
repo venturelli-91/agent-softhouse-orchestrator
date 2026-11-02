@@ -10,7 +10,7 @@ export const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
 export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
 const sh = (...patterns: string[]) => patterns.map((p) => `${SHELL}(${p})`);
 
-export type Role = "triage" | "planner" | "dev" | "reviewer" | "qa" | "devops" | "watchdog";
+export type Role = "triage" | "planner" | "dev" | "reviewer" | "qa" | "devops" | "watchdog" | "knowledge";
 
 // ===== Section 1: flow rules =====
 export const MAX_REVISIONS = 3;
@@ -116,6 +116,7 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
   qa: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   devops: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   watchdog: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
+  knowledge: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   dev: {
     tools: [...READ_ONLY, "Write", "Edit", SHELL],
     allow: [...READ_ONLY, "Write(./**)", "Edit(./**)", ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*", "npm test*", "npm run typecheck*")],

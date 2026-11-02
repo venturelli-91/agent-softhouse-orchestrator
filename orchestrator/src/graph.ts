@@ -2,6 +2,8 @@ import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langch
 import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
 import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
+import { orchHome } from "./daily-cap.ts";
+import { getDeployTarget, recordDeploy } from "./deploy.ts";
 import { mergePr, publish } from "./publish.ts";
 import { loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
@@ -45,6 +47,11 @@ export const Ticket = z.object({
   failed_node: z.string().default(""),
   summary_before_failure: z.string().default(""),
   summary: z.string().default(""),
+  explanation: z.string().default(""),
+  briefing: z.string().default(""),
+  stories: z.array(z.string()).default([]),
+  incident: z.string().default(""),
+  deploy_target: z.string().default("simulated"),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
   qa_id: z.string().nullable().default(null),
@@ -59,9 +66,9 @@ const TriageOutput = z.object({
   clear: z.boolean(), flags: FlagsSchema, criteria: z.array(z.string()), summary,
 });
 // `question` is empty when clear; otherwise it is what the CEO needs to answer.
-const PlanOutput = TriageOutput.extend({ question: z.string() });
+const PlanOutput = TriageOutput.extend({ question: z.string(), briefing: z.string().default(""), stories: z.array(z.string()).default([]) });
 const DevOutput = z.object({ summary });
-const ReviewOutput = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary });
+const ReviewOutput = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary, explanation: z.string().default("") });
 
 const log = (t: T, node: string, result: string, usage?: Usage) =>
   [...t.history, { node, time: new Date().toISOString(), result, ms: usage?.ms ?? 0, usage }];
@@ -71,7 +78,9 @@ const sh = safeGit;
 // Minimal context: only what the role needs, never the conversation history.
 const context = (...parts: string[]) =>
   [...parts, "Answer only in the structured format. `summary`: up to 10 lines, only what the next node needs."].join("\n\n");
-const ticketData = (t: T) => `Ticket ${t.id}: ${t.title}\nAcceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
+const ticketData = (t: T) =>
+  `Ticket ${t.id}: ${t.title}\n${t.briefing ? `Briefing:\n${t.briefing}\n` : ""}${t.stories.length ? `Stories:\n${t.stories.map((s) => `- ${s}`).join("\n")}\n` : ""}` +
+  `Acceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
 export const devRules = (test = "npm test") =>
   `Implement in the current worktree, run ${test} and commit (git add/git commit). Do not push. ` +
   `Shell: one simple command per call (git add, git commit, git status, git diff, git log, ${test}); no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.`;
@@ -99,7 +108,7 @@ const guarded = (name: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T
 const triage = guarded("triage", async (t) => {
   const { output, usage } = await runAgent({ role: "triage", files: ["triage"], cwd: t.worktree, schema: TriageOutput, context: context(`CEO request: ${t.request}`) });
   const { clear, summary, ...rest } = output;
-  return { ...rest, criteria: clear ? rest.criteria : [], summary: cap(summary), status: clear ? "dev" : "ambiguous", history: log(t, "triage", clear ? "clear" : "ambiguous", usage) };
+  return { ...rest, priority: t.incident ? "P0" as const : rest.priority, criteria: clear ? rest.criteria : [], summary: cap(summary), status: clear ? "dev" : "ambiguous", history: log(t, "triage", clear ? "clear" : "ambiguous", usage) };
 });
 
 // demand-analyst -> product-manager -> tech-lead in a single agent turn (tokens: one context only).
@@ -111,7 +120,7 @@ const planner = guarded("planner", async (t) => {
   });
   const { clear, question, ...plan } = output;
   if (!clear || !plan.criteria.length) return { status: "ambiguous", summary: cap(question || plan.summary), history: log(t, "planner", "ambiguous", usage) };
-  return { ...plan, summary: cap(plan.summary), status: "dev", history: log(t, "planner", "clear", usage) };
+  return { ...plan, priority: t.incident ? "P0" as const : plan.priority, summary: cap(plan.summary), status: "dev", history: log(t, "planner", "clear", usage) };
 });
 
 const rulesBlock = (t: T) => (t.rules ? [`Target repo conventions (its CLAUDE.md; follow them, including the commit message format):
@@ -123,8 +132,8 @@ const dev = guarded("dev", async (t) => {
     context: context(ticketData(t), devRules(t.test), ...rulesBlock(t)), test: t.test,
   });
   const v = verifyEvidence(t.worktree, t.base, t.test);
-  if (!v.ok) return { status: "dev_failed", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
-  return { status: "review", summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
+  if (!v.ok) return { status: "dev_failed", explanation: "", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
+  return { status: "review", explanation: "", summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
 });
 
 function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: string) {
@@ -137,10 +146,10 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
     if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
     const { output, usage } = await runAgent({
       role: name, files: files(t), cwd: t.worktree, schema: ReviewOutput,
-      context: context(ticketData(t), evidenceNote(v.evidence), ...(name === "reviewer" ? rulesBlock(t) : []), `Diff:\n${diff(t)}`),
+      context: context(ticketData(t), evidenceNote(v.evidence), "`explanation`: what changed and why, in plain language a non-programmer follows, up to 6 lines.", ...(name === "reviewer" ? rulesBlock(t) : []), `Diff:\n${diff(t)}`),
     });
     const id = name === "reviewer" ? { reviewer_id: `agent-${name}` } : { qa_id: `agent-${name}` };
-    if (output.verdict === "approved") return { ...id, status: next, summary: cap(output.summary), history: log(t, name, "approved", usage) };
+    if (output.verdict === "approved") return { ...id, status: next, summary: cap(output.summary), explanation: [t.explanation, output.explanation.trim().split("\n").slice(0, 6).join("\n")].filter(Boolean).join("\n"), history: log(t, name, "approved", usage) };
     return { status: "dev_failed", revisions: t.revisions + 1, summary: output.comments.split("\n").slice(0, 10).join("\n"), history: log(t, name, "rejected", usage) };
   });
 }
@@ -170,13 +179,17 @@ const publishNode = guarded("publish", async (t) => {
   return { status: "approval", approved_sha: v.sha, evidence: [...v.evidence, pr], history: log(t, "publish", pr) };
 });
 
-// Merge/deploy only after the CEO; with no write permission, the agent describes the plan and the rollback.
-const devops = guarded("devops", async (t) => {
-  const { output, usage } = await runAgent({
-    role: "devops", files: ["devops-sre"], cwd: t.worktree, schema: DevOutput,
-    context: context(ticketData(t), "The CEO approved. Simulation: do NOT run a deploy or a merge. Describe status, rollback plan and observability."),
-  });
-  return { status: "simulated_deploy", summary: cap(output.summary), history: log(t, "devops", "simulated deploy", usage) };
+// Deploy only after the CEO, by code: the ticket's target runs the approved commit and the deploy is recorded for the monitor.
+const deploy = guarded("deploy", async (t) => {
+  let target;
+  try {
+    target = getDeployTarget(t.deploy_target);
+  } catch (e) {
+    throw new NodeFailure((e as Error).message);
+  }
+  const result = target.deploy({ id: t.id, sha: t.approved_sha });
+  recordDeploy(orchHome(), { id: t.id, repo: t.repo || repoOf(t.worktree), sha: t.approved_sha, previous: t.base, target: t.deploy_target, sandbox: target.sandbox });
+  return { status: t.deploy_target === "simulated" ? "simulated_deploy" : "deployed", evidence: [...t.evidence, `deploy:${result}`], history: log(t, "deploy", result) };
 });
 
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
@@ -207,7 +220,7 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
   const reason = t.status === "approval" ? (v?.ok ? (v.sha === t.approved_sha ? null : "commit changed since it was published") : `invalid evidence: ${v ? v.reason : "no evidence"}`)
     : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
-    type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, evidence: t.evidence,
+    type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, explanation: t.explanation, evidence: t.evidence,
     active_flags: Object.entries(t.flags).filter(([, active]) => active).map(([k]) => k),
   }) as string;
   const h = (res: string) => log(t, "ceo_approval", res);
@@ -234,14 +247,14 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
 const route = (ok: string, node: string) => (t: T) =>
   t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval";
 const afterTriage = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguous" ? "planner" : "ceo_approval");
-const RETRYABLE = ["triage", "planner", "dev", "reviewer", "qa", "publish", "devops"];
-const POST_DEV = ["reviewer", "qa", "publish", "devops"];
+const RETRYABLE = ["triage", "planner", "dev", "reviewer", "qa", "publish", "deploy"];
+const POST_DEV = ["reviewer", "qa", "publish", "deploy"];
 const afterCeo = (t: T) => (t.status === "retry" ? t.failed_node : t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END);
-const afterMerge = (t: T) => (t.status === "approved" ? "devops" : "ceo_approval");
+const afterMerge = (t: T) => (t.status === "approved" ? "deploy" : "ceo_approval");
 
 export function buildGraph(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
-    .addNode("triage", triage).addNode("planner", planner).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publish", publishNode).addNode("ceo_approval", ceoApproval).addNode("merge_pr", mergeNode).addNode("devops", devops)
+    .addNode("triage", triage).addNode("planner", planner).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publish", publishNode).addNode("ceo_approval", ceoApproval).addNode("merge_pr", mergeNode).addNode("deploy", deploy)
     .addEdge(START, "triage")
     .addConditionalEdges("triage", afterTriage, ["dev", "planner", "ceo_approval"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "ceo_approval"])
@@ -249,9 +262,9 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("reviewer", route("qa", "qa"), ["qa", "dev", "ceo_approval"])
     .addConditionalEdges("qa", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
     .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval"])
-    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "qa", "publish", "devops", "merge_pr", END])
-    .addConditionalEdges("merge_pr", afterMerge, ["devops", "ceo_approval"])
-    .addEdge("devops", END)
+    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "qa", "publish", "deploy", "merge_pr", END])
+    .addConditionalEdges("merge_pr", afterMerge, ["deploy", "ceo_approval"])
+    .addEdge("deploy", END)
     .compile({ checkpointer });
 }
 

@@ -5,6 +5,9 @@
 //   orch status [id]            all tickets, or one with its pending question
 //   orch approve <id> [text]    approve; for an escalation, text is the answer (e.g. retry, a clarification)
 //   orch reject <id> [reason]   reject with a reason; on an escalation with no reason, abort
+//   orch watch                  one monitor pass over deployed tickets: opens one P0 hotfix ticket per failure and proposes a rollback
+//   orch chaos <id> <scenario>|--clear   inject (or clear) a failure on a ticket deployed to a sandbox target
+//   orch rollback <incident-id> approve the proposed rollback of an incident
 //   orch clean <id>|--all [--force] [--remote]   remove worktree, branch and state of finished (simulated_deploy/aborted) tickets; --remote also deletes ticket/<id> on the push remote
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -15,6 +18,10 @@ import { buildGraph, config, createWorktree, report, resume, Ticket } from "../s
 import { assertGitConfigUnchanged, repoOf, safeGit } from "../src/guardrails.ts";
 import { behindBy, deleteRemoteBranch } from "../src/git-remote.ts";
 import { notify } from "../src/notify.ts";
+import { clearFailure, injectFailure, SCENARIOS, simulatedProbe } from "../src/chaos.ts";
+import { deployedIds } from "../src/deploy.ts";
+import { listIncidents } from "../src/incidents.ts";
+import { approveRollback, watch } from "../src/monitor.ts";
 import { lockTicket, ticketFile, ticketIds } from "../src/ticket-store.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -28,7 +35,7 @@ const die = (msg: string): never => {
 const [cmd, ...rest] = process.argv.slice(2);
 const { values, positionals } = parseArgs({
   args: rest, allowPositionals: true,
-  options: { repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" }, remote: { type: "boolean" } },
+  options: { repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" }, remote: { type: "boolean" }, clear: { type: "boolean" } },
 });
 
 const home = orchHome();
@@ -80,7 +87,7 @@ async function locked(id: string, fn: () => Promise<void>) {
     unlock();
   }
 }
-const DONE = ["simulated_deploy", "aborted"];
+const DONE = ["simulated_deploy", "deployed", "aborted"];
 
 if (cmd === "init") {
   const repo = resolve(positionals[0] ?? process.cwd());
@@ -113,6 +120,8 @@ if (cmd === "init") {
     }
   }
   if (!ids.length) console.log("no tickets");
+  if (!positionals[0])
+    for (const i of listIncidents(home)) console.log(`${i.id.padEnd(16)} ${i.status.padEnd(8)} ${i.ticket} hotfix=${i.hotfix || "-"} rollback=${i.rollback}  ${i.symptom}`);
   if (process.env.TOKEN_CAP_DAILY) console.log(`tokens in the last 24h: ${usedToday()} / ${process.env.TOKEN_CAP_DAILY}`);
 } else if (cmd === "approve") {
   const id = positionals[0] ?? die('usage: orch approve <id> ["answer"]');
@@ -150,4 +159,34 @@ if (cmd === "init") {
       unlinkSync(ticketFile(home, id));
       console.log(`cleaned ${id} (${t.status})`);
     });
-} else die("usage: orch init | run | status | approve | reject | clean");
+} else if (cmd === "watch") {
+  if (!deployedIds(home).length) console.log("nothing is deployed");
+  const incidents = await watch(home, {
+    probe: simulatedProbe,
+    notify,
+    makeHotfix: async ({ incident, repo }) => {
+      needCap();
+      const id = `H-${incident.id.slice(4)}`;
+      await locked(id, async () => {
+        const wt = createWorktree(repo, id, join(home, "worktrees", id), home);
+        await drive(id, { id, request: `Hotfix for ${incident.ticket}: ${incident.symptom}. Fix the cause with the smallest safe change; a rollback is proposed separately to the CEO.`, incident: incident.id, ...wt });
+      });
+      return id;
+    },
+  });
+  for (const i of incidents.filter((i) => i.status !== "closed")) console.log(`${i.id} ${i.status} ${i.ticket} hotfix=${i.hotfix || "-"} rollback=${i.rollback}: ${i.symptom}${i.rollback === "proposed" ? `  -> orch rollback ${i.id}` : ""}`);
+} else if (cmd === "chaos") {
+  const id = positionals[0];
+  const scenario = positionals[1];
+  if (!id || (!scenario && !values.clear)) die(`usage: orch chaos <ticket-id> <scenario> | orch chaos <ticket-id> --clear
+scenarios: ${Object.keys(SCENARIOS).join(", ")}`);
+  await locked(id, async () => {
+    if (values.clear) clearFailure(home, id);
+    else injectFailure(home, id, scenario);
+    console.log(values.clear ? `${id}: failure cleared` : `${id}: injected ${scenario}`);
+  });
+} else if (cmd === "rollback") {
+  const incidentId = positionals[0] ?? die("usage: orch rollback <incident-id>");
+  const incident = listIncidents(home).find((i) => i.id === incidentId) ?? die(`no incident ${incidentId}`);
+  await locked(incident.ticket, async () => console.log(approveRollback(home, incidentId)));
+} else die("usage: orch init | run | status | approve | reject | clean | watch | chaos | rollback");

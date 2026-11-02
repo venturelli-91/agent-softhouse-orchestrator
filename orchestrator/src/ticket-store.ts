@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 const dir = (home: string) => join(home, "tickets");
 
-function checkId(id: string): void {
+export function checkId(id: string): void {
   if (!/^[\w.-]+$/.test(id) || id === "." || id === "..") throw new Error(`invalid ticket id: ${id}`);
 }
 
