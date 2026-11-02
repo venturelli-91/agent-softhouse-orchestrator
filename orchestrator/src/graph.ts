@@ -40,6 +40,7 @@ export const Ticket = z.object({
   flags: FlagsSchema.default(EMPTY_FLAGS),
   criteria: z.array(z.string()).default([]),
   status: z.string().default("new"),
+  failed_node: z.string().default(""),
   summary: z.string().default(""),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
@@ -77,7 +78,7 @@ export const evidenceNote = (evidence: string[]) =>
 const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
 
 const escalate = (t: T, name: string, reason: string): Partial<T> =>
-  ({ status: "escalated", summary: `${name}: ${reason}`.split("\n").slice(0, 10).join("\n"), history: log(t, name, `escalated: ${reason}`) });
+  ({ status: "escalated", failed_node: name, summary: `${name}: ${reason}`.split("\n").slice(0, 10).join("\n"), history: log(t, name, `escalated: ${reason}`) });
 
 // An executor failure (error, timeout, invalid output) or an exceeded budget does not break the graph:
 // the ticket stops and goes to the CEO via ceo_approval.
@@ -204,6 +205,8 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
   if (t.status === "ambiguous") return { status: "replan", request: `${t.request}\n\nCEO clarification: ${r}`, history: h("clarified") };
   // A failed merge (CI red, PR moved): "retry" runs it again, anything else is an instruction for the dev.
   if (t.history.at(-1)?.node === "merge_pr" && r === "retry") return { status: "approved", history: h("merge retry") };
+  // A node that stopped on an error or timeout: "retry" runs just that node again, not the dev.
+  if (r === "retry" && t.status === "escalated" && RETRYABLE.includes(t.failed_node)) return { status: "retry", history: h("retry") };
   // Any other escalation: the CEO instructs the dev (only if criteria already exist).
   if (!t.criteria.length) return { status: "aborted", history: h("aborted") };
   return { status: "dev_failed", revisions: 0, summary: `CEO instructed: ${r}`.slice(0, 500), history: h("resumed") };
@@ -213,7 +216,8 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
 const route = (ok: string, node: string) => (t: T) =>
   t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval";
 const afterTriage = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguous" ? "planner" : "ceo_approval");
-const afterCeo = (t: T) => (t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END);
+const RETRYABLE = ["triage", "planner", "dev", "reviewer", "qa", "publish", "devops"];
+const afterCeo = (t: T) => (t.status === "retry" ? t.failed_node : t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END);
 const afterMerge = (t: T) => (t.status === "approved" ? "devops" : "ceo_approval");
 
 export function buildGraph(checkpointer = new MemorySaver()) {
@@ -226,7 +230,7 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("reviewer", route("qa", "qa"), ["qa", "dev", "ceo_approval"])
     .addConditionalEdges("qa", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
     .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval"])
-    .addConditionalEdges("ceo_approval", afterCeo, ["dev", "planner", "merge_pr", END])
+    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "qa", "publish", "devops", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["devops", "ceo_approval"])
     .addEdge("devops", END)
     .compile({ checkpointer });

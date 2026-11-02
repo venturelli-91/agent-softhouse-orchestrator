@@ -335,6 +335,45 @@ test("merge=local fast-forwards main to the approved commit only after the CEO a
   assert.equal(git(d.repo, "rev-parse", "main"), base);
 });
 
+const approved = () => ({ verdict: "approved", comments: "", summary: "ok" });
+const reviewerFailsOnce = () => {
+  let n = 0;
+  return () => {
+    if (n++ === 0) throw new NodeFailure("boom");
+    return approved();
+  };
+};
+
+test("retry after a reviewer failure re-runs the reviewer and not the dev", async () => {
+  override.reviewer = reviewerFailsOnce();
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  const r = await answer(g, "retry");
+  assert.equal(paused(r)?.type, "approval");
+  assert.equal(calls.filter((c) => c === "dev").length, 1);
+  assert.equal(calls.filter((c) => c === "reviewer").length, 2);
+});
+
+test("retry on a revision-cap escalation still instructs the dev", async () => {
+  override.reviewer = () => ({ verdict: "rejected", comments: "no", summary: "s" });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.equal(calls.filter((c) => c === "dev").length, 3);
+  override.reviewer = approved;
+  const r = await answer(g, "retry");
+  assert.equal(paused(r)?.type, "approval");
+  assert.equal(calls.filter((c) => c === "dev").length, 4);
+});
+
+test("a non-retry answer after an escalation still goes to the dev", async () => {
+  override.reviewer = reviewerFailsOnce();
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  const r = await answer(g, "please fix it");
+  assert.equal(paused(r)?.type, "approval");
+  assert.equal(calls.filter((c) => c === "dev").length, 2);
+});
+
 test("CI is green only with a passing check, no failures, and a stable set of checks", () => {
   const c = (...b: string[]) => b.map((bucket) => ({ bucket }));
   assert.equal(ciVerdict(null, c("pass")), "wait", "first poll never merges");
