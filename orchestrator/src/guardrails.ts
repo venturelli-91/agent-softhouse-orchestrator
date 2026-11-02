@@ -1,5 +1,6 @@
 // Section 1: flow rules between nodes (constants + evidence). Section 2: defense inside each node.
 import { execFileSync, execSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
 import type { Usage } from "./run-agent.ts";
 // On Windows, os.devNull (a \\.\nul path) is not valid for git; use NUL.
 export const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
@@ -44,6 +45,9 @@ export function safeGit(cwd: string, ...args: string[]): string {
   const env = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_EXTERNAL_DIFF: "", GIT_TERMINAL_PROMPT: "0" };
   return execFileSync("git", ["-c", "core.fsmonitor=false", "-c", "core.pager=cat", ...args], { cwd, env, encoding: "utf8" }).trim();
 }
+
+// The main checkout a ticket worktree was created from.
+export const repoOf = (worktree: string): string => dirname(resolve(worktree, safeGit(worktree, "rev-parse", "--git-common-dir")));
 
 // Files npm runs on the host: if the agent changed them, the ticket goes to the CEO instead of running.
 const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc|conftest\.py|setup\.py|setup\.cfg|pyproject\.toml|pytest\.ini|tox\.ini|Makefile)$/i;

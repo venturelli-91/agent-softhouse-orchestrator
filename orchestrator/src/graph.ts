@@ -1,6 +1,7 @@
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
-import { selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
+import { mergeLocal } from "./local-merge.ts";
+import { repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
 import { mergePr, publish } from "./publish.ts";
 import { loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
@@ -165,11 +166,19 @@ const devops = guarded("devops", async (t) => {
 
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
 const mergeNode = guarded("merge_pr", async (t) => {
-  if (t.merge !== "auto") return { history: log(t, "merge_pr", "skipped (merge=pr)") };
+  if (t.merge === "pr") return { history: log(t, "merge_pr", "skipped (merge=pr)") };
   const v = verifyEvidence(t.worktree, t.base, t.test);
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   // What the CEO approved is the commit that was published, not whatever HEAD is now.
   if (!t.approved_sha || v.sha !== t.approved_sha) throw new NodeFailure("merge: commit changed since it was published");
+  if (t.merge === "local") {
+    try {
+      const merged = mergeLocal(repoOf(t.worktree), t.base_branch, t.approved_sha);
+      return { evidence: [...t.evidence, merged], history: log(t, "merge_pr", merged) };
+    } catch (e) {
+      throw new NodeFailure(`merge: ${(e as Error).message}`);
+    }
+  }
   const pr = t.evidence.find((e) => e.startsWith("pr:"))?.slice(3);
   if (!pr || pr === "none") throw new NodeFailure("merge: no PR to merge");
   const merged = await mergePr({ cwd: t.worktree, pr, sha: t.approved_sha, baseRepo: t.base_repo }, t.publisher);

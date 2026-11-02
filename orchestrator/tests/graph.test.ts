@@ -317,6 +317,24 @@ test("the merge is bound to the commit that was published and approved", async (
   assert.ok((merges as string[])[0].endsWith(r.approved_sha));
 });
 
+test("merge=local fast-forwards main to the approved commit only after the CEO approves; a dirty main escalates", async () => {
+  const g = await start("T-1", new MemorySaver(), { merge: "local" });
+  assert.equal(paused(g.r)?.type, "approval");
+  const before = git(g.repo, "rev-parse", "main");
+  const done = await answer(g, "approve");
+  assert.equal(done.status, "simulated_deploy");
+  assert.equal(git(g.repo, "rev-parse", "main"), done.approved_sha);
+  assert.notEqual(before, done.approved_sha);
+
+  const d = await start("T-2", new MemorySaver(), { merge: "local" });
+  const base = git(d.repo, "rev-parse", "main");
+  writeFileSync(join(d.repo, "checkout.html"), "dirty\n");
+  const esc = await answer(d, "approve");
+  assert.equal(paused(esc)?.type, "escalation");
+  assert.match(String(paused(esc)?.reason), /uncommitted/);
+  assert.equal(git(d.repo, "rev-parse", "main"), base);
+});
+
 test("CI is green only with a passing check, no failures, and a stable set of checks", () => {
   const c = (...b: string[]) => b.map((bucket) => ({ bucket }));
   assert.equal(ciVerdict(null, c("pass")), "wait", "first poll never merges");
