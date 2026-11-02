@@ -5,6 +5,8 @@ import type { Incident } from "./incidents.ts";
 import { runAgent } from "./run-agent.ts";
 
 const marker = (i: Incident) => `<!-- incident: ${i.id} -->`;
+// Neutralise HTML comment delimiters so agent text can neither forge the marker nor hide instructions from the CEO.
+const plain = (s: string) => s.replace(/<!--/g, "&lt;!--").replace(/-->/g, "--&gt;");
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "incident";
 
 // Left uncommitted on purpose: the CEO reads it before it becomes history.
@@ -17,8 +19,9 @@ export function writePostmortem(repo: string, incident: Incident, text: string, 
   const existing = readdirSync(dir, { withFileTypes: true }).find((e) => e.isFile() && e.name.endsWith(".md") && first(e.name) === marker(incident));
   if (existing) return join(dir, existing.name);
   const path = join(dir, `${date.toISOString().slice(0, 10)}-${slug(incident.symptom)}.md`);
-  const body = text.replace(/<!--[\s\S]*?-->/g, "").trim();
-  writeFileSync(path, `${marker(incident)}\n# Postmortem ${incident.id}: ${incident.symptom}\n\n${body}\n`, { flag: "wx" });
+  const body = plain(text).trim();
+  const heading = plain(incident.symptom).replace(/\s+/g, " ");
+  writeFileSync(path, `${marker(incident)}\n# Postmortem ${incident.id}: ${heading}\n\n${body}\n`, { flag: "wx" });
   return path;
 }
 

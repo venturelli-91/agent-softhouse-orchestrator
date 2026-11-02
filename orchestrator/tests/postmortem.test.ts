@@ -61,5 +61,5 @@ test("a marker inside another file or in the text does not count as the postmort
   writeFileSync(join(repo, "playbooks", "other.md"), `# notes\n${"<!-- incident: inc-d -->"}\n`);
   const p = writePostmortem(repo, i, "x <!-- incident: inc-z --> y", day);
   assert.match(p, /boom\.md$/);
-  assert.equal(readFileSync(p, "utf8").includes("inc-z"), false);
+  assert.equal(readFileSync(p, "utf8").includes("<!-- incident: inc-z"), false);
 });
