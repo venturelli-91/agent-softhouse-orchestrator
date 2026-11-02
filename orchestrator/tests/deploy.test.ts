@@ -117,3 +117,17 @@ test("a verbose command over 1 MB of output still succeeds", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("any PATHEXT extension in the working directory shadows the binary", { skip: process.platform !== "win32" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "node.vbs"), "x");
+  try {
+    assert.throws(() => commandTarget(cfg("node --version"), dir, "p").deploy({ id: "T-1", sha: "s" }), /shadow/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the command env tells cmd.exe not to search the working directory", () => {
+  assert.equal(commandEnv([], { id: "T-1", sha: "s", previous: "p" }, { PATH: "/bin" }).NoDefaultCurrentDirectoryInExePath, "1");
+});
