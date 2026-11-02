@@ -1,19 +1,21 @@
 #!/usr/bin/env node
-// Daily-use CLI over the graph, for any repo. State lives in ORCH_HOME (default ~/.orchestrator), not in the repo.
+// Daily-use CLI over the graph, for any repo. State lives in ORCH_HOME (default ~/.orchestrator), one tickets/<id>.json per ticket, not in the repo.
 //   orch init [repo]            write .orchestrator.json (commit it) and check for CLAUDE.md
 //   orch run "<request>" [--repo <path>] [--id <id>]
 //   orch status [id]            all tickets, or one with its pending question
 //   orch approve <id> [text]    approve; for an escalation, text is the answer (e.g. retry, a clarification)
 //   orch reject <id> [reason]   reject with a reason; on an escalation with no reason, abort
-//   orch clean <id>|--all [--force]   remove worktree, branch and state of finished (simulated_deploy/aborted) tickets
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+//   orch clean <id>|--all [--force] [--remote]   remove worktree, branch and state of finished (simulated_deploy/aborted) tickets; --remote also deletes ticket/<id> on the push remote
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { dailyCapReached, orchHome, usedToday } from "../src/daily-cap.ts";
 import { FileSaver } from "../src/file-saver.ts";
 import { buildGraph, config, createWorktree, report, resume, Ticket } from "../src/graph.ts";
-import { safeGit } from "../src/guardrails.ts";
+import { repoOf, safeGit } from "../src/guardrails.ts";
+import { behindBy, deleteRemoteBranch } from "../src/git-remote.ts";
 import { notify } from "../src/notify.ts";
+import { lockTicket, ticketFile, ticketIds } from "../src/ticket-store.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
@@ -26,16 +28,21 @@ const die = (msg: string): never => {
 const [cmd, ...rest] = process.argv.slice(2);
 const { values, positionals } = parseArgs({
   args: rest, allowPositionals: true,
-  options: { repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" } },
+  options: { repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" }, remote: { type: "boolean" } },
 });
 
 const home = orchHome();
 mkdirSync(home, { recursive: true });
-const saver = new FileSaver(join(home, "state.json"));
-const graph = buildGraph(saver);
+
+// One state file per ticket, so commands on different tickets never touch the same file.
+function open(id: string) {
+  const saver = new FileSaver(ticketFile(home, id));
+  return { saver, graph: buildGraph(saver) };
+}
 
 type Pending = { type: "approval" | "escalation"; reason: string | null; title: string; summary: string; evidence: string[] };
 async function load(id: string) {
+  const { saver, graph } = open(id);
   if (!saver.storage[id]) return die(`no ticket ${id}`);
   const state = await graph.getState(config(id));
   const pending = state.tasks.flatMap((t) => t.interrupts)[0]?.value as Pending | undefined;
@@ -44,7 +51,7 @@ async function load(id: string) {
 
 // Runs the graph until it ends or pauses for the CEO; a pause is announced outside the terminal too.
 async function drive(id: string, input: unknown) {
-  await graph.invoke(input as never, config(id));
+  await open(id).graph.invoke(input as never, config(id));
   const { ticket, pending } = await load(id);
   console.log(report(ticket));
   if (pending) {
@@ -59,6 +66,20 @@ const needCap = () => {
   if (capped) die(capped);
 };
 const needPending = async (id: string) => (await load(id)).pending ?? die(`${id} is not waiting for an answer`);
+// Takes the ticket's lock for the duration of one command; a second command on the same id refuses.
+async function locked(id: string, fn: () => Promise<void>) {
+  let unlock: () => void;
+  try {
+    unlock = lockTicket(home, id);
+  } catch (e) {
+    return die((e as Error).message);
+  }
+  try {
+    await fn();
+  } finally {
+    unlock();
+  }
+}
 const DONE = ["simulated_deploy", "aborted"];
 
 if (cmd === "init") {
@@ -74,10 +95,15 @@ if (cmd === "init") {
   const request = positionals[0] ?? die('usage: orch run "<request>" [--repo <path>] [--id <id>]');
   needCap();
   const id = values.id ?? `T-${Date.now().toString(36)}`;
-  const wt = createWorktree(resolve(values.repo ?? process.cwd()), id, join(home, "worktrees", id));
-  await drive(id, { id, request, ...wt });
+  const repo = resolve(values.repo ?? process.cwd());
+  await locked(id, async () => {
+    const behind = behindBy(repo);
+    if (behind) console.warn(`warning: ${repo} is ${behind} commit(s) behind its upstream; the ticket will branch from a stale base`);
+    const wt = createWorktree(repo, id, join(home, "worktrees", id), home);
+    await drive(id, { id, request, ...wt });
+  });
 } else if (cmd === "status") {
-  const ids = positionals[0] ? [positionals[0]] : Object.keys(saver.storage);
+  const ids = positionals[0] ? [positionals[0]] : ticketIds(home);
   for (const id of ids) {
     const { ticket: t, pending } = await load(id);
     console.log(`${id.padEnd(12)} ${t.status.padEnd(16)} ${t.priority.padEnd(4)} ${t.title}${pending ? `  <- waiting (${pending.type})` : ""}`);
@@ -90,29 +116,35 @@ if (cmd === "init") {
   if (process.env.TOKEN_CAP_DAILY) console.log(`tokens in the last 24h: ${usedToday()} / ${process.env.TOKEN_CAP_DAILY}`);
 } else if (cmd === "approve") {
   const id = positionals[0] ?? die('usage: orch approve <id> ["answer"]');
-  await needPending(id);
-  needCap();
-  await drive(id, resume(positionals[1] ?? "approve"));
+  await locked(id, async () => {
+    await needPending(id);
+    needCap();
+    await drive(id, resume(positionals[1] ?? "approve"));
+  });
 } else if (cmd === "reject") {
   const id = positionals[0] ?? die('usage: orch reject <id> "<reason>"');
-  const pending = await needPending(id);
-  const reason = positionals[1] ?? (pending.type === "escalation" ? "abort" : die("rejecting an approval needs a reason"));
-  if (reason !== "abort") needCap();
-  await drive(id, resume(reason));
+  await locked(id, async () => {
+    const pending = await needPending(id);
+    const reason = positionals[1] ?? (pending.type === "escalation" ? "abort" : die("rejecting an approval needs a reason"));
+    if (reason !== "abort") needCap();
+    await drive(id, resume(reason));
+  });
 } else if (cmd === "clean") {
-  const ids = values.all ? Object.keys(saver.storage) : positionals[0] ? [positionals[0]] : die("usage: orch clean <id> | --all [--force]");
-  for (const id of ids) {
-    const { ticket: t } = await load(id);
-    if (!DONE.includes(t.status) && !values.force) {
-      if (!values.all) die(`${id} is ${t.status}, not finished (use --force to discard it)`);
-      continue;
-    }
-    if (existsSync(t.worktree)) {
-      const repo = dirname(resolve(t.worktree, safeGit(t.worktree, "rev-parse", "--git-common-dir")));
-      safeGit(repo, "worktree", "remove", "--force", t.worktree);
-      safeGit(repo, "branch", "-D", `ticket/${id}`);
-    }
-    await saver.deleteThread(id);
-    console.log(`cleaned ${id} (${t.status})`);
-  }
+  const ids = values.all ? ticketIds(home) : positionals[0] ? [positionals[0]] : die("usage: orch clean <id> | --all [--force] [--remote]");
+  for (const id of ids)
+    await locked(id, async () => {
+      const { ticket: t } = await load(id);
+      if (!DONE.includes(t.status) && !values.force) {
+        if (!values.all) die(`${id} is ${t.status}, not finished (use --force to discard it)`);
+        return;
+      }
+      if (existsSync(t.worktree)) {
+        const repo = repoOf(t.worktree);
+        if (values.remote) console.log(`${id}: remote branch ${deleteRemoteBranch(repo, t.push_remote, id)}`);
+        safeGit(repo, "worktree", "remove", "--force", t.worktree);
+        safeGit(repo, "branch", "-D", `ticket/${id}`);
+      }
+      unlinkSync(ticketFile(home, id));
+      console.log(`cleaned ${id} (${t.status})`);
+    });
 } else die("usage: orch init | run | status | approve | reject | clean");
