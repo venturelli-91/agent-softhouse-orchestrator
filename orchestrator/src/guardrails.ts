@@ -124,7 +124,7 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
   },
 };
 
-const ALLOWED_ENV = [
+export const ALLOWED_ENV = [
   "PATH", "PATHEXT", "SystemRoot", "windir", "COMSPEC", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH",
   "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "LANG", "SystemDrive", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CLAUDE_CODE_GIT_BASH_PATH",
 ];

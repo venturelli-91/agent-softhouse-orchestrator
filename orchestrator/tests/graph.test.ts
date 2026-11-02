@@ -8,7 +8,7 @@ import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { FileSaver } from "../src/file-saver.ts";
 import { readDeploy } from "../src/deploy.ts";
-import { config, createWorktree, buildGraph, resume, DEV_RULES } from "../src/graph.ts";
+import { config, createWorktree, buildGraph, resume, DEV_RULES, deployTicket, Ticket } from "../src/graph.ts";
 import { ciVerdict, registerPublisher } from "../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
 import { alerts, watchdog } from "../src/watchdog.ts";
@@ -478,4 +478,40 @@ test("after approval the deploy node runs the ticket's target and ends in simula
   assert.equal(d.previous, end.base);
   assert.ok(end.evidence.some((e: string) => e.startsWith("deploy:simulated:")));
   assert.ok(!calls.includes("devops"));
+});
+
+const CMD_CFG = { command: "node --version", rollback: "node --version", health_url: "http://127.0.0.1:1/health", environment: "staging", env: [], timeout_s: 30, max_latency_ms: 2000 };
+
+test("a command deploy runs only after approval and ends in deployed with cmd settings in the record", async () => {
+  const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: CMD_CFG });
+  assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
+  const end = await answer(g, "approve");
+  assert.equal(end.status, "deployed");
+  const d = readDeploy(process.env.ORCH_HOME!, "T-1");
+  assert.equal(d.target, "command");
+  assert.equal(d.sandbox, false);
+  assert.deepEqual(d.cmd, { rollback: "node --version", health_url: CMD_CFG.health_url, env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" });
+  assert.ok(end.evidence.some((e: string) => e.startsWith("deploy:")));
+});
+
+test("a failing deploy command escalates and writes no record", async () => {
+  const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: { ...CMD_CFG, command: "node --nonexistent-flag" } });
+  const end = await answer(g, "approve");
+  assert.notEqual(end.status, "deployed");
+  assert.equal(end.status, "escalated");
+  assert.match(end.summary, /nonexistent-flag/);
+  assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
+});
+
+test("the deploy command is not run when the worktree HEAD is not the approved commit", async () => {
+  const root = mkdtempSync(join(tmpdir(), "gt-"));
+  roots.push(root);
+  const t = Ticket.parse({ id: "T-1", request: "p", worktree: createFixture(root), base: "b", approved_sha: "0".repeat(40), deploy_target: "command", deploy_cfg: CMD_CFG });
+  await assert.rejects(() => deployTicket(t), /HEAD/);
+  assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
+});
+
+test("the approval request shows the deploy environment", async () => {
+  const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: { ...CMD_CFG, environment: "production" } });
+  assert.deepEqual(paused(g.r)?.deploy, { target: "command", environment: "production" });
 });

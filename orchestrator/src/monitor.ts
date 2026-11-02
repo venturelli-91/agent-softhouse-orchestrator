@@ -1,5 +1,5 @@
 import type { Probe } from "./chaos.ts";
-import { deployedIds, getDeployTarget, readDeploy } from "./deploy.ts";
+import { commandTarget, deployedIds, getDeployTarget, readDeploy } from "./deploy.ts";
 import { type Incident, listIncidents, openIncident, updateIncident } from "./incidents.ts";
 
 export type WatchDeps = {
@@ -44,7 +44,8 @@ export function approveRollback(home: string, incidentId: string): string {
   if (incident.rollback === "done") throw new Error("already rolled back");
   if (incident.rollback !== "proposed") throw new Error("rollback was not proposed");
   const d = readDeploy(home, incident.ticket);
-  const result = getDeployTarget(d.target).rollback({ id: d.id, sha: d.sha, previous: d.previous });
+  const target = d.cmd ? commandTarget({ command: "", ...d.cmd }, d.repo, d.previous) : getDeployTarget(d.target);
+  const result = target.rollback({ id: d.id, sha: d.sha, previous: d.previous });
   updateIncident(home, incident.id, { rollback: "done" });
   return result;
 }

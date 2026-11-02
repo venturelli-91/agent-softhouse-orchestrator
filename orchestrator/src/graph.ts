@@ -3,7 +3,7 @@ import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
 import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
 import { orchHome } from "./daily-cap.ts";
-import { getDeployTarget, recordDeploy } from "./deploy.ts";
+import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } from "./deploy.ts";
 import { mergePr, publish } from "./publish.ts";
 import { DeployConfig, loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
@@ -181,17 +181,33 @@ const publishNode = guarded("publish", async (t) => {
 });
 
 // Deploy only after the CEO, by code: the ticket's target runs the approved commit and the deploy is recorded for the monitor.
-const deploy = guarded("deploy", async (t) => {
+// A command target runs only if the worktree is still exactly at the approved commit.
+export async function deployTicket(t: T): Promise<Partial<T>> {
   let target;
+  let cmd: CommandSettings | undefined;
+  if (t.deploy_target === "command" && t.deploy_cfg) {
+    const head = safeGit(t.worktree, "rev-parse", "HEAD");
+    if (head !== t.approved_sha) throw new NodeFailure(`worktree HEAD ${head.slice(0, 7)} is not the approved commit ${t.approved_sha.slice(0, 7)}`);
+    const c = t.deploy_cfg;
+    cmd = { rollback: c.rollback, health_url: c.health_url, env: c.env, timeout_s: c.timeout_s, max_latency_ms: c.max_latency_ms, environment: c.environment };
+    target = commandTarget(t.deploy_cfg, t.worktree, t.base);
+  } else {
+    try {
+      target = getDeployTarget(t.deploy_target);
+    } catch (e) {
+      throw new NodeFailure((e as Error).message);
+    }
+  }
+  let result: string;
   try {
-    target = getDeployTarget(t.deploy_target);
+    result = target.deploy({ id: t.id, sha: t.approved_sha });
   } catch (e) {
     throw new NodeFailure((e as Error).message);
   }
-  const result = target.deploy({ id: t.id, sha: t.approved_sha });
-  recordDeploy(orchHome(), { id: t.id, repo: t.repo || repoOf(t.worktree), sha: t.approved_sha, previous: t.base, target: t.deploy_target, sandbox: target.sandbox });
+  recordDeploy(orchHome(), { id: t.id, repo: t.repo || repoOf(t.worktree), sha: t.approved_sha, previous: t.base, target: t.deploy_target, sandbox: target.sandbox, ...(cmd ? { cmd } : {}) });
   return { status: t.deploy_target === "simulated" ? "simulated_deploy" : "deployed", evidence: [...t.evidence, `deploy:${result}`], history: log(t, "deploy", result) };
-});
+}
+const deploy = guarded("deploy", deployTicket);
 
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
 const mergeNode = guarded("merge_pr", async (t) => {
@@ -222,6 +238,7 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
     : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
     type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, explanation: t.explanation, evidence: t.evidence,
+    deploy: { target: t.deploy_target, environment: t.deploy_cfg?.environment ?? "simulated" },
     active_flags: Object.entries(t.flags).filter(([, active]) => active).map(([k]) => k),
   }) as string;
   const h = (res: string) => log(t, "ceo_approval", res);

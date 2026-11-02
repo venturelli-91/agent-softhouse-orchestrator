@@ -37,3 +37,35 @@ test("ids with path separators are rejected", () => {
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+import { commandEnv, commandTarget } from "../src/deploy.ts";
+
+const cfg = (command: string, env: string[] = [], timeout_s = 30) => ({ command, rollback: "node --version", env, timeout_s });
+
+test("commandEnv passes only listed names plus the ORCH_ variables", () => {
+  const env = commandEnv(["TOKEN_A"], { id: "T-1", sha: "s", previous: "p" }, { TOKEN_A: "a", SECRET_B: "b", PATH: "/bin" });
+  assert.equal(env.TOKEN_A, "a");
+  assert.equal(env.SECRET_B, undefined);
+  assert.equal(env.PATH, "/bin");
+  assert.deepEqual([env.ORCH_TICKET, env.ORCH_SHA, env.ORCH_PREVIOUS], ["T-1", "s", "p"]);
+});
+
+test("a failing command throws with the output tail", () => {
+  const t = commandTarget(cfg("node --nonexistent-flag"), process.cwd(), "p");
+  assert.throws(() => t.deploy({ id: "T-1", sha: "s" }), /nonexistent-flag/);
+});
+
+test("a listed env value in the output is masked", () => {
+  process.env.ORCH_TEST_SECRET = process.version;
+  const out = commandTarget(cfg("node --version", ["ORCH_TEST_SECRET"]), process.cwd(), "p").deploy({ id: "T-1", sha: "s" });
+  delete process.env.ORCH_TEST_SECRET;
+  assert.match(out, /\*\*\*/);
+  assert.ok(!out.includes(process.version));
+});
+
+test("a command over its timeout throws", () => {
+  const t = commandTarget(cfg("node --version", [], 0.001), process.cwd(), "p");
+  assert.throws(() => t.deploy({ id: "T-1", sha: "s" }), /timed out|ETIMEDOUT/);
+});
+
+test("a command target is not a sandbox", () => assert.equal(commandTarget(cfg("node --version"), process.cwd(), "p").sandbox, false));
