@@ -63,3 +63,13 @@ test("a marker inside another file or in the text does not count as the postmort
   assert.match(p, /boom\.md$/);
   assert.equal(readFileSync(p, "utf8").includes("<!-- incident: inc-z"), false);
 });
+
+
+test("raw html and hidden link definitions in the text are neutralised", () => {
+  const nasty = ["<? x ?>", "<!X y >", "<![CDATA[ z ]]>", "<div hidden>h</div>", "[//]: # (hidden)"].join("\n");
+  const body = readFileSync(writePostmortem(repo, inc("inc-e", "<b>x</b>"), nasty, day), "utf8");
+  const [markerLine, ...rest] = body.split("\n");
+  assert.match(markerLine, /^<!-- incident: inc-e -->$/);
+  assert.equal(rest.join("\n").includes("<"), false);
+  assert.equal(/^\s{0,3}\[[^\]]+\]:/m.test(body), false);
+});

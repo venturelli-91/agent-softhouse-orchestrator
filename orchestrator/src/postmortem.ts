@@ -5,8 +5,8 @@ import type { Incident } from "./incidents.ts";
 import { runAgent } from "./run-agent.ts";
 
 const marker = (i: Incident) => `<!-- incident: ${i.id} -->`;
-// Neutralise HTML comment delimiters so agent text can neither forge the marker nor hide instructions from the CEO.
-const plain = (s: string) => s.replace(/<!--/g, "&lt;!--").replace(/-->/g, "--&gt;");
+// Agent text is untrusted: escape raw HTML and link reference definitions so nothing in the file is hidden from the CEO or forges the marker.
+const plain = (s: string) => s.replace(/</g, "&lt;").replace(/^(\s{0,3})\[/gm, "$1\\[");
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "incident";
 
 // Left uncommitted on purpose: the CEO reads it before it becomes history.
