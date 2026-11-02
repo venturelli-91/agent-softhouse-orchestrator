@@ -12,7 +12,7 @@ const isLimit = (e: unknown) => e instanceof Error && /limit/.test(e.message);
 
 export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> {
   for (const id of deployedIds(home)) {
-    const symptom = deps.probe(home, id);
+    const symptom = await deps.probe(home, id);
     if (symptom === null) {
       for (const i of listIncidents(home)) if (i.ticket === id && i.status !== "closed") updateIncident(home, i.id, { status: "closed" });
       continue;

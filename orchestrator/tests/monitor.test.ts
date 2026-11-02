@@ -98,3 +98,8 @@ test("a failing rollback command leaves the incident proposed and a retry succee
   approveRollback(home, id);
   assert.equal(listIncidents(home).find((i) => i.id === id)!.rollback, "done");
 });
+
+test("watch awaits an async probe", async () => {
+  await watch(home, { ...deps(), probe: async () => "async symptom" });
+  assert.equal(listIncidents(home)[0].symptom, "async symptom");
+});
