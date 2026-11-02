@@ -111,11 +111,13 @@ const planner = guarded("planner", async (t) => {
   return { ...plan, summary: cap(plan.summary), status: "dev", history: log(t, "planner", "clear", usage) };
 });
 
+const rulesBlock = (t: T) => (t.rules ? [`Target repo conventions (its CLAUDE.md; follow them, including the commit message format):
+${t.rules}`] : []);
+
 const dev = guarded("dev", async (t) => {
   const { output, usage } = await runAgent({
     role: "dev", files: [DEV_FILE[t.specialty]], cwd: t.worktree, schema: DevOutput,
-    context: context(ticketData(t), devRules(t.test), ...(t.rules ? [`Target repo conventions (its CLAUDE.md; follow them, including the commit message format):
-${t.rules}`] : [])), test: t.test,
+    context: context(ticketData(t), devRules(t.test), ...rulesBlock(t)), test: t.test,
   });
   const v = verifyEvidence(t.worktree, t.base, t.test);
   if (!v.ok) return { status: "dev_failed", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
@@ -132,7 +134,7 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
     if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
     const { output, usage } = await runAgent({
       role: name, files: files(t), cwd: t.worktree, schema: ReviewOutput,
-      context: context(ticketData(t), evidenceNote(v.evidence), `Diff:\n${diff(t)}`),
+      context: context(ticketData(t), evidenceNote(v.evidence), ...(name === "reviewer" ? rulesBlock(t) : []), `Diff:\n${diff(t)}`),
     });
     const id = name === "reviewer" ? { reviewer_id: `agent-${name}` } : { qa_id: `agent-${name}` };
     if (output.verdict === "approved") return { ...id, status: next, summary: cap(output.summary), history: log(t, name, "approved", usage) };

@@ -344,6 +344,17 @@ const reviewerFailsOnce = () => {
   };
 };
 
+test("the reviewer gets the repo conventions and QA does not", async () => {
+  const seen: Record<string, string> = {};
+  for (const role of ["dev", "reviewer", "qa"]) {
+    override[role] = (req) => ((seen[role] = req.context), defaults[role]!(req));
+  }
+  await start("T-1", new MemorySaver(), { rules: "R-CANARY" });
+  assert.match(seen.dev, /R-CANARY/);
+  assert.match(seen.reviewer, /R-CANARY/);
+  assert.doesNotMatch(seen.qa, /R-CANARY/);
+});
+
 test("retry after a reviewer failure re-runs the reviewer and not the dev", async () => {
   override.reviewer = reviewerFailsOnce();
   const g = await start();
