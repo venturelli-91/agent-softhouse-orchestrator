@@ -1,0 +1,50 @@
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+const dir = (home: string) => join(home, "tickets");
+
+function checkId(id: string): void {
+  if (!/^[\w.-]+$/.test(id) || id === "." || id === "..") throw new Error(`invalid ticket id: ${id}`);
+}
+
+export function ticketFile(home: string, id: string): string {
+  checkId(id);
+  return join(dir(home), `${id}.json`);
+}
+
+export function ticketIds(home: string): string[] {
+  try {
+    return readdirSync(dir(home)).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).sort();
+  } catch {
+    return [];
+  }
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+export function lockTicket(home: string, id: string, pid = process.pid): () => void {
+  checkId(id);
+  mkdirSync(dir(home), { recursive: true });
+  const lock = join(dir(home), `${id}.lock`);
+  try {
+    writeFileSync(lock, String(pid), { flag: "wx" });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+    const owner = Number(readFileSync(lock, "utf8"));
+    if (alive(owner)) throw new Error(`${id} is already running (pid ${owner})`);
+    unlinkSync(lock);
+    writeFileSync(lock, String(pid), { flag: "wx" });
+  }
+  return () => {
+    try {
+      unlinkSync(lock);
+    } catch {}
+  };
+}
