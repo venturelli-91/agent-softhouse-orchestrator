@@ -5,7 +5,7 @@ import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit,
 import { orchHome } from "./daily-cap.ts";
 import { getDeployTarget, recordDeploy } from "./deploy.ts";
 import { mergePr, publish } from "./publish.ts";
-import { loadConventions, loadRepoConfig } from "./repo-config.ts";
+import { DeployConfig, loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
 
 const SPECIALTIES = ["frontend", "backend", "fullstack", "mobile", "integrations", "ai", "data"] as const;
@@ -52,6 +52,7 @@ export const Ticket = z.object({
   stories: z.array(z.string()).default([]),
   incident: z.string().default(""),
   deploy_target: z.string().default("simulated"),
+  deploy_cfg: DeployConfig.nullable().default(null),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
   qa_id: z.string().nullable().default(null),
@@ -276,8 +277,8 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge, publisher, push_remote, base_repo, disclosure } = loadRepoConfig(repo, base, home);
-  return { worktree: dir, repo, git_config_hash: gitConfigHash(repo), base, test, merge, publisher: publisher ?? "", push_remote, base_repo, disclosure, base_branch, rules: loadConventions(repo, base) };
+  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy } = loadRepoConfig(repo, base, home);
+  return { worktree: dir, repo, git_config_hash: gitConfigHash(repo), base, test, merge, publisher: publisher ?? "", push_remote, base_repo, disclosure, base_branch, rules: loadConventions(repo, base), deploy_cfg: deploy, ...(deploy ? { deploy_target: "command" } : {}) };
 }
 
 export function report(t: T): string {
