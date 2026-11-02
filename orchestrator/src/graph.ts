@@ -166,7 +166,7 @@ const publishNode = guarded("publish", async (t) => {
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   checkConfig(t);
   const body = [t.summary, "Criteria:", ...t.criteria.map((c) => `- ${c}`), `Evidence: ${v.evidence.join(", ")}`].join("\n\n");
-  const pr = publish({ cwd: t.worktree, id: t.id, sha: v.sha, title: `${t.id}: ${t.title}`, body, remote: t.push_remote, baseRepo: t.base_repo, disclosure: t.disclosure }, t.publisher);
+  const pr = publish({ cwd: t.repo || t.worktree, id: t.id, sha: v.sha, title: `${t.id}: ${t.title}`, body, remote: t.push_remote, baseRepo: t.base_repo, disclosure: t.disclosure }, t.publisher);
   return { status: "approval", approved_sha: v.sha, evidence: [...v.evidence, pr], history: log(t, "publish", pr) };
 });
 
@@ -182,11 +182,11 @@ const devops = guarded("devops", async (t) => {
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
 const mergeNode = guarded("merge_pr", async (t) => {
   if (t.merge === "pr") return { history: log(t, "merge_pr", "skipped (merge=pr)") };
-  checkConfig(t);
   const v = verifyEvidence(t.worktree, t.base, t.test);
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   // What the CEO approved is the commit that was published, not whatever HEAD is now.
   if (!t.approved_sha || v.sha !== t.approved_sha) throw new NodeFailure("merge: commit changed since it was published");
+  checkConfig(t);
   if (t.merge === "local") {
     try {
       const merged = mergeLocal(t.repo || repoOf(t.worktree), t.base_branch, t.approved_sha);
@@ -197,7 +197,7 @@ const mergeNode = guarded("merge_pr", async (t) => {
   }
   const pr = t.evidence.find((e) => e.startsWith("pr:"))?.slice(3);
   if (!pr || pr === "none") throw new NodeFailure("merge: no PR to merge");
-  const merged = await mergePr({ cwd: t.worktree, pr, sha: t.approved_sha, baseRepo: t.base_repo }, t.publisher);
+  const merged = await mergePr({ cwd: t.repo || t.worktree, pr, sha: t.approved_sha, baseRepo: t.base_repo }, t.publisher);
   return { evidence: [...t.evidence, merged], history: log(t, "merge_pr", merged) };
 });
 
