@@ -83,3 +83,13 @@ test("a command whose binary exists in the working directory is refused", () => 
 test("a command with shell operators is refused at run time too", () => {
   assert.throws(() => commandTarget(cfg("node --version && id"), process.cwd(), "p").deploy({ id: "T-1", sha: "s" }), /plain command/);
 });
+
+test("the shadow-binary check ignores case", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "NODE.CMD"), "echo pwned");
+  try {
+    assert.throws(() => commandTarget(cfg("node --version"), dir, "p").deploy({ id: "T-1", sha: "s" }), /shadow/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

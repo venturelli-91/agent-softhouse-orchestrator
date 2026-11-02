@@ -54,7 +54,8 @@ export function commandTarget(cfg: { command: string; rollback: string; env: str
   const run = (line: string, ctx: Ctx): string => {
     if (!/^[\w ./:=@-]+$/.test(line)) throw new Error("command must be a plain command without shell operators");
     const [bin, ...args] = line.split(" ").filter(Boolean);
-    if (readdirSync(cwd).some((f) => f === bin || f.toLowerCase().startsWith(`${bin.toLowerCase()}.`))) throw new Error(`${bin} exists in ${cwd}: refusing to run a binary the working tree could shadow`);
+    const b = bin.toLowerCase();
+    if (readdirSync(cwd).some((f) => f.toLowerCase() === b || f.toLowerCase().startsWith(`${b}.`))) throw new Error(`${bin} exists in ${cwd}: refusing to run a binary the working tree could shadow`);
     const env = commandEnv(cfg.env, ctx);
     const mask = (s: string) => cfg.env.reduce((a, k) => (env[k] ? a.split(env[k]).join("***") : a), s).trim().slice(-300);
     try {

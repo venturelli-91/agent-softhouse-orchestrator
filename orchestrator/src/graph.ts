@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
-import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
+import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence, devNull } from "./guardrails.ts";
 import { orchHome } from "./daily-cap.ts";
 import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } from "./deploy.ts";
 import { mergePr, publish } from "./publish.ts";
@@ -197,7 +197,7 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
     rmSync(dir, { recursive: true, force: true });
     try {
       safeGit(repo, "worktree", "prune");
-      safeGit(repo, "worktree", "add", "--detach", dir, t.approved_sha);
+      safeGit(repo, "-c", `core.hooksPath=${devNull}`, "worktree", "add", "--detach", dir, t.approved_sha);
     } catch {
       throw new NodeFailure(`approved commit ${t.approved_sha.slice(0, 7)} cannot be checked out for the deploy`);
     }
@@ -207,7 +207,7 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
       throw new NodeFailure((e as Error).message);
     } finally {
       try {
-        safeGit(repo, "worktree", "remove", "--force", dir);
+        safeGit(repo, "-c", `core.hooksPath=${devNull}`, "worktree", "remove", "--force", dir);
       } catch {
         rmSync(dir, { recursive: true, force: true });
       }
