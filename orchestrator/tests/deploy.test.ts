@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deployedIds, getDeployTarget, readDeploy, recordDeploy } from "../src/deploy.ts";
@@ -36,4 +36,98 @@ test("ids with path separators are rejected", () => {
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+import { commandEnv, commandTarget } from "../src/deploy.ts";
+
+const cfg = (command: string, env: string[] = [], timeout_s = 30) => ({ command, rollback: "node --version", env, timeout_s });
+
+test("commandEnv passes only listed names plus the ORCH_ variables", () => {
+  const env = commandEnv(["TOKEN_A"], { id: "T-1", sha: "s", previous: "p" }, { TOKEN_A: "a", SECRET_B: "b", PATH: "/bin" });
+  assert.equal(env.TOKEN_A, "a");
+  assert.equal(env.SECRET_B, undefined);
+  assert.equal(env.PATH, "/bin");
+  assert.deepEqual([env.ORCH_TICKET, env.ORCH_SHA, env.ORCH_PREVIOUS], ["T-1", "s", "p"]);
+});
+
+test("a failing command throws with the output tail", () => {
+  const t = commandTarget(cfg("node --nonexistent-flag"), process.cwd(), "p");
+  assert.throws(() => t.deploy({ id: "T-1", sha: "s" }), /nonexistent-flag/);
+});
+
+test("a listed env value in the output is masked", () => {
+  process.env.ORCH_TEST_SECRET = process.version;
+  const out = commandTarget(cfg("node --version", ["ORCH_TEST_SECRET"]), process.cwd(), "p").deploy({ id: "T-1", sha: "s" });
+  delete process.env.ORCH_TEST_SECRET;
+  assert.match(out, /\*\*\*/);
+  assert.ok(!out.includes(process.version));
+});
+
+test("a command over its timeout throws", () => {
+  const t = commandTarget(cfg("node --version", [], 0.001), process.cwd(), "p");
+  assert.throws(() => t.deploy({ id: "T-1", sha: "s" }), /timed out|ETIMEDOUT/);
+});
+
+test("a command target is not a sandbox", () => assert.equal(commandTarget(cfg("node --version"), process.cwd(), "p").sandbox, false));
+
+test("a command whose binary exists in the working directory is refused", { skip: process.platform !== "win32" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "node.cmd"), "echo pwned");
+  try {
+    assert.throws(() => commandTarget(cfg("node --version"), dir, "p").deploy({ id: "T-1", sha: "s" }), /shadow/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a command with shell operators is refused at run time too", () => {
+  assert.throws(() => commandTarget(cfg("node --version && id"), process.cwd(), "p").deploy({ id: "T-1", sha: "s" }), /plain command/);
+});
+
+test("the shadow-binary check ignores case", { skip: process.platform !== "win32" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "NODE.CMD"), "echo pwned");
+  try {
+    assert.throws(() => commandTarget(cfg("node --version"), dir, "p").deploy({ id: "T-1", sha: "s" }), /shadow/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a project file named like the binary does not block it (vercel.json, fly.toml)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "node.json"), "{}");
+  try {
+    assert.match(commandTarget(cfg("node --version"), dir, "p").deploy({ id: "T-1", sha: "s" }), /^v\d+/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an npm-installed cli (a .cmd shim on Windows) can run", () => {
+  assert.match(commandTarget(cfg("npm --version"), process.cwd(), "p").deploy({ id: "T-1", sha: "s" }), /^\d+\.\d+/);
+});
+
+test("a verbose command over 1 MB of output still succeeds", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "big.js"), "process.stdout.write('x'.repeat(3 * 1024 * 1024) + 'END');");
+  try {
+    assert.match(commandTarget(cfg("node ./big.js"), dir, "p").deploy({ id: "T-1", sha: "s" }), /END$/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("any PATHEXT extension in the working directory shadows the binary", { skip: process.platform !== "win32" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "node.vbs"), "x");
+  try {
+    assert.throws(() => commandTarget(cfg("node --version"), dir, "p").deploy({ id: "T-1", sha: "s" }), /shadow/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the command env tells cmd.exe not to search the working directory", () => {
+  assert.equal(commandEnv([], { id: "T-1", sha: "s", previous: "p" }, { PATH: "/bin" }).NoDefaultCurrentDirectoryInExePath, "1");
 });

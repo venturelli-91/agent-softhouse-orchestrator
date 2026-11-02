@@ -21,9 +21,9 @@ function repo(config?: string) {
 
 test("the config comes from the base commit, with safe defaults", () => {
   const none = repo();
-  assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr", push_remote: "origin", base_repo: "", disclosure: true });
+  assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr", push_remote: "origin", base_repo: "", disclosure: true, deploy: null });
   const some = repo('{"test":"pytest -q","merge":"auto"}');
-  assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto", push_remote: "origin", base_repo: "", disclosure: true });
+  assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto", push_remote: "origin", base_repo: "", disclosure: true, deploy: null });
   // an uncommitted edit of the file does not count
   writeFileSync(join(some.d, ".orchestrator.json"), '{"test":"rm -rf x"}');
   assert.equal(loadRepoConfig(some.d, some.base).test, "pytest -q");
@@ -110,4 +110,53 @@ test("merge local is accepted", () => {
   const { d, base } = repo('{"merge":"local"}');
   assert.equal(loadRepoConfig(d, base).merge, "local");
   rmSync(d, { recursive: true, force: true });
+});
+
+const withDeploy = (deploy: object, repoConfig?: string) => {
+  const { d, base } = repo(repoConfig);
+  const h = home(JSON.stringify({ repos: { [resolve(d)]: { deploy } } }));
+  return { d, base, h, done: () => [d, h].forEach((x) => rmSync(x, { recursive: true, force: true })) };
+};
+const okDeploy = { command: "vercel deploy", rollback: "vercel rollback", health_url: "https://x.example/health" };
+
+test("a deploy block in the external config is loaded with defaults", () => {
+  const t = withDeploy(okDeploy);
+  const c = loadRepoConfig(t.d, t.base, t.h);
+  assert.deepEqual(c.deploy, { ...okDeploy, environment: "staging", env: [], timeout_s: 300, max_latency_ms: 2000 });
+  assert.equal(loadRepoConfig(repo().d, repo().base).deploy, null);
+  t.done();
+});
+
+test("a deploy key in .orchestrator.json is rejected", () => {
+  const { d, base } = repo(JSON.stringify({ deploy: okDeploy }));
+  assert.throws(() => loadRepoConfig(d, base), /deploy is only accepted in the external config/);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("health_url must be http or https", () => {
+  for (const bad of ["file:///etc/passwd", "ftp://x/y", "not a url"]) {
+    const t = withDeploy({ ...okDeploy, health_url: bad });
+    assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /health_url/, bad);
+    t.done();
+  }
+});
+
+test("a deploy command with shell operators is rejected", () => {
+  for (const key of ["command", "rollback"]) {
+    const t = withDeploy({ ...okDeploy, [key]: "vercel deploy && rm x" });
+    assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /plain command/, key);
+    t.done();
+  }
+});
+
+test("deploy env names must be upper-case identifiers", () => {
+  const t = withDeploy({ ...okDeploy, env: ["lower-case"] });
+  assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /env/);
+  t.done();
+});
+
+test("health_url with credentials is rejected", () => {
+  const t = withDeploy({ ...okDeploy, health_url: "https://user:pw@x.example/health" });
+  assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /without credentials/);
+  t.done();
 });

@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { recordDeploy, registerDeployTarget } from "../src/deploy.ts";
 import { listIncidents } from "../src/incidents.ts";
 import { approveRollback, watch } from "../src/monitor.ts";
+import { createFixture, git } from "../scripts/fixture.ts";
+import { gitConfigHash } from "../src/guardrails.ts";
 
 let home = "";
 let symptom: string | null = null;
@@ -85,4 +87,48 @@ test("a healthy probe closes the incident", async () => {
   symptom = null;
   await watch(home, deps());
   assert.equal(listIncidents(home)[0].status, "closed");
+});
+
+test("a failing rollback command leaves the incident proposed and a retry succeeds", async () => {
+  const cmd = { rollback: "node --nonexistent-flag", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const, git_config_hash: "" };
+  recordDeploy(home, { id: "T-2", repo: process.cwd(), sha: "a", previous: "b", target: "command", sandbox: false, cmd });
+  await watch(home, { ...deps(), probe: (_h, id) => (id === "T-2" ? "http 503" : null) });
+  const id = listIncidents(home).find((i) => i.ticket === "T-2")!.id;
+  assert.throws(() => approveRollback(home, id), /nonexistent-flag/);
+  assert.equal(listIncidents(home).find((i) => i.id === id)!.rollback, "proposed");
+  recordDeploy(home, { id: "T-2", repo: process.cwd(), sha: "a", previous: "b", target: "command", sandbox: false, cmd: { ...cmd, rollback: "node --version" } });
+  approveRollback(home, id);
+  assert.equal(listIncidents(home).find((i) => i.id === id)!.rollback, "done");
+});
+
+test("watch awaits an async probe", async () => {
+  await watch(home, { ...deps(), probe: async () => "async symptom" });
+  assert.equal(listIncidents(home)[0].symptom, "async symptom");
+});
+
+test("a symptom that changes during one outage updates the incident instead of opening another", async () => {
+  await watch(home, { ...deps(), probe: () => "unreachable: ECONNREFUSED" });
+  await watch(home, { ...deps(), probe: () => "http 503" });
+  const all = listIncidents(home);
+  assert.equal(all.length, 1);
+  assert.equal(all[0].symptom, "http 503");
+  assert.equal(tickets, 1);
+  assert.equal(notes.length, 1);
+});
+
+test("a changed .git/config blocks the rollback until it is reviewed", async () => {
+  const root = mkdtempSync(join(tmpdir(), "mon-repo-"));
+  try {
+    const repo = createFixture(root);
+    const cmd = { rollback: "node --version", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const, git_config_hash: gitConfigHash(repo) };
+    recordDeploy(home, { id: "T-3", repo, sha: "a", previous: "b", target: "command", sandbox: false, cmd });
+    await watch(home, { ...deps(), probe: (_h, id) => (id === "T-3" ? "http 503" : null) });
+    const id = listIncidents(home).find((i) => i.ticket === "T-3")!.id;
+    git(repo, "config", "--local", "foo.bar", "x");
+    assert.throws(() => approveRollback(home, id), /--config-reviewed/);
+    approveRollback(home, id, { configReviewed: true });
+    assert.equal(listIncidents(home).find((i) => i.id === id)!.rollback, "done");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

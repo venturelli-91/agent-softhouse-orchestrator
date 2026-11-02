@@ -17,7 +17,7 @@ export const SCENARIOS: Record<string, string> = {
   regression: "a previously working flow now fails",
 };
 
-export type Probe = (home: string, id: string) => string | null;
+export type Probe = (home: string, id: string) => string | null | Promise<string | null>;
 const file = (home: string, id: string) => join(home, "chaos", `${id}.json`);
 
 export function injectFailure(home: string, id: string, scenario: string): void {

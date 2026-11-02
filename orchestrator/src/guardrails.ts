@@ -48,7 +48,7 @@ export function safeGit(cwd: string, ...args: string[]): string {
 }
 
 const run = (cwd: string, extraEnv: NodeJS.ProcessEnv, args: string[]) =>
-  execFileSync("git", ["-c", "core.fsmonitor=false", "-c", "core.pager=cat", ...args], {
+  execFileSync("git", ["-c", "core.fsmonitor=false", "-c", "core.pager=cat", "-c", `core.hooksPath=${devNull}`, ...args], {
     cwd, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_EXTERNAL_DIFF: "", GIT_TERMINAL_PROMPT: "0", ...extraEnv }, encoding: "utf8",
   }).trim();
 
@@ -124,7 +124,7 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
   },
 };
 
-const ALLOWED_ENV = [
+export const ALLOWED_ENV = [
   "PATH", "PATHEXT", "SystemRoot", "windir", "COMSPEC", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH",
   "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "LANG", "SystemDrive", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CLAUDE_CODE_GIT_BASH_PATH",
 ];

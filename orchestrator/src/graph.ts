@@ -1,11 +1,14 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
+import { join } from "node:path";
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
 import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
 import { orchHome } from "./daily-cap.ts";
-import { getDeployTarget, recordDeploy } from "./deploy.ts";
+import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } from "./deploy.ts";
 import { mergePr, publish } from "./publish.ts";
-import { loadConventions, loadRepoConfig } from "./repo-config.ts";
+import { DeployConfig, loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
 
 const SPECIALTIES = ["frontend", "backend", "fullstack", "mobile", "integrations", "ai", "data"] as const;
@@ -52,6 +55,7 @@ export const Ticket = z.object({
   stories: z.array(z.string()).default([]),
   incident: z.string().default(""),
   deploy_target: z.string().default("simulated"),
+  deploy_cfg: DeployConfig.nullable().default(null),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
   qa_id: z.string().nullable().default(null),
@@ -180,17 +184,55 @@ const publishNode = guarded("publish", async (t) => {
 });
 
 // Deploy only after the CEO, by code: the ticket's target runs the approved commit and the deploy is recorded for the monitor.
-const deploy = guarded("deploy", async (t) => {
+// A command target runs in a fresh checkout of exactly the approved commit, never in the worktree the agent touched.
+export async function deployTicket(t: T): Promise<Partial<T>> {
+  let result: string;
+  let cmd: CommandSettings | undefined;
   let target;
-  try {
-    target = getDeployTarget(t.deploy_target);
-  } catch (e) {
-    throw new NodeFailure((e as Error).message);
+  const repo = t.repo || repoOf(t.worktree);
+  if (t.deploy_target === "command" && t.deploy_cfg) {
+    checkConfig(t);
+    if (!isDeepStrictEqual(loadRepoConfig(repo, t.base).deploy, t.deploy_cfg)) throw new NodeFailure("deploy settings changed since the ticket started; re-run the ticket");
+    const c = t.deploy_cfg;
+    cmd = { rollback: c.rollback, health_url: c.health_url, env: c.env, timeout_s: c.timeout_s, max_latency_ms: c.max_latency_ms, environment: c.environment, git_config_hash: t.git_config_hash };
+    const dir = join(orchHome(), "deploy-work", t.id);
+    rmSync(dir, { recursive: true, force: true });
+    try {
+      safeGit(repo, "worktree", "prune");
+      safeGit(repo, "worktree", "add", "--detach", dir, t.approved_sha);
+    } catch {
+      throw new NodeFailure(`approved commit ${t.approved_sha.slice(0, 7)} cannot be checked out for the deploy`);
+    }
+    try {
+      result = commandTarget(c, dir, t.base).deploy({ id: t.id, sha: t.approved_sha });
+    } catch (e) {
+      // The masked output stays local: the escalation text goes to NOTIFY_URL, which may be a third-party service.
+      const logs = join(orchHome(), "deploy-logs");
+      mkdirSync(logs, { recursive: true });
+      writeFileSync(join(logs, `${t.id}.txt`), (e as Error).message);
+      throw new NodeFailure(`deploy command failed; the masked output is in deploy-logs/${t.id}.txt under ORCH_HOME`);
+    } finally {
+      try {
+        safeGit(repo, "worktree", "remove", "--force", dir);
+      } catch {
+        try {
+          rmSync(dir, { recursive: true, force: true });
+        } catch {}
+      }
+    }
+    target = { sandbox: false };
+  } else {
+    try {
+      target = getDeployTarget(t.deploy_target);
+      result = target.deploy({ id: t.id, sha: t.approved_sha });
+    } catch (e) {
+      throw new NodeFailure((e as Error).message);
+    }
   }
-  const result = target.deploy({ id: t.id, sha: t.approved_sha });
-  recordDeploy(orchHome(), { id: t.id, repo: t.repo || repoOf(t.worktree), sha: t.approved_sha, previous: t.base, target: t.deploy_target, sandbox: target.sandbox });
+  recordDeploy(orchHome(), { id: t.id, repo, sha: t.approved_sha, previous: t.base, target: t.deploy_target, sandbox: target.sandbox, ...(cmd ? { cmd } : {}) });
   return { status: t.deploy_target === "simulated" ? "simulated_deploy" : "deployed", evidence: [...t.evidence, `deploy:${result}`], history: log(t, "deploy", result) };
-});
+}
+const deploy = guarded("deploy", deployTicket);
 
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
 const mergeNode = guarded("merge_pr", async (t) => {
@@ -221,6 +263,7 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
     : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
     type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, explanation: t.explanation, evidence: t.evidence,
+    deploy: { target: t.deploy_target, environment: t.deploy_cfg?.environment ?? "simulated", ...(t.deploy_cfg ? { command: t.deploy_cfg.command, rollback: t.deploy_cfg.rollback, env: t.deploy_cfg.env, health_url: t.deploy_cfg.health_url } : {}) },
     active_flags: Object.entries(t.flags).filter(([, active]) => active).map(([k]) => k),
   }) as string;
   const h = (res: string) => log(t, "ceo_approval", res);
@@ -276,8 +319,8 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge, publisher, push_remote, base_repo, disclosure } = loadRepoConfig(repo, base, home);
-  return { worktree: dir, repo, git_config_hash: gitConfigHash(repo), base, test, merge, publisher: publisher ?? "", push_remote, base_repo, disclosure, base_branch, rules: loadConventions(repo, base) };
+  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy } = loadRepoConfig(repo, base, home);
+  return { worktree: dir, repo, git_config_hash: gitConfigHash(repo), base, test, merge, publisher: publisher ?? "", push_remote, base_repo, disclosure, base_branch, rules: loadConventions(repo, base), deploy_cfg: deploy, ...(deploy ? { deploy_target: "command" } : {}) };
 }
 
 export function report(t: T): string {
