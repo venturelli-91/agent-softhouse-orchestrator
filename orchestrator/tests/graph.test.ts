@@ -365,6 +365,30 @@ test("retry after a reviewer failure re-runs the reviewer and not the dev", asyn
   assert.equal(calls.filter((c) => c === "reviewer").length, 2);
 });
 
+test("retry is honoured only for the commit that was verified; a new commit goes back through the dev", async () => {
+  override.reviewer = reviewerFailsOnce();
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  commit(join(g.root, "wt"), "agent-dev", "extra.txt", "x\n");
+  const r = await answer(g, "retry");
+  assert.equal(paused(r)?.type, "approval");
+  assert.equal(calls.filter((c) => c === "dev").length, 2);
+});
+
+test("a retried node does not see the failure text, but the CEO does", async () => {
+  const seen: string[] = [];
+  override.reviewer = (req) => {
+    seen.push(req.context);
+    if (seen.length === 1) throw new NodeFailure("SECRET-DETAIL");
+    return approved();
+  };
+  const g = await start();
+  assert.match(String(paused(g.r)?.summary), /SECRET-DETAIL/);
+  await answer(g, "retry");
+  assert.equal(seen.length, 2);
+  assert.doesNotMatch(seen[1], /SECRET-DETAIL/);
+});
+
 test("retry on a revision-cap escalation still instructs the dev", async () => {
   override.reviewer = () => ({ verdict: "rejected", comments: "no", summary: "s" });
   const g = await start();
