@@ -154,3 +154,9 @@ test("deploy env names must be upper-case identifiers", () => {
   assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /env/);
   t.done();
 });
+
+test("health_url with credentials is rejected", () => {
+  const t = withDeploy({ ...okDeploy, health_url: "https://user:pw@x.example/health" });
+  assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /without credentials/);
+  t.done();
+});

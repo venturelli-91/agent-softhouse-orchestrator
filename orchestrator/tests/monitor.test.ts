@@ -88,7 +88,7 @@ test("a healthy probe closes the incident", async () => {
 });
 
 test("a failing rollback command leaves the incident proposed and a retry succeeds", async () => {
-  const cmd = { rollback: "node --nonexistent-flag", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const };
+  const cmd = { rollback: "node --nonexistent-flag", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const, git_config_hash: "" };
   recordDeploy(home, { id: "T-2", repo: process.cwd(), sha: "a", previous: "b", target: "command", sandbox: false, cmd });
   await watch(home, { ...deps(), probe: (_h, id) => (id === "T-2" ? "http 503" : null) });
   const id = listIncidents(home).find((i) => i.ticket === "T-2")!.id;

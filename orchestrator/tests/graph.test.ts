@@ -490,7 +490,7 @@ test("a command deploy runs only after approval and ends in deployed with cmd se
   const d = readDeploy(process.env.ORCH_HOME!, "T-1");
   assert.equal(d.target, "command");
   assert.equal(d.sandbox, false);
-  assert.deepEqual(d.cmd, { rollback: "node --version", health_url: CMD_CFG.health_url, env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" });
+  assert.deepEqual(d.cmd, { rollback: "node --version", health_url: CMD_CFG.health_url, env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging", git_config_hash: end.git_config_hash });
   assert.ok(end.evidence.some((e: string) => e.startsWith("deploy:")));
 });
 
@@ -503,11 +503,11 @@ test("a failing deploy command escalates and writes no record", async () => {
   assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
 });
 
-test("the deploy command is not run when the worktree HEAD is not the approved commit", async () => {
+test("the deploy command is not run when the approved commit cannot be checked out", async () => {
   const root = mkdtempSync(join(tmpdir(), "gt-"));
   roots.push(root);
   const t = Ticket.parse({ id: "T-1", request: "p", worktree: createFixture(root), base: "b", approved_sha: "0".repeat(40), deploy_target: "command", deploy_cfg: CMD_CFG });
-  await assert.rejects(() => deployTicket(t), /HEAD/);
+  await assert.rejects(() => deployTicket(t), /approved commit/);
   assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
 });
 

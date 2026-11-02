@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deployedIds, getDeployTarget, readDeploy, recordDeploy } from "../src/deploy.ts";
@@ -69,3 +69,17 @@ test("a command over its timeout throws", () => {
 });
 
 test("a command target is not a sandbox", () => assert.equal(commandTarget(cfg("node --version"), process.cwd(), "p").sandbox, false));
+
+test("a command whose binary exists in the working directory is refused", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "node.cmd"), "echo pwned");
+  try {
+    assert.throws(() => commandTarget(cfg("node --version"), dir, "p").deploy({ id: "T-1", sha: "s" }), /shadow/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a command with shell operators is refused at run time too", () => {
+  assert.throws(() => commandTarget(cfg("node --version && id"), process.cwd(), "p").deploy({ id: "T-1", sha: "s" }), /plain command/);
+});

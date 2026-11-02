@@ -5,7 +5,7 @@
 //   orch status [id]            all tickets, or one with its pending question
 //   orch approve <id> [text]    approve; for an escalation, text is the answer (e.g. retry, a clarification)
 //   orch reject <id> [reason]   reject with a reason; on an escalation with no reason, abort
-//   orch watch                  one monitor pass over deployed tickets: opens one P0 hotfix ticket per failure and proposes a rollback
+//   orch watch                  one monitor pass over deployed tickets (HTTP health check for command deploys, simulated probe otherwise): opens one P0 hotfix ticket per failure and proposes a rollback
 //   orch chaos <id> <scenario>|--clear   inject (or clear) a failure on a ticket deployed to a sandbox target
 //   orch rollback <incident-id> approve the proposed rollback of an incident
 //   orch clean <id>|--all [--force] [--remote]   remove worktree, branch and state of finished (simulated_deploy/aborted) tickets; --remote also deletes ticket/<id> on the push remote
@@ -18,7 +18,8 @@ import { buildGraph, config, createWorktree, report, resume, Ticket } from "../s
 import { assertGitConfigUnchanged, repoOf, safeGit } from "../src/guardrails.ts";
 import { behindBy, deleteRemoteBranch } from "../src/git-remote.ts";
 import { notify } from "../src/notify.ts";
-import { clearFailure, injectFailure, SCENARIOS, simulatedProbe } from "../src/chaos.ts";
+import { clearFailure, injectFailure, SCENARIOS } from "../src/chaos.ts";
+import { defaultProbe } from "../src/probe.ts";
 import { deployedIds } from "../src/deploy.ts";
 import { listIncidents } from "../src/incidents.ts";
 import { approveRollback, watch } from "../src/monitor.ts";
@@ -162,7 +163,7 @@ if (cmd === "init") {
 } else if (cmd === "watch") {
   if (!deployedIds(home).length) console.log("nothing is deployed");
   const incidents = await watch(home, {
-    probe: simulatedProbe,
+    probe: defaultProbe,
     notify,
     makeHotfix: async ({ incident, repo }) => {
       needCap();

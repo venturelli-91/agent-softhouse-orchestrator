@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ALLOWED_ENV } from "./guardrails.ts";
+import { minimalEnv } from "./guardrails.ts";
 import { checkId } from "./ticket-store.ts";
 
 export type DeployTarget = {
@@ -9,7 +9,7 @@ export type DeployTarget = {
   deploy(d: { id: string; sha: string }): string;
   rollback(d: { id: string; sha: string; previous: string }): string;
 };
-export type CommandSettings = { rollback: string; health_url: string; env: string[]; timeout_s: number; max_latency_ms: number; environment: "staging" | "production" };
+export type CommandSettings = { rollback: string; health_url: string; env: string[]; timeout_s: number; max_latency_ms: number; environment: "staging" | "production"; git_config_hash: string };
 export type DeployRecord = { id: string; repo: string; sha: string; previous: string; target: string; sandbox: boolean; cmd?: CommandSettings };
 
 const targets = new Map<string, DeployTarget>([
@@ -42,17 +42,19 @@ export function deployedIds(home: string): string[] {
 
 type Ctx = { id: string; sha: string; previous: string };
 
-// A command never inherits the host env: the base set, the names the CEO listed and the ORCH_ variables only.
+// A command never inherits the host env: the hardened base set, the names the CEO listed and the ORCH_ variables only.
 export function commandEnv(names: string[], ctx: Ctx, src: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const k of [...ALLOWED_ENV, ...names]) if (src[k] !== undefined) env[k] = src[k]!;
+  const env = minimalEnv("devops", src);
+  for (const k of names) if (src[k] !== undefined) env[k] = src[k]!;
   return { ...env, ORCH_TICKET: ctx.id, ORCH_SHA: ctx.sha, ORCH_PREVIOUS: ctx.previous };
 }
 
 // Plain argv, no shell. Listed env values are masked in whatever comes back.
 export function commandTarget(cfg: { command: string; rollback: string; env: string[]; timeout_s: number }, cwd: string, previous: string): DeployTarget {
   const run = (line: string, ctx: Ctx): string => {
+    if (!/^[\w ./:=@-]+$/.test(line)) throw new Error("command must be a plain command without shell operators");
     const [bin, ...args] = line.split(" ").filter(Boolean);
+    if (readdirSync(cwd).some((f) => f === bin || f.toLowerCase().startsWith(`${bin.toLowerCase()}.`))) throw new Error(`${bin} exists in ${cwd}: refusing to run a binary the working tree could shadow`);
     const env = commandEnv(cfg.env, ctx);
     const mask = (s: string) => cfg.env.reduce((a, k) => (env[k] ? a.split(env[k]).join("***") : a), s).trim().slice(-300);
     try {

@@ -9,7 +9,7 @@ const plain = z.string().regex(/^[\w ./:=@-]+$/, "must be a plain command withou
 export const DeployConfig = z.object({
   command: plain,
   rollback: plain,
-  health_url: z.string().refine((u) => /^https?:$/.test(URL.canParse(u) ? new URL(u).protocol : ""), "health_url must be an http or https URL"),
+  health_url: z.string().refine((u) => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol) && !new URL(u).username && !new URL(u).password, "health_url must be an http or https URL without credentials"),
   environment: z.enum(["staging", "production"]).default("staging"),
   env: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
   timeout_s: z.number().positive().max(3600).default(300),

@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { injectFailure, simulatedProbe } from "../src/chaos.ts";
@@ -11,6 +13,7 @@ import { recordDeploy, registerDeployTarget } from "../src/deploy.ts";
 import { buildGraph, config, createWorktree, resume } from "../src/graph.ts";
 import { listIncidents } from "../src/incidents.ts";
 import { approveRollback, watch } from "../src/monitor.ts";
+import { defaultProbe } from "../src/probe.ts";
 import { writePostmortem } from "../src/postmortem.ts";
 import { registerPublisher } from "../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
@@ -102,4 +105,50 @@ test("chaos is refused on a deploy that is not a sandbox target", () => {
   recordDeploy(home, { id: "T-9", repo: "/r", sha: "a", previous: "b", target: "prod-like", sandbox: false });
   assert.throws(() => injectFailure(home, "T-9", "http-500"), /sandbox/);
   assert.equal(simulatedProbe(home, "T-9"), null);
+});
+
+test("a command deploy with a failing health url opens one hotfix and rolls back only on approval", async () => {
+  let healthy = true;
+  const server = createServer((_q, res) => ((res.statusCode = healthy ? 200 : 503), res.end()));
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  try {
+    const repo = createFixture(root);
+    const health_url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/health`;
+    const deploy_cfg = { command: "node --version", rollback: "node --version", health_url, environment: "staging", env: [], timeout_s: 30, max_latency_ms: 30000 };
+    const { done } = await deliver(repo, "T-1", { deploy_target: "command", deploy_cfg });
+    assert.equal(done.status, "deployed");
+
+    const made: string[] = [];
+    const deps = {
+      probe: defaultProbe,
+      notify: async () => {},
+      makeHotfix: async ({ incident, repo: r }: { incident: { id: string }; repo: string }) => {
+        const id = `H-${made.length + 1}`;
+        await deliver(r, id, { incident: incident.id });
+        made.push(id);
+        return id;
+      },
+    };
+    await watch(home, deps);
+    assert.equal(listIncidents(home).length, 0);
+    healthy = false;
+    await watch(home, deps);
+    await watch(home, deps);
+    assert.equal(listIncidents(home).length, 1);
+    assert.equal(made.length, 1);
+    assert.equal(listIncidents(home)[0].symptom, "http 503");
+
+    const id = listIncidents(home)[0].id;
+    assert.match(approveRollback(home, id), /v\d+/);
+    assert.throws(() => approveRollback(home, id), /already rolled back/);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("chaos is refused on a command deploy", () => {
+  const cmd = { rollback: "x", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const, git_config_hash: "" };
+  recordDeploy(home, { id: "T-8", repo: "/r", sha: "a", previous: "b", target: "command", sandbox: false, cmd });
+  assert.throws(() => injectFailure(home, "T-8", "http-500"), /sandbox/);
 });

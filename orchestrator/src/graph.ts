@@ -1,3 +1,5 @@
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
@@ -181,30 +183,45 @@ const publishNode = guarded("publish", async (t) => {
 });
 
 // Deploy only after the CEO, by code: the ticket's target runs the approved commit and the deploy is recorded for the monitor.
-// A command target runs only if the worktree is still exactly at the approved commit.
+// A command target runs in a fresh checkout of exactly the approved commit, never in the worktree the agent touched.
 export async function deployTicket(t: T): Promise<Partial<T>> {
-  let target;
+  let result: string;
   let cmd: CommandSettings | undefined;
+  let target;
+  const repo = t.repo || repoOf(t.worktree);
   if (t.deploy_target === "command" && t.deploy_cfg) {
-    const head = safeGit(t.worktree, "rev-parse", "HEAD");
-    if (head !== t.approved_sha) throw new NodeFailure(`worktree HEAD ${head.slice(0, 7)} is not the approved commit ${t.approved_sha.slice(0, 7)}`);
+    checkConfig(t);
     const c = t.deploy_cfg;
-    cmd = { rollback: c.rollback, health_url: c.health_url, env: c.env, timeout_s: c.timeout_s, max_latency_ms: c.max_latency_ms, environment: c.environment };
-    target = commandTarget(t.deploy_cfg, t.worktree, t.base);
+    cmd = { rollback: c.rollback, health_url: c.health_url, env: c.env, timeout_s: c.timeout_s, max_latency_ms: c.max_latency_ms, environment: c.environment, git_config_hash: t.git_config_hash };
+    const dir = join(orchHome(), "deploy-work", t.id);
+    rmSync(dir, { recursive: true, force: true });
+    try {
+      safeGit(repo, "worktree", "prune");
+      safeGit(repo, "worktree", "add", "--detach", dir, t.approved_sha);
+    } catch {
+      throw new NodeFailure(`approved commit ${t.approved_sha.slice(0, 7)} cannot be checked out for the deploy`);
+    }
+    try {
+      result = commandTarget(c, dir, t.base).deploy({ id: t.id, sha: t.approved_sha });
+    } catch (e) {
+      throw new NodeFailure((e as Error).message);
+    } finally {
+      try {
+        safeGit(repo, "worktree", "remove", "--force", dir);
+      } catch {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    target = { sandbox: false };
   } else {
     try {
       target = getDeployTarget(t.deploy_target);
+      result = target.deploy({ id: t.id, sha: t.approved_sha });
     } catch (e) {
       throw new NodeFailure((e as Error).message);
     }
   }
-  let result: string;
-  try {
-    result = target.deploy({ id: t.id, sha: t.approved_sha });
-  } catch (e) {
-    throw new NodeFailure((e as Error).message);
-  }
-  recordDeploy(orchHome(), { id: t.id, repo: t.repo || repoOf(t.worktree), sha: t.approved_sha, previous: t.base, target: t.deploy_target, sandbox: target.sandbox, ...(cmd ? { cmd } : {}) });
+  recordDeploy(orchHome(), { id: t.id, repo, sha: t.approved_sha, previous: t.base, target: t.deploy_target, sandbox: target.sandbox, ...(cmd ? { cmd } : {}) });
   return { status: t.deploy_target === "simulated" ? "simulated_deploy" : "deployed", evidence: [...t.evidence, `deploy:${result}`], history: log(t, "deploy", result) };
 }
 const deploy = guarded("deploy", deployTicket);
