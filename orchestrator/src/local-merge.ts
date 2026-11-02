@@ -9,6 +9,6 @@ export function mergeLocal(repo: string, branch: string, sha: string): string {
   } catch {
     throw new Error(`${branch} diverged from the approved commit`);
   }
-  safeGit(repo, "-c", `core.hooksPath=${devNull}`, "merge", "--ff-only", sha);
+  safeGit(repo, "-c", `core.hooksPath=${devNull}`, "merge", "--ff-only", "--no-overwrite-ignore", sha);
   return `merged:local@${sha.slice(0, 7)}`;
 }
