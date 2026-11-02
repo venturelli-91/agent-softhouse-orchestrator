@@ -12,7 +12,7 @@ import { parseArgs } from "node:util";
 import { dailyCapReached, orchHome, usedToday } from "../src/daily-cap.ts";
 import { FileSaver } from "../src/file-saver.ts";
 import { buildGraph, config, createWorktree, report, resume, Ticket } from "../src/graph.ts";
-import { repoOf, safeGit } from "../src/guardrails.ts";
+import { assertGitConfigUnchanged, repoOf, safeGit } from "../src/guardrails.ts";
 import { behindBy, deleteRemoteBranch } from "../src/git-remote.ts";
 import { notify } from "../src/notify.ts";
 import { lockTicket, ticketFile, ticketIds } from "../src/ticket-store.ts";
@@ -139,8 +139,11 @@ if (cmd === "init") {
         return;
       }
       if (existsSync(t.worktree)) {
-        const repo = repoOf(t.worktree);
-        if (values.remote) console.log(`${id}: remote branch ${deleteRemoteBranch(repo, t.push_remote, id)}`);
+        const repo = t.repo || repoOf(t.worktree);
+        if (values.remote) {
+          assertGitConfigUnchanged(repo, t.git_config_hash);
+          console.log(`${id}: remote branch ${deleteRemoteBranch(repo, t.push_remote, id)}`);
+        }
         safeGit(repo, "worktree", "remove", "--force", t.worktree);
         safeGit(repo, "branch", "-D", `ticket/${id}`);
       }

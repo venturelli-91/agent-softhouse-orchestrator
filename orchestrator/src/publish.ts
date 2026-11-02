@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { devNull, safeGit } from "./guardrails.ts";
+import { safeGit, safeRemoteGit } from "./guardrails.ts";
 import { NodeFailure } from "./run-agent.ts";
 
 // `sha` is the commit the verification checked; the target ref is derived from the id, never from HEAD.
@@ -33,7 +33,7 @@ export const matchesPr = (pr: Omit<PrInfo, "url">, sha: string, owner: string) =
 const github: Publisher = {
   publish(p) {
     const branch = `ticket/${p.id}`;
-    safeGit(p.cwd, "-c", `core.hooksPath=${devNull}`, "push", "--no-verify", "--", p.remote, `${p.sha}:refs/heads/${branch}`);
+    safeRemoteGit(p.cwd, "push", "--no-verify", "--", p.remote, `${p.sha}:refs/heads/${branch}`);
     const owner = remoteOwner(safeGit(p.cwd, "remote", "get-url", "--", p.remote).trim());
     const repo = p.baseRepo ? ["--repo", p.baseRepo] : [];
     const found: PrInfo[] = JSON.parse(gh(p.cwd, "pr", "list", ...repo, "--head", branch, "--state", "open", "--json", "url,headRefOid,headRepositoryOwner"));

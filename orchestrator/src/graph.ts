@@ -1,7 +1,7 @@
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
-import { repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
+import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
 import { mergePr, publish } from "./publish.ts";
 import { loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
@@ -25,6 +25,8 @@ export const Ticket = z.object({
   request: z.string(),
   worktree: z.string(),
   base: z.string(),
+  repo: z.string().default(""),
+  git_config_hash: z.string().default(""),
   test: z.string().default("npm test"),
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.string().default(""),
@@ -150,10 +152,19 @@ const reviewer = reviewStep("reviewer", (t) => [
 ], "qa");
 const qa = reviewStep("qa", () => ["qa-automation"], "publish");
 
+const checkConfig = (t: T) => {
+  try {
+    assertGitConfigUnchanged(t.repo || repoOf(t.worktree), t.git_config_hash);
+  } catch (e) {
+    throw new NodeFailure((e as Error).message);
+  }
+};
+
 // Branch push and (draft) PR done by code, not by the agent; only while the evidence still holds.
 const publishNode = guarded("publish", async (t) => {
   const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : { ok: false as const, reason: "no evidence" };
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
+  checkConfig(t);
   const body = [t.summary, "Criteria:", ...t.criteria.map((c) => `- ${c}`), `Evidence: ${v.evidence.join(", ")}`].join("\n\n");
   const pr = publish({ cwd: t.worktree, id: t.id, sha: v.sha, title: `${t.id}: ${t.title}`, body, remote: t.push_remote, baseRepo: t.base_repo, disclosure: t.disclosure }, t.publisher);
   return { status: "approval", approved_sha: v.sha, evidence: [...v.evidence, pr], history: log(t, "publish", pr) };
@@ -171,13 +182,14 @@ const devops = guarded("devops", async (t) => {
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
 const mergeNode = guarded("merge_pr", async (t) => {
   if (t.merge === "pr") return { history: log(t, "merge_pr", "skipped (merge=pr)") };
+  checkConfig(t);
   const v = verifyEvidence(t.worktree, t.base, t.test);
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   // What the CEO approved is the commit that was published, not whatever HEAD is now.
   if (!t.approved_sha || v.sha !== t.approved_sha) throw new NodeFailure("merge: commit changed since it was published");
   if (t.merge === "local") {
     try {
-      const merged = mergeLocal(repoOf(t.worktree), t.base_branch, t.approved_sha);
+      const merged = mergeLocal(t.repo || repoOf(t.worktree), t.base_branch, t.approved_sha);
       return { evidence: [...t.evidence, merged], history: log(t, "merge_pr", merged) };
     } catch (e) {
       throw new NodeFailure(`merge: ${(e as Error).message}`);
@@ -252,7 +264,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
   const { test, merge, publisher, push_remote, base_repo, disclosure } = loadRepoConfig(repo, base, home);
-  return { worktree: dir, base, test, merge, publisher: publisher ?? "", push_remote, base_repo, disclosure, base_branch, rules: loadConventions(repo, base) };
+  return { worktree: dir, repo, git_config_hash: gitConfigHash(repo), base, test, merge, publisher: publisher ?? "", push_remote, base_repo, disclosure, base_branch, rules: loadConventions(repo, base) };
 }
 
 export function report(t: T): string {
