@@ -1,7 +1,7 @@
 // Flow guardrails against fake nodes: no model, no credentials.
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
@@ -501,7 +501,9 @@ test("a failing deploy command escalates and writes no record", async () => {
   const end = await answer(g, "approve");
   assert.notEqual(end.status, "deployed");
   assert.equal(end.status, "escalated");
-  assert.match(end.summary, /nonexistent-flag/);
+  assert.match(end.summary, /deploy command failed/);
+  assert.ok(!end.summary.includes("nonexistent-flag"), "command output must not reach the escalation text");
+  assert.match(readFileSync(join(process.env.ORCH_HOME!, "deploy-logs", "T-1.txt"), "utf8"), /nonexistent-flag/);
   assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
 });
 

@@ -1,4 +1,4 @@
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
@@ -206,7 +206,11 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
     try {
       result = commandTarget(c, dir, t.base).deploy({ id: t.id, sha: t.approved_sha });
     } catch (e) {
-      throw new NodeFailure((e as Error).message);
+      // The masked output stays local: the escalation text goes to NOTIFY_URL, which may be a third-party service.
+      const logs = join(orchHome(), "deploy-logs");
+      mkdirSync(logs, { recursive: true });
+      writeFileSync(join(logs, `${t.id}.txt`), (e as Error).message);
+      throw new NodeFailure(`deploy command failed; the masked output is in deploy-logs/${t.id}.txt under ORCH_HOME`);
     } finally {
       try {
         safeGit(repo, "worktree", "remove", "--force", dir);
