@@ -7,7 +7,7 @@
 //   orch reject <id> [reason]   reject with a reason; on an escalation with no reason, abort
 //   orch watch                  one monitor pass over deployed tickets (HTTP health check for command deploys, simulated probe otherwise): opens one P0 hotfix ticket per failure and proposes a rollback
 //   orch chaos <id> <scenario>|--clear   inject (or clear) a failure on a ticket deployed to a sandbox target
-//   orch rollback <incident-id> approve the proposed rollback of an incident
+//   orch rollback <incident-id> [--config-reviewed]  approve the proposed rollback of an incident; --config-reviewed accepts a changed .git/config after you looked at it
 //   orch clean <id>|--all [--force] [--remote]   remove worktree, branch and state of finished (simulated_deploy/aborted) tickets; --remote also deletes ticket/<id> on the push remote
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -36,7 +36,7 @@ const die = (msg: string): never => {
 const [cmd, ...rest] = process.argv.slice(2);
 const { values, positionals } = parseArgs({
   args: rest, allowPositionals: true,
-  options: { repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" }, remote: { type: "boolean" }, clear: { type: "boolean" } },
+  options: { repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" }, remote: { type: "boolean" }, clear: { type: "boolean" }, "config-reviewed": { type: "boolean" } },
 });
 
 const home = orchHome();
@@ -189,5 +189,5 @@ scenarios: ${Object.keys(SCENARIOS).join(", ")}`);
 } else if (cmd === "rollback") {
   const incidentId = positionals[0] ?? die("usage: orch rollback <incident-id>");
   const incident = listIncidents(home).find((i) => i.id === incidentId) ?? die(`no incident ${incidentId}`);
-  await locked(incident.ticket, async () => console.log(approveRollback(home, incidentId)));
+  await locked(incident.ticket, async () => console.log(approveRollback(home, incidentId, { configReviewed: values["config-reviewed"] })));
 } else die("usage: orch init | run | status | approve | reject | clean | watch | chaos | rollback");

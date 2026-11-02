@@ -49,17 +49,21 @@ export function commandEnv(names: string[], ctx: Ctx, src: NodeJS.ProcessEnv = p
   return { ...env, ORCH_TICKET: ctx.id, ORCH_SHA: ctx.sha, ORCH_PREVIOUS: ctx.previous };
 }
 
-// Plain argv, no shell. Listed env values are masked in whatever comes back.
+const SHADOW_EXT = [".exe", ".cmd", ".bat", ".com", ".ps1"];
+
+// Plain argv; on Windows the line goes through cmd.exe, which the regex makes safe. Listed env values are masked in whatever comes back.
 export function commandTarget(cfg: { command: string; rollback: string; env: string[]; timeout_s: number }, cwd: string, previous: string): DeployTarget {
   const run = (line: string, ctx: Ctx): string => {
     if (!/^[\w ./:=@-]+$/.test(line)) throw new Error("command must be a plain command without shell operators");
     const [bin, ...args] = line.split(" ").filter(Boolean);
     const b = bin.toLowerCase();
-    if (readdirSync(cwd).some((f) => f.toLowerCase() === b || f.toLowerCase().startsWith(`${b}.`))) throw new Error(`${bin} exists in ${cwd}: refusing to run a binary the working tree could shadow`);
+    if (process.platform === "win32" && readdirSync(cwd).some((f) => [b, ...SHADOW_EXT.map((e) => b + e)].includes(f.toLowerCase()))) throw new Error(`${bin} exists in ${cwd}: refusing to run a binary the working tree could shadow`);
     const env = commandEnv(cfg.env, ctx);
     const mask = (s: string) => cfg.env.reduce((a, k) => (env[k] ? a.split(env[k]).join("***") : a), s).trim().slice(-300);
     try {
-      return mask(execFileSync(bin, args, { cwd, env, timeout: cfg.timeout_s * 1000, encoding: "utf8", stdio: "pipe", windowsHide: true }));
+      const opts = { cwd, env, timeout: cfg.timeout_s * 1000, encoding: "utf8", stdio: "pipe", windowsHide: true, maxBuffer: 64 * 1024 * 1024 } as const;
+      // npm-installed CLIs are .cmd shims on Windows and need a shell; the plain-command regex leaves no metacharacter to abuse.
+      return mask(process.platform === "win32" ? execFileSync(line, { ...opts, shell: true }) : execFileSync(bin, args, opts));
     } catch (e) {
       const err = e as { code?: string; stdout?: string; stderr?: string; message: string };
       throw new Error(err.code === "ETIMEDOUT" ? `command timed out after ${cfg.timeout_s}s` : `command failed: ${mask(`${err.stderr ?? ""}${err.stdout ?? ""}` || err.message)}`);

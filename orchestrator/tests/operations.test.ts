@@ -1,9 +1,9 @@
 // End to end: request -> simulated deploy -> injected failure -> one P0 hotfix, a proposed rollback and a postmortem.
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { MemorySaver } from "@langchain/langgraph";
@@ -57,9 +57,11 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-async function deliver(repo: string, id: string, extra: object = {}) {
+async function deliver(repo: string, id: string, extra: Record<string, unknown> & { deploy_cfg?: object | null } = {}) {
+  mkdirSync(home, { recursive: true });
+  if (extra.deploy_cfg) writeFileSync(join(home, "config.json"), JSON.stringify({ repos: { [resolve(repo)]: { deploy: extra.deploy_cfg } } }));
   const graph = buildGraph(new MemorySaver());
-  await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, id), home), ...extra }, config(id));
+  await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, id), home), ...extra } as never, config(id));
   const done = await graph.invoke(resume("approve") as never, config(id));
   return { done, graph };
 }
@@ -109,7 +111,7 @@ test("chaos is refused on a deploy that is not a sandbox target", () => {
 
 test("a command deploy with a failing health url opens one hotfix and rolls back only on approval", async () => {
   let healthy = true;
-  const server = createServer((_q, res) => ((res.statusCode = healthy ? 200 : 503), res.end()));
+  const server = createServer((_q, res) => ((res.statusCode = healthy ? 200 : 503), res.setHeader("connection", "close"), res.end()));
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
   try {
     const repo = createFixture(root);
@@ -124,7 +126,7 @@ test("a command deploy with a failing health url opens one hotfix and rolls back
       notify: async () => {},
       makeHotfix: async ({ incident, repo: r }: { incident: { id: string }; repo: string }) => {
         const id = `H-${made.length + 1}`;
-        await deliver(r, id, { incident: incident.id });
+        await deliver(r, id, { incident: incident.id, deploy_target: "simulated", deploy_cfg: null });
         made.push(id);
         return id;
       },

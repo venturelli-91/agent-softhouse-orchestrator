@@ -70,7 +70,7 @@ test("a command over its timeout throws", () => {
 
 test("a command target is not a sandbox", () => assert.equal(commandTarget(cfg("node --version"), process.cwd(), "p").sandbox, false));
 
-test("a command whose binary exists in the working directory is refused", () => {
+test("a command whose binary exists in the working directory is refused", { skip: process.platform !== "win32" }, () => {
   const dir = mkdtempSync(join(tmpdir(), "dp-"));
   writeFileSync(join(dir, "node.cmd"), "echo pwned");
   try {
@@ -84,11 +84,35 @@ test("a command with shell operators is refused at run time too", () => {
   assert.throws(() => commandTarget(cfg("node --version && id"), process.cwd(), "p").deploy({ id: "T-1", sha: "s" }), /plain command/);
 });
 
-test("the shadow-binary check ignores case", () => {
+test("the shadow-binary check ignores case", { skip: process.platform !== "win32" }, () => {
   const dir = mkdtempSync(join(tmpdir(), "dp-"));
   writeFileSync(join(dir, "NODE.CMD"), "echo pwned");
   try {
     assert.throws(() => commandTarget(cfg("node --version"), dir, "p").deploy({ id: "T-1", sha: "s" }), /shadow/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a project file named like the binary does not block it (vercel.json, fly.toml)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "node.json"), "{}");
+  try {
+    assert.match(commandTarget(cfg("node --version"), dir, "p").deploy({ id: "T-1", sha: "s" }), /^v\d+/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an npm-installed cli (a .cmd shim on Windows) can run", () => {
+  assert.match(commandTarget(cfg("npm --version"), process.cwd(), "p").deploy({ id: "T-1", sha: "s" }), /^\d+\.\d+/);
+});
+
+test("a verbose command over 1 MB of output still succeeds", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dp-"));
+  writeFileSync(join(dir, "big.js"), "process.stdout.write('x'.repeat(3 * 1024 * 1024) + 'END');");
+  try {
+    assert.match(commandTarget(cfg("node ./big.js"), dir, "p").deploy({ id: "T-1", sha: "s" }), /END$/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

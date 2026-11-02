@@ -1,13 +1,14 @@
 // Flow guardrails against fake nodes: no model, no credentials.
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { FileSaver } from "../src/file-saver.ts";
 import { readDeploy } from "../src/deploy.ts";
+import { gitConfigHash } from "../src/guardrails.ts";
 import { config, createWorktree, buildGraph, resume, DEV_RULES, deployTicket, Ticket } from "../src/graph.ts";
 import { ciVerdict, registerPublisher } from "../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
@@ -71,10 +72,11 @@ beforeEach(() => {
 });
 afterEach(() => roots.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
 
-async function start(id = "T-1", saver: MemorySaver = new MemorySaver(), extra: object = {}) {
+async function start(id = "T-1", saver: MemorySaver = new MemorySaver(), extra: Record<string, unknown> = {}) {
   const root = mkdtempSync(join(tmpdir(), "gt-"));
   roots.push(root);
   const repo = createFixture(root);
+  if ("deploy_cfg" in extra) writeFileSync(join(process.env.ORCH_HOME!, "config.json"), JSON.stringify({ repos: { [resolve(repo)]: { deploy: extra.deploy_cfg } } }));
   const graph = buildGraph(saver);
   const cfg = config(id);
   const r = await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, "wt")), ...extra }, cfg);
@@ -504,14 +506,54 @@ test("a failing deploy command escalates and writes no record", async () => {
 });
 
 test("the deploy command is not run when the approved commit cannot be checked out", async () => {
-  const root = mkdtempSync(join(tmpdir(), "gt-"));
-  roots.push(root);
-  const t = Ticket.parse({ id: "T-1", request: "p", worktree: createFixture(root), base: "b", approved_sha: "0".repeat(40), deploy_target: "command", deploy_cfg: CMD_CFG });
-  await assert.rejects(() => deployTicket(t), /approved commit/);
+  const { t } = await commandTicket();
+  await assert.rejects(() => deployTicket(Ticket.parse({ ...t, approved_sha: "0".repeat(40) })), /approved commit/);
   assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
 });
 
 test("the approval request shows the deploy environment", async () => {
   const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: { ...CMD_CFG, environment: "production" } });
-  assert.deepEqual(paused(g.r)?.deploy, { target: "command", environment: "production" });
+  assert.deepEqual(paused(g.r)?.deploy, { target: "command", environment: "production", command: "node --version", rollback: "node --version", env: [], health_url: CMD_CFG.health_url });
+});
+
+const writeExternal = (repo: string, deploy: object) => writeFileSync(join(process.env.ORCH_HOME!, "config.json"), JSON.stringify({ repos: { [resolve(repo)]: { deploy } } }));
+async function commandTicket(cfgOver: object = {}) {
+  const root = mkdtempSync(join(tmpdir(), "gt-"));
+  roots.push(root);
+  const repo = createFixture(root);
+  const cfg = { ...CMD_CFG, ...cfgOver };
+  writeExternal(repo, cfg);
+  const sha = git(repo, "rev-parse", "HEAD");
+  const t = Ticket.parse({ id: "T-1", request: "p", worktree: repo, repo, base: sha, approved_sha: sha, git_config_hash: gitConfigHash(repo), deploy_target: "command", deploy_cfg: cfg });
+  return { t, repo, root, sha };
+}
+
+test("the command runs in a checkout of the approved commit and the checkout is gone afterwards", async () => {
+  const { t, sha } = await commandTicket({ command: "git rev-parse HEAD" });
+  const out = await deployTicket(t);
+  assert.ok((out.evidence as string[]).some((e) => e === `deploy:${sha}`), String(out.evidence));
+  assert.equal(existsSync(join(process.env.ORCH_HOME!, "deploy-work", "T-1")), false);
+});
+
+test("a git hook in the repo does not run during the deploy checkout", async () => {
+  const { t, repo, root } = await commandTicket();
+  const marker = join(root, "hook-ran");
+  mkdirSync(join(repo, ".git", "hooks"), { recursive: true });
+  writeFileSync(join(repo, ".git", "hooks", "post-checkout"), `#!/bin/sh\necho x > "${marker.split("\\").join("/")}"\n`);
+  await deployTicket(t);
+  assert.equal(existsSync(marker), false);
+});
+
+test("a changed .git/config blocks the deploy", async () => {
+  const { t, repo } = await commandTicket();
+  git(repo, "config", "--local", "foo.bar", "x");
+  await assert.rejects(() => deployTicket(t), /\.git\/config changed/);
+  assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
+});
+
+test("deploy settings that changed after the ticket started are refused", async () => {
+  const { t, repo } = await commandTicket();
+  writeExternal(repo, { ...CMD_CFG, command: "node --help" });
+  await assert.rejects(() => deployTicket(t), /settings changed/);
+  assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
 });

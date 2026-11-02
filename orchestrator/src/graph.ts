@@ -1,9 +1,10 @@
 import { rmSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
-import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence, devNull } from "./guardrails.ts";
+import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
 import { orchHome } from "./daily-cap.ts";
 import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } from "./deploy.ts";
 import { mergePr, publish } from "./publish.ts";
@@ -191,13 +192,14 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
   const repo = t.repo || repoOf(t.worktree);
   if (t.deploy_target === "command" && t.deploy_cfg) {
     checkConfig(t);
+    if (!isDeepStrictEqual(loadRepoConfig(repo, t.base).deploy, t.deploy_cfg)) throw new NodeFailure("deploy settings changed since the ticket started; re-run the ticket");
     const c = t.deploy_cfg;
     cmd = { rollback: c.rollback, health_url: c.health_url, env: c.env, timeout_s: c.timeout_s, max_latency_ms: c.max_latency_ms, environment: c.environment, git_config_hash: t.git_config_hash };
     const dir = join(orchHome(), "deploy-work", t.id);
     rmSync(dir, { recursive: true, force: true });
     try {
       safeGit(repo, "worktree", "prune");
-      safeGit(repo, "-c", `core.hooksPath=${devNull}`, "worktree", "add", "--detach", dir, t.approved_sha);
+      safeGit(repo, "worktree", "add", "--detach", dir, t.approved_sha);
     } catch {
       throw new NodeFailure(`approved commit ${t.approved_sha.slice(0, 7)} cannot be checked out for the deploy`);
     }
@@ -207,9 +209,11 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
       throw new NodeFailure((e as Error).message);
     } finally {
       try {
-        safeGit(repo, "-c", `core.hooksPath=${devNull}`, "worktree", "remove", "--force", dir);
+        safeGit(repo, "worktree", "remove", "--force", dir);
       } catch {
-        rmSync(dir, { recursive: true, force: true });
+        try {
+          rmSync(dir, { recursive: true, force: true });
+        } catch {}
       }
     }
     target = { sandbox: false };
@@ -255,7 +259,7 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
     : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
     type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, explanation: t.explanation, evidence: t.evidence,
-    deploy: { target: t.deploy_target, environment: t.deploy_cfg?.environment ?? "simulated" },
+    deploy: { target: t.deploy_target, environment: t.deploy_cfg?.environment ?? "simulated", ...(t.deploy_cfg ? { command: t.deploy_cfg.command, rollback: t.deploy_cfg.rollback, env: t.deploy_cfg.env, health_url: t.deploy_cfg.health_url } : {}) },
     active_flags: Object.entries(t.flags).filter(([, active]) => active).map(([k]) => k),
   }) as string;
   const h = (res: string) => log(t, "ceo_approval", res);
