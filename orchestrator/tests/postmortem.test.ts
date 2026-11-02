@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Incident } from "../src/incidents.ts";
@@ -42,4 +42,24 @@ test("proposePostmortem uses the fake knowledge executor", async () => {
   process.env.EXECUTOR = "pm-fake";
   assert.equal(await proposePostmortem(inc("inc-a", "x"), "ctx"), "T-CANARY");
   assert.deepEqual(roles, ["knowledge"]);
+});
+
+test("a symlinked playbooks directory is refused", () => {
+  const out = mkdtempSync(join(tmpdir(), "pm-out-"));
+  try {
+    symlinkSync(out, join(repo, "playbooks"), "junction");
+    assert.throws(() => writePostmortem(repo, inc("inc-c", "x"), "body", day), /real directory/);
+    assert.equal(readdirSync(out).length, 0);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("a marker inside another file or in the text does not count as the postmortem", () => {
+  const i = inc("inc-d", "boom");
+  mkdirSync(join(repo, "playbooks"));
+  writeFileSync(join(repo, "playbooks", "other.md"), `# notes\n${"<!-- incident: inc-d -->"}\n`);
+  const p = writePostmortem(repo, i, "x <!-- incident: inc-z --> y", day);
+  assert.match(p, /boom\.md$/);
+  assert.equal(readFileSync(p, "utf8").includes("inc-z"), false);
 });
