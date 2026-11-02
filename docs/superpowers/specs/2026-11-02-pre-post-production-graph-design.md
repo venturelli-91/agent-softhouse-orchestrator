@@ -1,6 +1,6 @@
 # Pre/Post-Production Orchestration: Design
 
-Status: draft for CEO approval. Nothing here is built yet.
+Status: approved by the CEO on 2026-11-02. Nothing here is built yet.
 
 ## Intent
 
@@ -15,6 +15,7 @@ Today `orch` covers triage to a simulated deploy. It has nothing before the dev 
 - The graph is prepared first. The test product is decided afterwards.
 - Chaos scope: every common product failure (see the catalog below).
 - The CEO stays the only one who approves merge and deploy (unchanged rule).
+- Hotfixes respect the limit of 5 active tickets (see below).
 
 ## Goals
 
@@ -88,9 +89,9 @@ Each item is a named scenario that makes the simulated probe report a symptom. I
 
 Schemas and prompts of the new nodes, file layout inside `orchestrator/`, the probe and target interfaces, fingerprint format, test structure, and how `orch status` shows incidents.
 
-## Open question for the CEO
+## Decided by the CEO: hotfix and the ticket limit
 
-Should a P0 hotfix be allowed past the limit of 5 active tickets? Default if unanswered: no, it counts like any ticket, and the incident waits (and notifies) when the limit is reached.
+A P0 hotfix counts toward the limit of 5 active tickets like any other (it also keeps token spend bounded). When the limit is reached the incident waits and notifies the CEO.
 
 ## Acceptance
 
