@@ -583,4 +583,7 @@ test("the brief (why, how, where it applies) is mandatory for the dev output and
   assert.doesNotMatch(hostile, /(^|[^\\])!\[|@someone/);
   const tricky = briefMarkdown({ ...b, why: "!![a](http://evil/x.png) <img src=http://evil/y.png> `x`" });
   assert.doesNotMatch(tricky, /<img|(^|[^\\])!\[|(^|[^\\])\[a\]/);
+  const breaks = briefMarkdown({ ...b, where: "ok\r---\r=== # H\u0085## H2\v\f### H3" });
+  assert.equal(breaks.match(/^## /gm)?.length, 3);
+  assert.doesNotMatch(breaks, /[\r \u0085\v\f]/);
 });

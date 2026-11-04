@@ -30,7 +30,7 @@ const briefField = z.string().min(10).max(600);
 export const Brief = z.object({ why: briefField, how: briefField, where: briefField });
 // Agent text lands in a PR body and in reviewer prompts: one paragraph per field, no headings, images or live @mentions.
 const plain = (s: string) =>
-  s.replace(/\s*\n\s*/g, " ").replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`).replace(/[\\`*_~!#|[\]]/g, "\\$&").replace(/@(?=\w)/g, "@\u200b").trim();
+  s.replace(/[\s\u0085]+/g, " ").replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`).replace(/[\\`*_~!#|[\]]/g, "\\$&").replace(/@(?=\w)/g, "@\u200b").trim();
 export const briefMarkdown = (b: z.infer<typeof Brief>) => `## Why\n${plain(b.why)}\n\n## How\n${plain(b.how)}\n\n## Where it applies\n${plain(b.where)}`;
 
 export const Ticket = z.object({
