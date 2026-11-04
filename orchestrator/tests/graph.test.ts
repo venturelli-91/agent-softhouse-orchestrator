@@ -559,3 +559,11 @@ test("deploy settings that changed after the ticket started are refused", async 
   await assert.rejects(() => deployTicket(t), /settings changed/);
   assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
 });
+
+test("the dev is told its turn limit, and about partial work left by a previous attempt", async () => {
+  const { devRules, partialWork } = await import("../src/graph.ts");
+  assert.match(devRules("npm test", 40), /at most 40 turns/);
+  assert.doesNotMatch(devRules("npm test"), /turns/);
+  assert.deepEqual(partialWork("  \n"), []);
+  assert.match(partialWork("?? src/server/a.ts\n")[0], /uncommitted work from a previous attempt[\s\S]*src\/server\/a\.ts/);
+});

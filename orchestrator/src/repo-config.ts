@@ -28,6 +28,8 @@ export const RepoConfig = z.object({
   push_remote: z.string().regex(/^[A-Za-z0-9_.][\w.-]*$/, "push_remote must be a plain remote name").default("origin"),
   base_repo: z.string().regex(/^([A-Za-z0-9_.][\w.-]*\/[A-Za-z0-9_.][\w.-]*)?$/, "base_repo must be owner/name").default(""),
   disclosure: z.boolean().default(true),
+  // Run `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, tsc and build can be the test command.
+  install: z.boolean().default(false),
   deploy: DeployConfig.nullable().default(null),
 });
 export type RepoConfig = z.infer<typeof RepoConfig>;

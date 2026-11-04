@@ -29,7 +29,10 @@ export interface Executor {
   run<T>(req: Req<T>): Promise<Result<T>>;
 }
 
-export class NodeFailure extends Error {}
+// `usage` is set when the CLI reported what a failed run spent (e.g. max_turns), so the budget still counts it.
+export class NodeFailure extends Error {
+  usage?: Usage;
+}
 // A failure worth retrying (API busy, overloaded, rate limited). A usage limit is not: waiting seconds will not fix it.
 export class TransientFailure extends NodeFailure {}
 
@@ -108,22 +111,29 @@ export function parseOutput<T>(role: Role, raw: string, schema: z.ZodType<T>, ms
   if (r.is_error || r.subtype !== "success") {
     const why = `${role}: ${r.subtype ?? "error"} (${r.terminal_reason})`;
     const text = `${r.terminal_reason} ${typeof r.result === "string" ? r.result : ""}`;
-    throw new (TRANSIENT.test(text) && !USAGE_LIMIT.test(text) ? TransientFailure : NodeFailure)(why);
+    const failure = new (TRANSIENT.test(text) && !USAGE_LIMIT.test(text) ? TransientFailure : NodeFailure)(why);
+    if (r.usage) failure.usage = usageOf(r, ms);
+    throw failure;
   }
   const output = schema.safeParse(r.structured_output);
-  if (!output.success) throw new NodeFailure(`${role}: invalid output: ${output.error.message.slice(0, 300)}`);
+  if (!output.success) {
+    const failure = new NodeFailure(`${role}: invalid output: ${output.error.message.slice(0, 300)}`);
+    failure.usage = usageOf(r, ms);
+    throw failure;
+  }
+  return { output: output.data, usage: usageOf(r, ms) };
+}
+
+function usageOf(r: { usage: Record<string, number>; total_cost_usd: number; num_turns: number }, ms: number): Usage {
   const u = r.usage;
   return {
-    output: output.data,
-    usage: {
-      tokens_in: u.input_tokens,
-      tokens_out: u.output_tokens,
-      cache_read: u.cache_read_input_tokens,
-      cache_create: u.cache_creation_input_tokens,
-      cost_usd: r.total_cost_usd,
-      turns: r.num_turns,
-      ms,
-    },
+    tokens_in: u.input_tokens,
+    tokens_out: u.output_tokens,
+    cache_read: u.cache_read_input_tokens,
+    cache_create: u.cache_creation_input_tokens,
+    cost_usd: r.total_cost_usd,
+    turns: r.num_turns,
+    ms,
   };
 }
 
@@ -137,7 +147,12 @@ export async function runAgent<T>(req: Req<T>): Promise<Result<T>> {
   if (!ex) throw new NodeFailure(`unknown EXECUTOR: ${name}`);
   const capped = dailyCapReached();
   if (capped) throw new NodeFailure(capped);
-  const result = await withRetry(() => ex.run(req));
-  recordUsage(tokens(result.usage));
-  return result;
+  try {
+    const result = await withRetry(() => ex.run(req));
+    recordUsage(tokens(result.usage));
+    return result;
+  } catch (e) {
+    if (e instanceof NodeFailure && e.usage) recordUsage(tokens(e.usage));
+    throw e;
+  }
 }

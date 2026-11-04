@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { verifyEvidence } from "../src/guardrails.ts";
+import { installDeps, verifyEvidence } from "../src/guardrails.ts";
 
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
 
@@ -103,4 +103,74 @@ test("an npm test that moves HEAD voids the verification", () => {
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
   assert.match((r as { reason: string }).reason, /HEAD changed/);
+});
+
+function withCommit(lock = false) {
+  const d = mkdtempSync(join(tmpdir(), "ev-"));
+  git(d, "init", "-q", "-b", "main");
+  writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: "node -e 0" } }));
+  writeFileSync(join(d, ".gitignore"), "node_modules\n.npmrc\n");
+  if (lock) writeFileSync(join(d, "package-lock.json"), JSON.stringify({ name: "x", lockfileVersion: 3, packages: { "": {} } }));
+  git(d, "add", "-A");
+  git(d, "commit", "-q", "-m", "base");
+  const base = git(d, "rev-parse", "HEAD");
+  writeFileSync(join(d, "a.txt"), "x");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "work");
+  return { d, base };
+}
+
+test("without install, an ignored node_modules tree blocks the evidence", () => {
+  const { d, base } = withCommit();
+  mkdirSync(join(d, "node_modules", "dep"), { recursive: true });
+  writeFileSync(join(d, "node_modules", "dep", "package.json"), "{}");
+  const r = verifyEvidence(d, base);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+});
+
+test("with install, ignored files the agent left are wiped before the test and never block", () => {
+  const { d, base } = withCommit(true);
+  mkdirSync(join(d, "node_modules", "dep"), { recursive: true });
+  writeFileSync(join(d, "node_modules", "dep", "evil.js"), "x");
+  writeFileSync(join(d, ".npmrc"), "x=1");
+  const r = verifyEvidence(d, base, "node -e 0", true);
+  const left = existsSync(join(d, "node_modules", "dep", "evil.js")) || existsSync(join(d, ".npmrc"));
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, true);
+  assert.equal(left, false);
+});
+
+test("install refuses a repo without a committed lockfile", () => {
+  const { d } = repo();
+  assert.throws(() => installDeps(d), /no committed package-lock.json/);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("with install, a diff that touches a lockfile npm ci consumes needs CEO review", () => {
+  for (const f of ["package-lock.json", "npm-shrinkwrap.json", "NPM-Shrinkwrap.json"]) {
+    const { d, base } = repo();
+    writeFileSync(join(d, f), "{}");
+    git(d, "add", "-A");
+    git(d, "commit", "-qm", "lock");
+    const r = verifyEvidence(d, base, "node -e 0", true);
+    rmSync(d, { recursive: true, force: true });
+    assert.equal(r.ok, false, f);
+    assert.match((r as { reason: string }).reason, new RegExp(f.replace(".", "\\."), "i"), f);
+  }
+});
+
+test("a file hidden with assume-unchanged or skip-worktree voids the verification", () => {
+  for (const flag of ["--assume-unchanged", "--skip-worktree"]) {
+    const { d, base } = repo();
+    writeFileSync(join(d, "a.txt"), "x");
+    git(d, "add", "-A");
+    git(d, "commit", "-qm", "a");
+    git(d, "update-index", flag, "a.txt");
+    writeFileSync(join(d, "a.txt"), "tampered");
+    const r = verifyEvidence(d, base);
+    rmSync(d, { recursive: true, force: true });
+    assert.equal(r.ok, false, flag);
+    assert.match((r as { reason: string }).reason, /hidden from git/, flag);
+  }
 });

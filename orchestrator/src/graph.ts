@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
-import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, tokens, verifyEvidence } from "./guardrails.ts";
+import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, installDeps, tokens, verifyEvidence } from "./guardrails.ts";
 import { orchHome } from "./daily-cap.ts";
 import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } from "./deploy.ts";
 import { mergePr, publish } from "./publish.ts";
@@ -33,6 +33,7 @@ export const Ticket = z.object({
   repo: z.string().default(""),
   git_config_hash: z.string().default(""),
   test: z.string().default("npm test"),
+  install: z.boolean().default(false),
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.string().default(""),
   push_remote: z.string().default("origin"),
@@ -85,16 +86,17 @@ const context = (...parts: string[]) =>
 const ticketData = (t: T) =>
   `Ticket ${t.id}: ${t.title}\n${t.briefing ? `Briefing:\n${t.briefing}\n` : ""}${t.stories.length ? `Stories:\n${t.stories.map((s) => `- ${s}`).join("\n")}\n` : ""}` +
   `Acceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
-export const devRules = (test = "npm test") =>
+export const devRules = (test = "npm test", turns?: number) =>
   `Implement in the current worktree, run ${test} and commit (git add/git commit). Do not push. ` +
+  (turns ? `You have at most ${turns} turns and uncommitted work is lost value: get a first version passing ${test} and commit it early, then refine and commit again. ` : "") +
   `Shell: one simple command per call (git add, git commit, git status, git diff, git log, ${test}); no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.`;
 export const DEV_RULES = devRules();
 export const evidenceNote = (evidence: string[]) =>
   `Evidence checked by the orchestrator in code (not by you): ${evidence.join(", ")}. Do not reject only because you cannot run the tests yourself; judge the diff and the code against the criteria.`;
 const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
 
-const escalate = (t: T, name: string, reason: string): Partial<T> =>
-  ({ status: "escalated", failed_node: name, summary_before_failure: t.summary, summary: `${name}: ${reason}`.split("\n").slice(0, 10).join("\n"), history: log(t, name, `escalated: ${reason}`) });
+const escalate = (t: T, name: string, reason: string, usage?: Usage): Partial<T> =>
+  ({ status: "escalated", failed_node: name, summary_before_failure: t.summary, summary: `${name}: ${reason}`.split("\n").slice(0, 10).join("\n"), history: log(t, name, `escalated: ${reason}`, usage) });
 
 // An executor failure (error, timeout, invalid output) or an exceeded budget does not break the graph:
 // the ticket stops and goes to the CEO via ceo_approval.
@@ -105,7 +107,7 @@ const guarded = (name: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T
     return await fn(t);
   } catch (e) {
     if (!(e instanceof NodeFailure)) throw e;
-    return escalate(t, name, e.message);
+    return escalate(t, name, e.message, e.usage);
   }
 };
 
@@ -130,12 +132,16 @@ const planner = guarded("planner", async (t) => {
 const rulesBlock = (t: T) => (t.rules ? [`Target repo conventions (its CLAUDE.md; follow them, including the commit message format):
 ${t.rules}`] : []);
 
+// A dev that stopped (turn limit, timeout) leaves uncommitted work in the worktree: tell the next attempt to build on it instead of starting over.
+export const partialWork = (porcelain: string) =>
+  porcelain.trim() ? [`The worktree already has uncommitted work from a previous attempt. Continue from it: do not restart, rename or duplicate it. Review it, make it pass and commit.\n${porcelain.split("\n").slice(0, 40).join("\n")}`] : [];
+
 const dev = guarded("dev", async (t) => {
   const { output, usage } = await runAgent({
     role: "dev", files: [DEV_FILE[t.specialty]], cwd: t.worktree, schema: DevOutput,
-    context: context(ticketData(t), devRules(t.test), ...rulesBlock(t)), test: t.test,
+    context: context(ticketData(t), devRules(t.test, Number(process.env.TURNS_DEV ?? process.env.TURNS_DEFAULT) || undefined), ...partialWork(sh(t.worktree, "status", "--porcelain", "--untracked-files=all")), ...rulesBlock(t)), test: t.test,
   });
-  const v = verifyEvidence(t.worktree, t.base, t.test);
+  const v = verifyEvidence(t.worktree, t.base, t.test, t.install);
   if (!v.ok) return { status: "dev_failed", explanation: "", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
   return { status: "review", explanation: "", summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
 });
@@ -146,7 +152,7 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
     const who = `agent-${name}`;
     const block = selfApproval(t.author_id, who);
     if (block) throw new NodeFailure(block);
-    const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : { ok: false as const, reason: "no evidence" };
+    const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test, t.install) : { ok: false as const, reason: "no evidence" };
     if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
     const { output, usage } = await runAgent({
       role: name, files: files(t), cwd: t.worktree, schema: ReviewOutput,
@@ -175,7 +181,7 @@ const checkConfig = (t: T) => {
 
 // Branch push and (draft) PR done by code, not by the agent; only while the evidence still holds.
 const publishNode = guarded("publish", async (t) => {
-  const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : { ok: false as const, reason: "no evidence" };
+  const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test, t.install) : { ok: false as const, reason: "no evidence" };
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   checkConfig(t);
   const body = [t.summary, "Criteria:", ...t.criteria.map((c) => `- ${c}`), `Evidence: ${v.evidence.join(", ")}`].join("\n\n");
@@ -237,7 +243,7 @@ const deploy = guarded("deploy", deployTicket);
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
 const mergeNode = guarded("merge_pr", async (t) => {
   if (t.merge === "pr") return { history: log(t, "merge_pr", "skipped (merge=pr)") };
-  const v = verifyEvidence(t.worktree, t.base, t.test);
+  const v = verifyEvidence(t.worktree, t.base, t.test, t.install);
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   // What the CEO approved is the commit that was published, not whatever HEAD is now.
   if (!t.approved_sha || v.sha !== t.approved_sha) throw new NodeFailure("merge: commit changed since it was published");
@@ -258,7 +264,7 @@ const mergeNode = guarded("merge_pr", async (t) => {
 
 // The only merge/deploy and escalation point. Approval only counts if the evidence still holds.
 const ceoApproval = async (t: T): Promise<Partial<T>> => {
-  const v = t.status === "approval" && t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test) : null;
+  const v = t.status === "approval" && t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test, t.install) : null;
   const reason = t.status === "approval" ? (v?.ok ? (v.sha === t.approved_sha ? null : "commit changed since it was published") : `invalid evidence: ${v ? v.reason : "no evidence"}`)
     : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
@@ -319,8 +325,9 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy } = loadRepoConfig(repo, base, home);
-  return { worktree: dir, repo, git_config_hash: gitConfigHash(repo), base, test, merge, publisher: publisher ?? "", push_remote, base_repo, disclosure, base_branch, rules: loadConventions(repo, base), deploy_cfg: deploy, ...(deploy ? { deploy_target: "command" } : {}) };
+  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install } = loadRepoConfig(repo, base, home);
+  if (install) installDeps(dir);
+  return { worktree: dir, repo, git_config_hash: gitConfigHash(repo), base, test, install, merge, publisher: publisher ?? "", push_remote, base_repo, disclosure, base_branch, rules: loadConventions(repo, base), deploy_cfg: deploy, ...(deploy ? { deploy_target: "command" } : {}) };
 }
 
 export function report(t: T): string {
