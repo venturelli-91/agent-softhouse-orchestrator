@@ -147,13 +147,15 @@ test("install refuses a repo without a committed lockfile", () => {
   rmSync(d, { recursive: true, force: true });
 });
 
-test("with install, a diff that touches package-lock.json needs CEO review", () => {
-  const { d, base } = repo();
-  writeFileSync(join(d, "package-lock.json"), "{}");
-  git(d, "add", "-A");
-  git(d, "commit", "-qm", "lock");
-  const r = verifyEvidence(d, base, "node -e 0", true);
-  rmSync(d, { recursive: true, force: true });
-  assert.equal(r.ok, false);
-  assert.match((r as { reason: string }).reason, /package-lock.json/);
+test("with install, a diff that touches a lockfile npm ci consumes needs CEO review", () => {
+  for (const f of ["package-lock.json", "npm-shrinkwrap.json"]) {
+    const { d, base } = repo();
+    writeFileSync(join(d, f), "{}");
+    git(d, "add", "-A");
+    git(d, "commit", "-qm", "lock");
+    const r = verifyEvidence(d, base, "node -e 0", true);
+    rmSync(d, { recursive: true, force: true });
+    assert.equal(r.ok, false, f);
+    assert.match((r as { reason: string }).reason, new RegExp(f.replace(".", "\\.")), f);
+  }
 });

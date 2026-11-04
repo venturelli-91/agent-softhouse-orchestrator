@@ -85,7 +85,7 @@ export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, in
   const files = git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", `${base}..HEAD`).split("\0").filter(Boolean);
   const forbidden = files.filter((f) => FORBIDDEN.test(f));
   if (forbidden.length) return { ok: false, reason: `diff touches forbidden path (${forbidden.join(", ")})` };
-  const risky = files.filter((f) => RUNS_ON_HOST.test(f) || (install && /(^|\/)package-lock\.json$/.test(f)));
+  const risky = files.filter((f) => RUNS_ON_HOST.test(f) || (install && /(^|\/)(package-lock|npm-shrinkwrap)\.json$/.test(f)));
   if (risky.length) return { ok: false, reason: `diff touches a file that runs code on the host (${risky.join(", ")}): requires CEO review` };
   if (install) installDeps(wt);
   try {
