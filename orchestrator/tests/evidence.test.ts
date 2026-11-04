@@ -148,7 +148,7 @@ test("install refuses a repo without a committed lockfile", () => {
 });
 
 test("with install, a diff that touches a lockfile npm ci consumes needs CEO review", () => {
-  for (const f of ["package-lock.json", "npm-shrinkwrap.json"]) {
+  for (const f of ["package-lock.json", "npm-shrinkwrap.json", "NPM-Shrinkwrap.json"]) {
     const { d, base } = repo();
     writeFileSync(join(d, f), "{}");
     git(d, "add", "-A");
@@ -156,6 +156,21 @@ test("with install, a diff that touches a lockfile npm ci consumes needs CEO rev
     const r = verifyEvidence(d, base, "node -e 0", true);
     rmSync(d, { recursive: true, force: true });
     assert.equal(r.ok, false, f);
-    assert.match((r as { reason: string }).reason, new RegExp(f.replace(".", "\\.")), f);
+    assert.match((r as { reason: string }).reason, new RegExp(f.replace(".", "\\."), "i"), f);
+  }
+});
+
+test("a file hidden with assume-unchanged or skip-worktree voids the verification", () => {
+  for (const flag of ["--assume-unchanged", "--skip-worktree"]) {
+    const { d, base } = repo();
+    writeFileSync(join(d, "a.txt"), "x");
+    git(d, "add", "-A");
+    git(d, "commit", "-qm", "a");
+    git(d, "update-index", flag, "a.txt");
+    writeFileSync(join(d, "a.txt"), "tampered");
+    const r = verifyEvidence(d, base);
+    rmSync(d, { recursive: true, force: true });
+    assert.equal(r.ok, false, flag);
+    assert.match((r as { reason: string }).reason, /hidden from git/, flag);
   }
 });

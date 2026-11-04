@@ -78,6 +78,8 @@ export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, in
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, reason: "no new commit in the worktree" };
   // With install, whatever the agent left outside the commit is wiped first and node_modules is rebuilt from the lockfile just before the test.
   if (install) git("clean", "-fdXq");
+  // assume-unchanged / skip-worktree hide edits from `git status` and from the diff gate while npm still reads them from disk.
+  if (git("ls-files", "-v").split("\n").some((l) => /^[a-zS] /.test(l))) return { ok: false, reason: "worktree has files hidden from git (assume-unchanged or skip-worktree)" };
   // npm test runs over the working tree: only what is committed counts, with no dirt and no ignored executable file.
   const dirt = git("status", "--porcelain", "--untracked-files=all", "--ignored").split("\n").filter(Boolean);
   if (dirt.some((l) => !l.startsWith("!!"))) return { ok: false, reason: "worktree has uncommitted changes" };
@@ -85,7 +87,7 @@ export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, in
   const files = git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", `${base}..HEAD`).split("\0").filter(Boolean);
   const forbidden = files.filter((f) => FORBIDDEN.test(f));
   if (forbidden.length) return { ok: false, reason: `diff touches forbidden path (${forbidden.join(", ")})` };
-  const risky = files.filter((f) => RUNS_ON_HOST.test(f) || (install && /(^|\/)(package-lock|npm-shrinkwrap)\.json$/.test(f)));
+  const risky = files.filter((f) => RUNS_ON_HOST.test(f) || (install && /(^|\/)(package-lock|npm-shrinkwrap)\.json$/i.test(f)));
   if (risky.length) return { ok: false, reason: `diff touches a file that runs code on the host (${risky.join(", ")}): requires CEO review` };
   if (install) installDeps(wt);
   try {
