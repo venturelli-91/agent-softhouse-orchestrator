@@ -86,16 +86,17 @@ const context = (...parts: string[]) =>
 const ticketData = (t: T) =>
   `Ticket ${t.id}: ${t.title}\n${t.briefing ? `Briefing:\n${t.briefing}\n` : ""}${t.stories.length ? `Stories:\n${t.stories.map((s) => `- ${s}`).join("\n")}\n` : ""}` +
   `Acceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
-export const devRules = (test = "npm test") =>
+export const devRules = (test = "npm test", turns?: number) =>
   `Implement in the current worktree, run ${test} and commit (git add/git commit). Do not push. ` +
+  (turns ? `You have at most ${turns} turns and uncommitted work is lost value: get a first version passing ${test} and commit it early, then refine and commit again. ` : "") +
   `Shell: one simple command per call (git add, git commit, git status, git diff, git log, ${test}); no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.`;
 export const DEV_RULES = devRules();
 export const evidenceNote = (evidence: string[]) =>
   `Evidence checked by the orchestrator in code (not by you): ${evidence.join(", ")}. Do not reject only because you cannot run the tests yourself; judge the diff and the code against the criteria.`;
 const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
 
-const escalate = (t: T, name: string, reason: string): Partial<T> =>
-  ({ status: "escalated", failed_node: name, summary_before_failure: t.summary, summary: `${name}: ${reason}`.split("\n").slice(0, 10).join("\n"), history: log(t, name, `escalated: ${reason}`) });
+const escalate = (t: T, name: string, reason: string, usage?: Usage): Partial<T> =>
+  ({ status: "escalated", failed_node: name, summary_before_failure: t.summary, summary: `${name}: ${reason}`.split("\n").slice(0, 10).join("\n"), history: log(t, name, `escalated: ${reason}`, usage) });
 
 // An executor failure (error, timeout, invalid output) or an exceeded budget does not break the graph:
 // the ticket stops and goes to the CEO via ceo_approval.
@@ -106,7 +107,7 @@ const guarded = (name: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T
     return await fn(t);
   } catch (e) {
     if (!(e instanceof NodeFailure)) throw e;
-    return escalate(t, name, e.message);
+    return escalate(t, name, e.message, e.usage);
   }
 };
 
@@ -131,10 +132,14 @@ const planner = guarded("planner", async (t) => {
 const rulesBlock = (t: T) => (t.rules ? [`Target repo conventions (its CLAUDE.md; follow them, including the commit message format):
 ${t.rules}`] : []);
 
+// A dev that stopped (turn limit, timeout) leaves uncommitted work in the worktree: tell the next attempt to build on it instead of starting over.
+export const partialWork = (porcelain: string) =>
+  porcelain.trim() ? [`The worktree already has uncommitted work from a previous attempt. Continue from it: do not restart, rename or duplicate it. Review it, make it pass and commit.\n${porcelain.split("\n").slice(0, 40).join("\n")}`] : [];
+
 const dev = guarded("dev", async (t) => {
   const { output, usage } = await runAgent({
     role: "dev", files: [DEV_FILE[t.specialty]], cwd: t.worktree, schema: DevOutput,
-    context: context(ticketData(t), devRules(t.test), ...rulesBlock(t)), test: t.test,
+    context: context(ticketData(t), devRules(t.test, Number(process.env.TURNS_DEV ?? process.env.TURNS_DEFAULT) || undefined), ...partialWork(sh(t.worktree, "status", "--porcelain", "--untracked-files=all")), ...rulesBlock(t)), test: t.test,
   });
   const v = verifyEvidence(t.worktree, t.base, t.test, t.install);
   if (!v.ok) return { status: "dev_failed", explanation: "", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };

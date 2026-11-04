@@ -91,3 +91,15 @@ test("an API error is transient and retried; a usage limit or a turn limit is no
   await assert.rejects(withRetry(async () => { tries++; throw new NodeFailure("no"); }, [0, 0]), NodeFailure);
   assert.equal(tries, 1);
 });
+
+test("a run that hit the turn limit still reports what it spent", () => {
+  try {
+    parseOutput("dev", JSON.stringify({ ...ok, subtype: "error_max_turns", terminal_reason: "max_turns", num_turns: 16 }), schema, 7);
+    assert.fail("should throw");
+  } catch (e) {
+    assert.ok(e instanceof NodeFailure);
+    assert.equal(e.usage?.turns, 16);
+    assert.equal(e.usage?.cache_read, 3);
+    assert.equal(e.usage?.ms, 7);
+  }
+});
