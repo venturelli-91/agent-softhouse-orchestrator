@@ -107,7 +107,13 @@ export const devRules = (test = "npm test", turns?: number) =>
 export const DEV_RULES = devRules();
 export const evidenceNote = (evidence: string[]) =>
   `Evidence checked by the orchestrator in code (not by you): ${evidence.join(", ")}. Do not reject only because you cannot run the tests yourself; judge the diff and the code against the criteria.`;
-const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
+// The reviewer must see every changed line: a diff over the limit goes to the CEO instead of being cut (multi-task tickets reach this).
+export const DIFF_LIMIT = 60_000;
+const diff = (t: T) => {
+  const d = sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD");
+  if (d.length > DIFF_LIMIT) throw new NodeFailure(`diff too large to review in full (${d.length} > ${DIFF_LIMIT} characters): split the work into smaller tickets`);
+  return d;
+};
 
 const escalate = (t: T, name: string, reason: string, usage?: Usage): Partial<T> =>
   ({ status: "escalated", failed_node: name, summary_before_failure: t.summary, summary: `${name}: ${reason}`.split("\n").slice(0, 10).join("\n"), history: log(t, name, `escalated: ${reason}`, usage) });
