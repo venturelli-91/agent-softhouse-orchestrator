@@ -21,9 +21,10 @@ export const NODE_TIMEOUT_MS = 600_000;
 export const tokens = (c: Usage) => c.tokens_in + c.tokens_out + c.cache_read + c.cache_create;
 
 // Per-ticket token budget (TOKEN_BUDGET_TICKET). Missing = fail closed.
-export function budgetExceeded(usages: (Usage | undefined)[], env: NodeJS.ProcessEnv = process.env): string | null {
-  const cap = Number(env.TOKEN_BUDGET_TICKET);
-  if (!cap) throw new Error("missing env: TOKEN_BUDGET_TICKET");
+// The budget is per atomic task: a ticket split into N tasks gets N times the cap (the diff limit and the revision cap still bound it).
+export function budgetExceeded(usages: (Usage | undefined)[], env: NodeJS.ProcessEnv = process.env, tasks = 1): string | null {
+  const cap = Number(env.TOKEN_BUDGET_TICKET) * Math.max(1, tasks);
+  if (!Number(env.TOKEN_BUDGET_TICKET)) throw new Error("missing env: TOKEN_BUDGET_TICKET");
   const used = usages.reduce((a, c) => a + (c ? tokens(c) : 0), 0);
   return used > cap ? `token budget exceeded (${used} > ${cap})` : null;
 }
