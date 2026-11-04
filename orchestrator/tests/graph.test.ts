@@ -585,5 +585,6 @@ test("the brief (why, how, where it applies) is mandatory for the dev output and
   assert.doesNotMatch(tricky, /<img|(^|[^\\])!\[|(^|[^\\])\[a\]/);
   const breaks = briefMarkdown({ ...b, where: "ok\r---\r===\u2028# H\u0085## H2\v\f### H3" });
   assert.equal(breaks.match(/^## /gm)?.length, 3);
-  assert.doesNotMatch(breaks, /[\r \u0085\v\f]/);
+  assert.doesNotMatch(breaks, /[\r\v\f\u0085]/);
+  assert.ok(!breaks.includes(String.fromCharCode(0x2028)));
 });
