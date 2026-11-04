@@ -619,3 +619,14 @@ test("a diff over the review limit escalates instead of being cut, and no review
   assert.match(String(paused(g.r)?.reason), /diff too large to review in full/);
   assert.ok(!calls.includes("qa"));
 });
+
+test("the token budget grows only with verified tasks, up to a fixed ceiling", async () => {
+  const { budgetExceeded } = await import("../src/guardrails.ts");
+  const u = { tokens_in: 150, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 };
+  const env = { TOKEN_BUDGET_TICKET: "100" };
+  assert.match(String(budgetExceeded([u], env)), /budget exceeded/);
+  assert.equal(budgetExceeded([u], env, 1), null);
+  assert.match(String(budgetExceeded([u, u, u], env, 1)), /budget exceeded \(450 > 200\)/);
+  assert.match(String(budgetExceeded([u], env, -3)), /budget exceeded \(150 > 100\)/);
+  assert.match(String(budgetExceeded(Array(100).fill(u), env, 999)), /> 800\)/);
+});

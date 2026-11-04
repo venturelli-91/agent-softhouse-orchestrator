@@ -121,7 +121,7 @@ const escalate = (t: T, name: string, reason: string, usage?: Usage): Partial<T>
 // An executor failure (error, timeout, invalid output) or an exceeded budget does not break the graph:
 // the ticket stops and goes to the CEO via ceo_approval.
 const guarded = (name: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T): Promise<Partial<T>> => {
-  const overrun = budgetExceeded(t.history.map((h) => h.usage));
+  const overrun = budgetExceeded(t.history.map((h) => h.usage), process.env, t.task_done);
   if (overrun) return escalate(t, name, overrun);
   try {
     return await fn(t);
