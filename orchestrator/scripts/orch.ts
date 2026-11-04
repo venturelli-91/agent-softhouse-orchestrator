@@ -124,6 +124,14 @@ if (cmd === "init") {
   if (!positionals[0])
     for (const i of listIncidents(home)) console.log(`${i.id.padEnd(16)} ${i.status.padEnd(8)} ${i.ticket} hotfix=${i.hotfix || "-"} rollback=${i.rollback}  ${i.symptom}`);
   if (process.env.TOKEN_CAP_DAILY) console.log(`tokens in the last 24h: ${usedToday()} / ${process.env.TOKEN_CAP_DAILY}`);
+} else if (cmd === "continue") {
+  // A run killed mid-graph (crash, out of memory) leaves a checkpoint that is not waiting for anyone: this picks it up where it stopped.
+  const id = positionals[0] ?? die("usage: orch continue <id>");
+  needCap();
+  await locked(id, async () => {
+    if ((await load(id)).pending) die(`${id} is waiting for an answer: use orch approve or orch reject`);
+    await drive(id, null);
+  });
 } else if (cmd === "approve") {
   const id = positionals[0] ?? die('usage: orch approve <id> ["answer"]');
   await locked(id, async () => {
@@ -190,4 +198,4 @@ scenarios: ${Object.keys(SCENARIOS).join(", ")}`);
   const incidentId = positionals[0] ?? die("usage: orch rollback <incident-id>");
   const incident = listIncidents(home).find((i) => i.id === incidentId) ?? die(`no incident ${incidentId}`);
   await locked(incident.ticket, async () => console.log(approveRollback(home, incidentId, { configReviewed: values["config-reviewed"] })));
-} else die("usage: orch init | run | status | approve | reject | clean | watch | chaos | rollback");
+} else die("usage: orch init | run | status | continue | approve | reject | clean | watch | chaos | rollback");
