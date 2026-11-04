@@ -61,6 +61,8 @@ export const Ticket = z.object({
   summary: z.string().default(""),
   explanation: z.string().default(""),
   brief: Brief.nullable().default(null),
+  tasks: z.array(z.string()).default([]),
+  task_done: z.number().default(0),
   briefing: z.string().default(""),
   stories: z.array(z.string()).default([]),
   incident: z.string().default(""),
@@ -78,6 +80,7 @@ type T = z.infer<typeof Ticket>;
 const TriageOutput = z.object({
   title: z.string(), priority: z.enum(["P0", "P1", "P2", "Bug"]), specialty: z.enum(SPECIALTIES),
   clear: z.boolean(), flags: FlagsSchema, criteria: z.array(z.string()), summary,
+  split: z.array(z.string().max(300)).max(8).default([]),
 });
 // `question` is empty when clear; otherwise it is what the CEO needs to answer.
 const PlanOutput = TriageOutput.extend({ question: z.string(), briefing: z.string().default(""), stories: z.array(z.string()).default([]) });
@@ -104,7 +107,13 @@ export const devRules = (test = "npm test", turns?: number) =>
 export const DEV_RULES = devRules();
 export const evidenceNote = (evidence: string[]) =>
   `Evidence checked by the orchestrator in code (not by you): ${evidence.join(", ")}. Do not reject only because you cannot run the tests yourself; judge the diff and the code against the criteria.`;
-const diff = (t: T) => sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD").slice(0, 20_000);
+// The reviewer must see every changed line: a diff over the limit goes to the CEO instead of being cut (multi-task tickets reach this).
+export const DIFF_LIMIT = 60_000;
+const diff = (t: T) => {
+  const d = sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD");
+  if (d.length > DIFF_LIMIT) throw new NodeFailure(`diff too large to review in full (${d.length} > ${DIFF_LIMIT} characters): split the work into smaller tickets`);
+  return d;
+};
 
 const escalate = (t: T, name: string, reason: string, usage?: Usage): Partial<T> =>
   ({ status: "escalated", failed_node: name, summary_before_failure: t.summary, summary: `${name}: ${reason}`.split("\n").slice(0, 10).join("\n"), history: log(t, name, `escalated: ${reason}`, usage) });
@@ -122,10 +131,15 @@ const guarded = (name: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T
   }
 };
 
+// Divide and conquer: one dev session handles one atomic task. Work that needs more is split into an ordered list of tasks
+// that the dev runs one at a time in the same worktree, one commit and one verification each.
+export const SPLIT_RULE = "`split`: if the work needs more than one small commit (several layers, or roughly more than 10 files), break it into ordered atomic tasks, at most 8, one line each, every one leaving the verification green and building on the previous; otherwise leave it empty.";
+const tasksOf = (split: string[]) => (split.length > 1 ? split : []);
+
 const triage = guarded("triage", async (t) => {
-  const { output, usage } = await runAgent({ role: "triage", files: ["triage"], cwd: t.worktree, schema: TriageOutput, context: context(`CEO request: ${t.request}`) });
-  const { clear, summary, ...rest } = output;
-  return { ...rest, priority: t.incident ? "P0" as const : rest.priority, criteria: clear ? rest.criteria : [], summary: cap(summary), status: clear ? "dev" : "ambiguous", history: log(t, "triage", clear ? "clear" : "ambiguous", usage) };
+  const { output, usage } = await runAgent({ role: "triage", files: ["triage"], cwd: t.worktree, schema: TriageOutput, context: context(`CEO request: ${t.request}`, SPLIT_RULE) });
+  const { clear, summary, split, ...rest } = output;
+  return { ...rest, tasks: tasksOf(split), task_done: 0, priority: t.incident ? "P0" as const : rest.priority, criteria: clear ? rest.criteria : [], summary: cap(summary), status: clear ? "dev" : "ambiguous", history: log(t, "triage", clear ? "clear" : "ambiguous", usage) };
 });
 
 // demand-analyst -> product-manager -> tech-lead in a single agent turn (tokens: one context only).
@@ -133,11 +147,11 @@ const triage = guarded("triage", async (t) => {
 const planner = guarded("planner", async (t) => {
   const { output, usage } = await runAgent({
     role: "planner", files: ["demand-analyst", "product-manager", "tech-lead"], cwd: t.worktree, schema: PlanOutput,
-    context: context(`CEO request: ${t.request}`, `Triage (ambiguous request): ${t.summary}`, "If missing information prevents verifiable acceptance criteria, set clear=false and put what is missing in `question`."),
+    context: context(`CEO request: ${t.request}`, `Triage (ambiguous request): ${t.summary}`, "If missing information prevents verifiable acceptance criteria, set clear=false and put what is missing in `question`.", SPLIT_RULE),
   });
-  const { clear, question, ...plan } = output;
+  const { clear, question, split, ...plan } = output;
   if (!clear || !plan.criteria.length) return { status: "ambiguous", summary: cap(question || plan.summary), history: log(t, "planner", "ambiguous", usage) };
-  return { ...plan, priority: t.incident ? "P0" as const : plan.priority, summary: cap(plan.summary), status: "dev", history: log(t, "planner", "clear", usage) };
+  return { ...plan, tasks: tasksOf(split), task_done: 0, priority: t.incident ? "P0" as const : plan.priority, summary: cap(plan.summary), status: "dev", history: log(t, "planner", "clear", usage) };
 });
 
 const rulesBlock = (t: T) => (t.rules ? [`Target repo conventions (its CLAUDE.md; follow them, including the commit message format):
@@ -147,13 +161,27 @@ ${t.rules}`] : []);
 export const partialWork = (porcelain: string) =>
   porcelain.trim() ? [`The worktree already has uncommitted work from a previous attempt. Continue from it: do not restart, rename or duplicate it. Review it, make it pass and commit.\n${porcelain.split("\n").slice(0, 40).join("\n")}`] : [];
 
+// With several atomic tasks the dev gets one at a time, fresh context each, and must not start the later ones.
+export const taskBlock = (t: Pick<T, "tasks" | "task_done">) => {
+  if (!t.tasks.length) return [];
+  const last = t.task_done === t.tasks.length - 1;
+  return [[
+    `Task ${t.task_done + 1} of ${t.tasks.length}. Do ONLY this task, in one commit that keeps the verification green: ${t.tasks[t.task_done]}`,
+    t.task_done ? `Already committed by earlier tasks (build on them, do not redo them):\n${t.tasks.slice(0, t.task_done).map((x, i) => `${i + 1}. ${x}`).join("\n")}` : "",
+    last ? "This is the last task: `brief` must describe the whole ticket (all tasks), not just this one." : `Later tasks, do not start them:\n${t.tasks.slice(t.task_done + 1).map((x, i) => `${t.task_done + i + 2}. ${x}`).join("\n")}`,
+  ].filter(Boolean).join("\n")];
+};
+
 const dev = guarded("dev", async (t) => {
+  const before = sh(t.worktree, "rev-parse", "HEAD");
   const { output, usage } = await runAgent({
     role: "dev", files: [DEV_FILE[t.specialty]], cwd: t.worktree, schema: DevOutput,
-    context: context(ticketData(t), devRules(t.test, Number(process.env.TURNS_DEV ?? process.env.TURNS_DEFAULT) || undefined), ...partialWork(sh(t.worktree, "status", "--porcelain", "--untracked-files=all")), ...rulesBlock(t)), test: t.test,
+    context: context(ticketData(t), devRules(t.test, Number(process.env.TURNS_DEV ?? process.env.TURNS_DEFAULT) || undefined), ...taskBlock(t), ...partialWork(sh(t.worktree, "status", "--porcelain", "--untracked-files=all")), ...rulesBlock(t)), test: t.test,
   });
   const v = verifyEvidence(t.worktree, t.base, t.test, t.install);
   if (!v.ok) return { status: "dev_failed", explanation: "", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
+  if (t.tasks.length && v.sha === before) return { status: "dev_failed", explanation: "", revisions: t.revisions + 1, summary: `task ${t.task_done + 1} produced no new commit`, history: log(t, "dev", "task without commit", usage) };
+  if (t.task_done + 1 < t.tasks.length) return { status: "dev_next", task_done: t.task_done + 1, summary: cap(output.summary), history: log(t, "dev", `task ${t.task_done + 1}/${t.tasks.length} committed`, usage) };
   return { status: "review", explanation: "", brief: output.brief, summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
 });
 
@@ -318,7 +346,7 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addEdge(START, "triage")
     .addConditionalEdges("triage", afterTriage, ["dev", "planner", "ceo_approval"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "ceo_approval"])
-    .addConditionalEdges("dev", route("review", "reviewer"), ["reviewer", "dev", "ceo_approval"])
+    .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "reviewer")(t)), ["reviewer", "dev", "ceo_approval"])
     .addConditionalEdges("reviewer", route("qa", "qa"), ["qa", "dev", "ceo_approval"])
     .addConditionalEdges("qa", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
     .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval"])
