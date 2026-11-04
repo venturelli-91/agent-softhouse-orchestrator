@@ -588,3 +588,26 @@ test("the brief (why, how, where it applies) is mandatory for the dev output and
   assert.doesNotMatch(breaks, /[\r\v\f\u0085]/);
   assert.ok(!breaks.includes(String.fromCharCode(0x2028)));
 });
+
+test("a request that needs several commits is split into atomic tasks run one at a time, then reviewed as a whole", async () => {
+  override.triage = () => ({ title: "t", priority: "P2", specialty: "fullstack", clear: true, flags: FLAGS, criteria: ["c"], summary: "ok", split: ["engine and store", "API routes", "ops UI"] });
+  const ctxs: string[] = [];
+  let n = 0;
+  override.dev = (req) => (ctxs.push(req.context), commit(req.cwd, "agent-dev"), n++, { summary: "ok", brief: BRIEF });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.equal(calls.filter((c) => c === "dev").length, 3);
+  assert.equal(calls.filter((c) => c === "reviewer").length, 1);
+  assert.match(ctxs[0], /Task 1 of 3[\s\S]*engine and store[\s\S]*Later tasks[\s\S]*2\. API routes/);
+  assert.match(ctxs[1], /Task 2 of 3[\s\S]*Already committed[\s\S]*1\. engine and store/);
+  assert.match(ctxs[2], /Task 3 of 3[\s\S]*ops UI[\s\S]*last task[\s\S]*whole ticket/);
+});
+
+test("a task that ends without a new commit is a failed revision, not progress", async () => {
+  override.triage = () => ({ title: "t", priority: "P2", specialty: "fullstack", clear: true, flags: FLAGS, criteria: ["c"], summary: "ok", split: ["one", "two"] });
+  let n = 0;
+  override.dev = (req) => (++n === 1 ? commit(req.cwd, "agent-dev") : undefined, { summary: "ok", brief: BRIEF });
+  const g = await start();
+  assert.notEqual(paused(g.r)?.type, "approval");
+  assert.equal(calls.filter((c) => c === "reviewer").length, 0);
+});
