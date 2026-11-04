@@ -20,6 +20,7 @@ let calls: string[] = [];
 let tokensPerCall = 10;
 const roots: string[] = [];
 
+const BRIEF = { why: "the goal of the ticket", how: "small focused change", where: "only the touched module" };
 const FLAGS = { touches_security: false, touches_performance: false, touches_ai: false, touches_schema: false, touches_public_api: false, touches_permissions: false, touches_external_integration: false, touches_cost: false };
 const commit = (cwd: string, author: string, file = "checkout.html", content = "<button>Submit order</button>\n") => {
   writeFileSync(join(cwd, file), content);
@@ -29,7 +30,7 @@ const commit = (cwd: string, author: string, file = "checkout.html", content = "
 const defaults: Behavior = {
   triage: () => ({ title: "t", priority: "P2", specialty: "frontend", clear: true, flags: FLAGS, criteria: ["button says Submit order"], summary: "ok" }),
   planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), question: "" }),
-  dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok" }),
+  dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF }),
   reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   watchdog: () => ({ alerts: ["T-1 stalled"], summary: "ok" }),
@@ -121,7 +122,7 @@ test("an approval flag reaches the CEO as an active flag", async () => {
 });
 
 test("self-approval blocked: reviewer equal to the author does not even run", async () => {
-  override.dev = (req) => (commit(req.cwd, "agent-reviewer"), { summary: "ok" });
+  override.dev = (req) => (commit(req.cwd, "agent-reviewer"), { summary: "ok", brief: BRIEF });
   const g = await start();
   assert.equal(paused(g.r)?.type, "escalation");
   assert.match(String(paused(g.r)?.reason), /its own delivery/);
@@ -190,7 +191,7 @@ test("an exceeded token budget interrupts the ticket", async () => {
 });
 
 test("evidence declared by the dev without a real passing test is rejected", async () => {
-  override.dev = (req) => (commit(req.cwd, "agent-dev", "other.txt", "x"), { summary: "done, tests pass" });
+  override.dev = (req) => (commit(req.cwd, "agent-dev", "other.txt", "x"), { summary: "done, tests pass", brief: BRIEF });
   const g = await start();
   assert.ok(!calls.includes("reviewer"));
   assert.equal(paused(g.r)?.type, "escalation");
@@ -441,7 +442,7 @@ test("the planner's briefing and stories land on the ticket and in the dev conte
   override = {
     triage: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), clear: false, criteria: [] }),
     planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), question: "", briefing: "B-CANARY", stories: ["As a buyer I want X so that Y"] }),
-    dev: (req) => ((devCtx = req.context), commit(req.cwd, "agent-dev"), { summary: "ok" }),
+    dev: (req) => ((devCtx = req.context), commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF }),
   };
   const g = await start();
   assert.ok(devCtx.includes("B-CANARY") && devCtx.includes("As a buyer I want X so that Y"), devCtx);
@@ -566,4 +567,24 @@ test("the dev is told its turn limit, and about partial work left by a previous 
   assert.doesNotMatch(devRules("npm test"), /turns/);
   assert.deepEqual(partialWork("  \n"), []);
   assert.match(partialWork("?? src/server/a.ts\n")[0], /uncommitted work from a previous attempt[\s\S]*src\/server\/a\.ts/);
+});
+
+test("the brief (why, how, where it applies) is mandatory for the dev output and renders as PR sections", async () => {
+  const { Brief, briefMarkdown, devRules } = await import("../src/graph.ts");
+  assert.equal(Brief.safeParse({ why: "short", how: "x", where: "y" }).success, false);
+  const b = { why: "Monitoring needs a liveness probe", how: "Added checkHealth with injectable db check", where: "src/lib/health.ts and /api/health only" };
+  assert.equal(Brief.safeParse(b).success, true);
+  const md = briefMarkdown(b);
+  assert.match(md, /## Why\nMonitoring[\s\S]*## How\nAdded[\s\S]*## Where it applies\nsrc\/lib/);
+  assert.match(devRules(), /`brief`/);
+  assert.equal(Brief.safeParse({ ...b, why: "x".repeat(601) }).success, false);
+  const hostile = briefMarkdown({ ...b, how: "# Fake heading\n![p](http://evil/x.png) cc @someone\n## Another" });
+  assert.equal(hostile.match(/^## /gm)?.length, 3);
+  assert.doesNotMatch(hostile, /(^|[^\\])!\[|@someone/);
+  const tricky = briefMarkdown({ ...b, why: "!![a](http://evil/x.png) <img src=http://evil/y.png> `x`" });
+  assert.doesNotMatch(tricky, /<img|(^|[^\\])!\[|(^|[^\\])\[a\]/);
+  const breaks = briefMarkdown({ ...b, where: "ok\r---\r===\u2028# H\u0085## H2\v\f### H3" });
+  assert.equal(breaks.match(/^## /gm)?.length, 3);
+  assert.doesNotMatch(breaks, /[\r\v\f\u0085]/);
+  assert.ok(!breaks.includes(String.fromCharCode(0x2028)));
 });

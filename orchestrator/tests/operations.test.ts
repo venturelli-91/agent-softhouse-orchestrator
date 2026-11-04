@@ -26,7 +26,7 @@ const out: Record<string, (req: Req<unknown>) => unknown> = {
     writeFileSync(join(req.cwd, "checkout.html"), "<button>Submit order</button>\n");
     git(req.cwd, "add", "-A");
     git(req.cwd, "-c", "user.name=agent-dev", "commit", "-q", "--allow-empty", "-m", "dev");
-    return { summary: "ok" };
+    return { summary: "ok", brief: { why: "the goal of the ticket", how: "small focused change", where: "only the touched module" } };
   },
   reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),

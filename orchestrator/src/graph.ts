@@ -25,6 +25,14 @@ const FlagsSchema = z.object({
 const EMPTY_FLAGS = Object.fromEntries(Object.keys(FlagsSchema.shape).map((k) => [k, false])) as z.infer<typeof FlagsSchema>;
 
 // The graph's only state. `request`, `criteria`, `worktree` and `base` are the minimal extras the code needs.
+// Every delivery says why it exists, how it was done and where it applies: it goes into the PR and the CEO notification.
+const briefField = z.string().min(10).max(600);
+export const Brief = z.object({ why: briefField, how: briefField, where: briefField });
+// Agent text lands in a PR body and in reviewer prompts: one paragraph per field, no headings, images or live @mentions.
+const plain = (s: string) =>
+  s.replace(/[\s\u0085]+/g, " ").replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`).replace(/[\\`*_~!#|[\]]/g, "\\$&").replace(/@(?=\w)/g, "@\u200b").trim();
+export const briefMarkdown = (b: z.infer<typeof Brief>) => `## Why\n${plain(b.why)}\n\n## How\n${plain(b.how)}\n\n## Where it applies\n${plain(b.where)}`;
+
 export const Ticket = z.object({
   id: z.string(),
   request: z.string(),
@@ -52,6 +60,7 @@ export const Ticket = z.object({
   summary_before_failure: z.string().default(""),
   summary: z.string().default(""),
   explanation: z.string().default(""),
+  brief: Brief.nullable().default(null),
   briefing: z.string().default(""),
   stories: z.array(z.string()).default([]),
   incident: z.string().default(""),
@@ -72,7 +81,7 @@ const TriageOutput = z.object({
 });
 // `question` is empty when clear; otherwise it is what the CEO needs to answer.
 const PlanOutput = TriageOutput.extend({ question: z.string(), briefing: z.string().default(""), stories: z.array(z.string()).default([]) });
-const DevOutput = z.object({ summary });
+const DevOutput = z.object({ summary, brief: Brief });
 const ReviewOutput = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary, explanation: z.string().default("") });
 
 const log = (t: T, node: string, result: string, usage?: Usage) =>
@@ -85,9 +94,11 @@ const context = (...parts: string[]) =>
   [...parts, "Answer only in the structured format. `summary`: up to 10 lines, only what the next node needs."].join("\n\n");
 const ticketData = (t: T) =>
   `Ticket ${t.id}: ${t.title}\n${t.briefing ? `Briefing:\n${t.briefing}\n` : ""}${t.stories.length ? `Stories:\n${t.stories.map((s) => `- ${s}`).join("\n")}\n` : ""}` +
-  `Acceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}`;
+  `Acceptance criteria:\n${t.criteria.map((c) => `- ${c}`).join("\n")}\nCurrent summary:\n${t.summary}` +
+  (t.brief ? `\nDeveloper brief (check it matches the diff):\n${briefMarkdown(t.brief)}` : "");
 export const devRules = (test = "npm test", turns?: number) =>
   `Implement in the current worktree, run ${test} and commit (git add/git commit). Do not push. ` +
+  `Also fill \`brief\`: why (the problem or goal this solves), how (approach and key decisions), where it applies (modules, endpoints, screens or users affected, and what is deliberately not touched). ` +
   (turns ? `You have at most ${turns} turns and uncommitted work is lost value: get a first version passing ${test} and commit it early, then refine and commit again. ` : "") +
   `Shell: one simple command per call (git add, git commit, git status, git diff, git log, ${test}); no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.`;
 export const DEV_RULES = devRules();
@@ -143,7 +154,7 @@ const dev = guarded("dev", async (t) => {
   });
   const v = verifyEvidence(t.worktree, t.base, t.test, t.install);
   if (!v.ok) return { status: "dev_failed", explanation: "", revisions: t.revisions + 1, summary: `verification: ${v.reason}`, history: log(t, "dev", `verification failed`, usage) };
-  return { status: "review", explanation: "", summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
+  return { status: "review", explanation: "", brief: output.brief, summary: cap(output.summary), author_id: v.author, evidence: v.evidence, history: log(t, "dev", "commit verified", usage) };
 });
 
 function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: string) {
@@ -184,7 +195,7 @@ const publishNode = guarded("publish", async (t) => {
   const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test, t.install) : { ok: false as const, reason: "no evidence" };
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   checkConfig(t);
-  const body = [t.summary, "Criteria:", ...t.criteria.map((c) => `- ${c}`), `Evidence: ${v.evidence.join(", ")}`].join("\n\n");
+  const body = [...(t.brief ? [briefMarkdown(t.brief)] : []), t.summary, "Criteria:", ...t.criteria.map((c) => `- ${c}`), `Evidence: ${v.evidence.join(", ")}`].join("\n\n");
   const pr = publish({ cwd: t.repo || t.worktree, id: t.id, sha: v.sha, title: `${t.id}: ${t.title}`, body, remote: t.push_remote, baseRepo: t.base_repo, disclosure: t.disclosure }, t.publisher);
   return { status: "approval", approved_sha: v.sha, evidence: [...v.evidence, pr], history: log(t, "publish", pr) };
 });
@@ -268,7 +279,7 @@ const ceoApproval = async (t: T): Promise<Partial<T>> => {
   const reason = t.status === "approval" ? (v?.ok ? (v.sha === t.approved_sha ? null : "commit changed since it was published") : `invalid evidence: ${v ? v.reason : "no evidence"}`)
     : t.status === "dev_failed" ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}` : `${t.status}: ${t.summary}`;
   const r = interrupt({
-    type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, explanation: t.explanation, evidence: t.evidence,
+    type: reason ? "escalation" : "approval", reason, ticket: t.id, title: t.title, summary: t.summary, explanation: t.explanation, brief: t.brief, evidence: t.evidence,
     deploy: { target: t.deploy_target, environment: t.deploy_cfg?.environment ?? "simulated", ...(t.deploy_cfg ? { command: t.deploy_cfg.command, rollback: t.deploy_cfg.rollback, env: t.deploy_cfg.env, health_url: t.deploy_cfg.health_url } : {}) },
     active_flags: Object.entries(t.flags).filter(([, active]) => active).map(([k]) => k),
   }) as string;
