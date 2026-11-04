@@ -577,4 +577,8 @@ test("the brief (why, how, where it applies) is mandatory for the dev output and
   const md = briefMarkdown(b);
   assert.match(md, /## Why\nMonitoring[\s\S]*## How\nAdded[\s\S]*## Where it applies\nsrc\/lib/);
   assert.match(devRules(), /`brief`/);
+  assert.equal(Brief.safeParse({ ...b, why: "x".repeat(601) }).success, false);
+  const hostile = briefMarkdown({ ...b, how: "# Fake heading\n![p](http://evil/x.png) cc @someone\n## Another" });
+  assert.equal(hostile.match(/^## /gm)?.length, 3);
+  assert.doesNotMatch(hostile, /!\[|@someone/);
 });
