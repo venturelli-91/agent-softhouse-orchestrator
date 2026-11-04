@@ -52,6 +52,7 @@ graph TD;
   ```json
   { "test": "npm test", "merge": "pr", "push_remote": "fork", "base_repo": "upstream-owner/project" }
   ```
+- **Install (`install`):** `"install": true` (in `.orchestrator.json` or the external config) makes the orchestrator run `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, `tsc` and `next build` can be the test command. Before every verification it wipes everything the agent left outside the commit (`git clean -fdX`) and reinstalls, so a planted file in `node_modules` never runs; the dev cannot write there either. A diff that touches `package-lock.json` (like `package.json`) goes to the CEO. Needs a committed `package-lock.json` and network on the host.
 - **Back to the old flow:** delete `orchestrator/`; nothing outside it depends on it.
 - **Defenses:** worktree per ticket, minimal env, per-role permissions, evidence (commit, `npm test`, diff) checked in code, author ≠ reviewer ≠ QA, max 3 revisions and 5 tickets, token budget, merge/deploy only with the CEO.
 - **Limits:** a `Bash` allowlist is weak (the real barrier is a worktree without secrets); the checkpointer is a JSON file; the built-in deploy target is simulated and the command target (real deploy + HTTP probe) is not yet proven against a live service; QA reads the diff and does not run the tests (the graph does and hands it the verified evidence); validated on a handful of tickets in a throwaway repo; individual and local use, not a service for third parties.
