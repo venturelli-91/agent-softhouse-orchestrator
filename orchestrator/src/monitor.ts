@@ -9,6 +9,8 @@ export type WatchDeps = {
   notify: (text: string) => Promise<void>;
 };
 
+// an unreachable or timing-out service says nothing about the code: skip the hotfix dev (it burns tokens) and propose only the rollback
+const INFRA_ONLY = /^(unreachable|timeout)\b/;
 const isLimit = (e: unknown) => e instanceof Error && /limit/.test(e.message);
 
 export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> {
@@ -29,6 +31,10 @@ export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> 
     const { incident, created } = opened;
     if (created) await deps.notify(`Incident ${incident.id} on ${id}: ${symptom}`);
     if (incident.hotfix) continue;
+    if (INFRA_ONLY.test(symptom)) {
+      updateIncident(home, incident.id, { status: "open", rollback: "proposed" });
+      continue;
+    }
     try {
       const hotfix = await deps.makeHotfix({ incident, repo: readDeploy(home, id).repo });
       updateIncident(home, incident.id, { hotfix, status: "open", rollback: "proposed" });
@@ -38,6 +44,11 @@ export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> 
     }
   }
   return listIncidents(home);
+}
+
+export function resolveIncident(home: string, incidentId: string): void {
+  if (!listIncidents(home).some((i) => i.id === incidentId)) throw new Error(`unknown incident: ${incidentId}`);
+  updateIncident(home, incidentId, { status: "closed" });
 }
 
 export function approveRollback(home: string, incidentId: string, opts: { configReviewed?: boolean } = {}): string {

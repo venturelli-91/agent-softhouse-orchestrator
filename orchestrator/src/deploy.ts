@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { minimalEnv } from "./guardrails.ts";
 import { checkId } from "./ticket-store.ts";
@@ -31,6 +31,7 @@ export function recordDeploy(home: string, r: DeployRecord): void {
   mkdirSync(dir(home), { recursive: true });
   writeFileSync(f, JSON.stringify(r, null, 1));
 }
+export const forgetDeploy = (home: string, id: string): void => rmSync(file(home, id), { force: true });
 export const readDeploy = (home: string, id: string): DeployRecord => JSON.parse(readFileSync(file(home, id), "utf8"));
 export function deployedIds(home: string): string[] {
   try {

@@ -8,7 +8,8 @@
 //   orch watch                  one monitor pass over deployed tickets (HTTP health check for command deploys, simulated probe otherwise): opens one P0 hotfix ticket per failure and proposes a rollback
 //   orch chaos <id> <scenario>|--clear   inject (or clear) a failure on a ticket deployed to a sandbox target
 //   orch rollback <incident-id> [--config-reviewed]  approve the proposed rollback of an incident; --config-reviewed accepts a changed .git/config after you looked at it
-//   orch clean <id>|--all [--force] [--remote]   remove worktree, branch and state of finished (simulated_deploy/aborted) tickets; --remote also deletes ticket/<id> on the push remote
+//   orch resolve <incident-id>  close an incident by hand (the service is back, or you handled it elsewhere)
+//   orch clean <id>|--all [--force] [--remote]   remove worktree, branch, deploy record and state of finished (simulated_deploy/aborted) tickets; --remote also deletes ticket/<id> on the push remote
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -20,9 +21,9 @@ import { behindBy, deleteRemoteBranch } from "../src/git-remote.ts";
 import { notify } from "../src/notify.ts";
 import { clearFailure, injectFailure, SCENARIOS } from "../src/chaos.ts";
 import { defaultProbe } from "../src/probe.ts";
-import { deployedIds } from "../src/deploy.ts";
+import { deployedIds, forgetDeploy } from "../src/deploy.ts";
 import { listIncidents } from "../src/incidents.ts";
-import { approveRollback, watch } from "../src/monitor.ts";
+import { approveRollback, resolveIncident, watch } from "../src/monitor.ts";
 import { lockTicket, ticketFile, ticketIds } from "../src/ticket-store.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -166,6 +167,7 @@ if (cmd === "init") {
         safeGit(repo, "branch", "-D", `ticket/${id}`);
       }
       unlinkSync(ticketFile(home, id));
+      forgetDeploy(home, id);
       console.log(`cleaned ${id} (${t.status})`);
     });
 } else if (cmd === "watch") {
@@ -184,6 +186,10 @@ if (cmd === "init") {
     },
   });
   for (const i of incidents.filter((i) => i.status !== "closed")) console.log(`${i.id} ${i.status} ${i.ticket} hotfix=${i.hotfix || "-"} rollback=${i.rollback}: ${i.symptom}${i.rollback === "proposed" ? `  -> orch rollback ${i.id}` : ""}`);
+} else if (cmd === "resolve") {
+  const incidentId = positionals[0] ?? die("usage: orch resolve <incident-id>");
+  resolveIncident(home, incidentId);
+  console.log(`${incidentId} closed`);
 } else if (cmd === "chaos") {
   const id = positionals[0];
   const scenario = positionals[1];
@@ -198,4 +204,4 @@ scenarios: ${Object.keys(SCENARIOS).join(", ")}`);
   const incidentId = positionals[0] ?? die("usage: orch rollback <incident-id>");
   const incident = listIncidents(home).find((i) => i.id === incidentId) ?? die(`no incident ${incidentId}`);
   await locked(incident.ticket, async () => console.log(approveRollback(home, incidentId, { configReviewed: values["config-reviewed"] })));
-} else die("usage: orch init | run | status | continue | approve | reject | clean | watch | chaos | rollback");
+} else die("usage: orch init | run | status | continue | approve | reject | clean | watch | chaos | rollback | resolve");
