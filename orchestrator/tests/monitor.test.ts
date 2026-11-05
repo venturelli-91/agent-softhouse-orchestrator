@@ -156,3 +156,16 @@ test("forgetDeploy removes the record so watch stops probing the ticket", async 
   await watch(home, deps());
   assert.equal(listIncidents(home).length, 0);
 });
+
+test("a watch after the rollback never reopens it, so a second approval is refused", async () => {
+  symptom = "unreachable: ECONNREFUSED";
+  await watch(home, deps());
+  const id = listIncidents(home)[0].id;
+  approveRollback(home, id);
+  await watch(home, deps());
+  symptom = "http 503";
+  await watch(home, deps());
+  assert.equal(listIncidents(home)[0].rollback, "done");
+  assert.throws(() => approveRollback(home, id), /already rolled back/);
+  assert.equal(rollbacks.length, 1);
+});

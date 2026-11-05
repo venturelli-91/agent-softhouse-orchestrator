@@ -11,6 +11,8 @@ export type WatchDeps = {
 
 // an unreachable or timing-out service says nothing about the code: skip the hotfix dev (it burns tokens) and propose only the rollback
 const INFRA_ONLY = /^(unreachable|timeout)\b/;
+// a finished rollback is never reopened: the one-shot guard in approveRollback depends on it
+const proposal = (i: Incident): Partial<Incident> => (i.rollback === "none" ? { rollback: "proposed" } : {});
 const isLimit = (e: unknown) => e instanceof Error && /limit/.test(e.message);
 
 export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> {
@@ -32,12 +34,12 @@ export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> 
     if (created) await deps.notify(`Incident ${incident.id} on ${id}: ${symptom}`);
     if (incident.hotfix) continue;
     if (INFRA_ONLY.test(symptom)) {
-      updateIncident(home, incident.id, { status: "open", rollback: "proposed" });
+      updateIncident(home, incident.id, { status: "open", ...proposal(incident) });
       continue;
     }
     try {
       const hotfix = await deps.makeHotfix({ incident, repo: readDeploy(home, id).repo });
-      updateIncident(home, incident.id, { hotfix, status: "open", rollback: "proposed" });
+      updateIncident(home, incident.id, { hotfix, status: "open", ...proposal(incident) });
     } catch (e) {
       if (!isLimit(e)) throw e;
       updateIncident(home, incident.id, { status: "waiting" });
