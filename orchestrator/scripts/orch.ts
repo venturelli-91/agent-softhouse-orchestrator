@@ -18,6 +18,7 @@ import { FileSaver } from "../src/file-saver.ts";
 import { buildGraph, config, createWorktree, report, resume, Ticket } from "../src/graph.ts";
 import { assertGitConfigUnchanged, repoOf, safeGit } from "../src/guardrails.ts";
 import { behindBy, deleteRemoteBranch } from "../src/git-remote.ts";
+import { recordMetrics } from "../src/metrics.ts";
 import { notify } from "../src/notify.ts";
 import { clearFailure, injectFailure, SCENARIOS } from "../src/chaos.ts";
 import { defaultProbe } from "../src/probe.ts";
@@ -166,6 +167,7 @@ if (cmd === "init") {
         safeGit(repo, "worktree", "remove", "--force", t.worktree);
         safeGit(repo, "branch", "-D", `ticket/${id}`);
       }
+      recordMetrics(home, t);
       unlinkSync(ticketFile(home, id));
       forgetDeploy(home, id);
       console.log(`cleaned ${id} (${t.status})`);
