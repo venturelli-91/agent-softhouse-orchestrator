@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { recordDeploy, registerDeployTarget } from "../src/deploy.ts";
+import { forgetDeploy, recordDeploy, registerDeployTarget } from "../src/deploy.ts";
 import { listIncidents } from "../src/incidents.ts";
-import { approveRollback, watch } from "../src/monitor.ts";
+import { approveRollback, resolveIncident, watch } from "../src/monitor.ts";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { gitConfigHash } from "../src/guardrails.ts";
 
@@ -131,4 +131,41 @@ test("a changed .git/config blocks the rollback until it is reviewed", async () 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("an unreachable service gets a proposed rollback and no hotfix ticket, and a second watch does not repeat it", async () => {
+  symptom = "unreachable: ECONNREFUSED";
+  await watch(home, deps());
+  await watch(home, deps());
+  const [i] = listIncidents(home);
+  assert.equal(tickets, 0);
+  assert.equal(i.hotfix, "");
+  assert.equal(i.rollback, "proposed");
+  assert.equal(approveRollback(home, i.id), "r");
+});
+
+test("resolveIncident closes an incident by hand and rejects an unknown id", async () => {
+  await watch(home, deps());
+  resolveIncident(home, listIncidents(home)[0].id);
+  assert.equal(listIncidents(home)[0].status, "closed");
+  assert.throws(() => resolveIncident(home, "inc-nope"), /unknown incident/);
+});
+
+test("forgetDeploy removes the record so watch stops probing the ticket", async () => {
+  forgetDeploy(home, "T-1");
+  await watch(home, deps());
+  assert.equal(listIncidents(home).length, 0);
+});
+
+test("a watch after the rollback never reopens it, so a second approval is refused", async () => {
+  symptom = "unreachable: ECONNREFUSED";
+  await watch(home, deps());
+  const id = listIncidents(home)[0].id;
+  approveRollback(home, id);
+  await watch(home, deps());
+  symptom = "http 503";
+  await watch(home, deps());
+  assert.equal(listIncidents(home)[0].rollback, "done");
+  assert.throws(() => approveRollback(home, id), /already rolled back/);
+  assert.equal(rollbacks.length, 1);
 });
