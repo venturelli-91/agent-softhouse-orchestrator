@@ -12,7 +12,7 @@ graph TD;
   publish(publish)
   ceo_approval(ceo_approval)
   merge_pr(merge_pr)
-  devops(devops)
+  deploy(deploy)
   triage -.-> dev;
   triage -.-> planner;
   triage -.-> ceo_approval;
@@ -29,8 +29,12 @@ graph TD;
   publish -.-> ceo_approval;
   ceo_approval -.-> dev;
   ceo_approval -.-> planner;
+  ceo_approval -.-> reviewer;
+  ceo_approval -.-> qa;
+  ceo_approval -.-> publish;
+  ceo_approval -.-> deploy;
   ceo_approval -.-> merge_pr;
-  merge_pr -.-> devops;
+  merge_pr -.-> deploy;
   merge_pr -.-> ceo_approval;
   dev -.-> dev;
 ```
