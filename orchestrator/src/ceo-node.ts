@@ -37,7 +37,8 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
   const h = (res: string) => log(t, "ceo_approval", res);
   if (!reason) {
     if (r === "approve") return { status: "approved", history: h("approved") };
-    return { status: "dev_failed", revisions: t.revisions + 1, summary: `CEO rejected: ${r}`.slice(0, 500), history: h("rejected") };
+    const summary = `CEO rejected: ${r}`.slice(0, 500);
+    return { status: "dev_failed", revisions: t.revisions + 1, summary, rejections: [...t.rejections, summary], history: h("rejected") };
   }
   if (r === "abort") return { status: "aborted", history: h("aborted") };
   // Missing information: the CEO's answer supplements the request and the planner tries again.

@@ -189,6 +189,17 @@ test("a ticket that escalates still gets its progress recorded by docs_mid, and 
   assert.match(knobs.docsContexts[1], /diff too large/);
 });
 
+test("docs_mid receives the full text of a reviewer rejection, not only the short history", async () => {
+  let n = 0;
+  knobs.override = {
+    docs: () => DOC_FILE,
+    reviewer: () => (++n === 1 ? { verdict: "rejected", comments: "REJECT-WHY: login skips the csrf check", summary: "x" } : { verdict: "approved", comments: "", summary: "ok" }),
+  };
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.match(knobs.docsContexts[1], /Phase: mid[\s\S]*Rejections[\s\S]*reviewer: REJECT-WHY: login skips the csrf check/);
+});
+
 test("a failing or invalid docs agent only adds warnings; the ticket still reaches approval", async () => {
   for (const docs of [() => { throw new NodeFailure("boom"); }, () => ({ files: "nope" })]) {
     knobs.override = { docs };

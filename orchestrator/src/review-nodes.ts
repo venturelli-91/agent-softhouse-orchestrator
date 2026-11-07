@@ -48,10 +48,12 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
         explanation: [t.explanation, output.explanation.trim().split("\n").slice(0, 6).join("\n")].filter(Boolean).join("\n"),
         history: log(t, name, "approved", usage),
       };
+    const comments = output.comments.split("\n").slice(0, 10).join("\n");
     return {
       status: "dev_failed",
       revisions: t.revisions + 1,
-      summary: output.comments.split("\n").slice(0, 10).join("\n"),
+      summary: comments,
+      rejections: [...t.rejections, `${name}: ${comments}`],
       history: log(t, name, "rejected", usage),
     };
   });

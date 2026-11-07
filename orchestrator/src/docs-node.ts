@@ -28,6 +28,7 @@ export const docsNode =
               `Evidence: ${t.evidence.join(", ")}`,
               `Revisions: ${t.revisions}`,
               `Node history: ${t.history.map((h) => `${h.node}: ${h.result}`).join("; ")}`,
+              ...(t.rejections.length ? [`Rejections (full text, oldest first):\n${t.rejections.map((r) => `- ${r}`).join("\n")}`] : []),
               `Diff stat:\n${sh(t.worktree, "diff", "--stat", t.base, "HEAD")}`,
               ticketData(t),
             ]
