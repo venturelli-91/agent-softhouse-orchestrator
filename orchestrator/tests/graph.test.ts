@@ -1,4 +1,5 @@
 // Flow guardrails against fake nodes: no model, no credentials.
+import { workRoot } from "../src/daily-cap.ts";
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -535,7 +536,7 @@ test("the command runs in a checkout of the approved commit and the checkout is 
   const { t, sha } = await commandTicket({ command: "git rev-parse HEAD" });
   const out = await deployTicket(t);
   assert.ok((out.evidence as string[]).some((e) => e === `deploy:${sha}`), String(out.evidence));
-  assert.equal(existsSync(join(process.env.ORCH_HOME!, "deploy-work", "T-1")), false);
+  assert.equal(existsSync(join(workRoot(), "deploy-work", "T-1")), false);
 });
 
 test("a git hook in the repo does not run during the deploy checkout", async () => {

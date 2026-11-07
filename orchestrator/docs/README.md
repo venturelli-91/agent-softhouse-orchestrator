@@ -2,7 +2,7 @@
 
 A thin orchestration layer over the software house. It lives in `orchestrator/` and
 **does not change** `.claude/agents`, `.claude/commands` or `CLAUDE.md`: the graph only
-reads those files. Deleting `orchestrator/` (and `.claude/docs/orchestrator/`) returns
+reads those files. Deleting `orchestrator/` returns
 the system to its previous state; `/request`, `/ticket` and `/demand` keep working.
 
 Thesis: **flow control in code, not in prompts.** The agent prompt is the weakest layer;
