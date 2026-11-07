@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { orchHome } from "./daily-cap.ts";
@@ -73,9 +73,14 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
   return RepoConfig.parse({ ...external(repo, home), ...inRepo });
 }
 
-// The target repo's CLAUDE.md, from the base commit (a ticket cannot edit its own rules). `claude -p` with our flags
+// The target repo rules: .claude/CLAUDE.md on disk, else the root CLAUDE.md from the base commit (a ticket cannot edit its own rules). `claude -p` with our flags
 // does not load it by itself, so the dev gets it in its context. Capped: it is paid for on every dev turn.
 export function loadConventions(repo: string, ref: string, max = 8000): string {
+  // .claude/ is local only (never committed), so its CLAUDE.md is read from disk; the agent cannot edit it from its worktree.
+  try {
+    const local = join(repo, ".claude", "CLAUDE.md");
+    if (!lstatSync(join(repo, ".claude")).isSymbolicLink() && lstatSync(local).isFile()) return readFileSync(local, "utf8").slice(0, max);
+  } catch {}
   try {
     return safeGit(repo, "show", `${ref}:CLAUDE.md`).slice(0, max);
   } catch {

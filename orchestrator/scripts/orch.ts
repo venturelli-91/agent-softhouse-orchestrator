@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { dailyCapReached, orchHome, usedToday, workRoot } from "../src/daily-cap.ts";
+import { ensureLocalOnly } from "../src/docs.ts";
 import { FileSaver } from "../src/file-saver.ts";
 import { buildGraph, config, createWorktree, report, resume, Ticket } from "../src/graph.ts";
 import { assertGitConfigUnchanged, repoOf, safeGit } from "../src/guardrails.ts";
@@ -101,7 +102,8 @@ if (cmd === "init") {
     writeFileSync(file, `${JSON.stringify({ test: "npm test", merge: "pr" }, null, 2)}\n`);
     console.log(`wrote ${file}: set "test" to the repo's test command, then commit it (it is read from the base commit)`);
   }
-  if (!existsSync(join(repo, "CLAUDE.md"))) console.log("no CLAUDE.md: the dev will have no repo conventions (commit format, style)");
+  if (!existsSync(join(repo, ".claude", "CLAUDE.md")) && !existsSync(join(repo, "CLAUDE.md"))) console.log("no .claude/CLAUDE.md: the dev will have no repo conventions (commit format, style)");
+  console.log(ensureLocalOnly(repo) ?? `${join(repo, ".claude", "docs")} ready and ignored by git: the graph writes the project docs there`);
 } else if (cmd === "run") {
   const request = positionals[0] ?? die('usage: orch run "<request>" [--repo <path>] [--id <id>]');
   needCap();
@@ -117,7 +119,7 @@ if (cmd === "init") {
   const ids = positionals[0] ? [positionals[0]] : ticketIds(home);
   for (const id of ids) {
     const { ticket: t, pending } = await load(id);
-    console.log(`${id.padEnd(12)} ${t.status.padEnd(16)} ${t.priority.padEnd(4)} ${t.title}${pending ? `  <- waiting (${pending.type})` : ""}`);
+    console.log(`${id.padEnd(12)} ${t.status.padEnd(16)} ${t.priority.padEnd(4)} ${t.title}${pending ? `  <- waiting (${pending.type})` : ""}${t.docs_warnings.length ? "  docs!" : ""}`);
     if (positionals[0]) {
       console.log(report(t));
       if (pending) console.log(JSON.stringify(pending, null, 1));
