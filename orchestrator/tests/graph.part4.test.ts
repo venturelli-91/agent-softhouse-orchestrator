@@ -163,17 +163,30 @@ test("the token budget grows only with verified tasks, up to a fixed ceiling", a
   assert.match(String(budgetExceeded(Array(100).fill(u), env, 999)), /> 800\)/);
 });
 
-test("docs run first and last, land in .claude/docs of the main checkout and never dirty it", async () => {
+test("docs run first, in the middle and last, land in .claude/docs of the main checkout and never dirty it", async () => {
   knobs.override = { docs: () => DOC_FILE };
   const g = await start();
   assert.equal(paused(g.r)?.type, "approval");
   assert.equal(readFileSync(join(g.repo, ".claude", "docs", "arquitetura", "visao.md"), "utf8"), "# Visao\n");
   assert.equal(git(g.repo, "status", "--porcelain"), "");
-  assert.equal(knobs.docsCalls.length, 2);
+  assert.equal(knobs.docsCalls.length, 3);
   assert.match(knobs.docsContexts[0], /Mode: scan/);
-  assert.match(knobs.docsContexts[1], /commit:[0-9a-f]+/);
-  assert.match(knobs.docsContexts[1], /tests:npm test ok/);
-  assert.ok((g.r.history as { node: string }[]).filter((h) => h.node === "docs").length === 2);
+  assert.match(knobs.docsContexts[1], /Phase: mid/);
+  assert.match(knobs.docsContexts[1], /Revisions: 0/);
+  assert.match(knobs.docsContexts[2], /Phase: end/);
+  assert.match(knobs.docsContexts[2], /commit:[0-9a-f]+/);
+  assert.match(knobs.docsContexts[2], /tests:npm test ok/);
+  assert.ok((g.r.history as { node: string }[]).filter((h) => h.node === "docs").length === 3);
+});
+
+test("a ticket that escalates still gets its progress recorded by docs_mid, and docs_end does not run", async () => {
+  knobs.override = { docs: () => DOC_FILE };
+  knobs.override.dev = (req) => (commit(req.cwd, "agent-dev"), commit(req.cwd, "agent-dev", "big.txt", "x".repeat(70_000)), { summary: "ok", brief: BRIEF });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.equal(knobs.docsCalls.length, 2);
+  assert.match(knobs.docsContexts[1], /Phase: mid/);
+  assert.match(knobs.docsContexts[1], /diff too large/);
 });
 
 test("a failing or invalid docs agent only adds warnings; the ticket still reaches approval", async () => {
@@ -182,7 +195,7 @@ test("a failing or invalid docs agent only adds warnings; the ticket still reach
     const g = await start();
     assert.equal(paused(g.r)?.type, "approval");
     const w = g.r.docs_warnings as string[];
-    assert.ok(w.some((x) => x.startsWith("start: ")) && w.some((x) => x.startsWith("end: ")), w.join("|"));
+    assert.ok(["start: ", "mid: ", "end: "].every((p) => w.some((x) => x.startsWith(p))), w.join("|"));
     assert.match(report(Ticket.parse(g.r)), /docs/);
   }
 });

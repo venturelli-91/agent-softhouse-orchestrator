@@ -15,7 +15,7 @@ to teammates, leaders and stakeholders. It is local to the machine and never com
   call, no symlinks), writes atomically under a lock, skips a file that changed on disk since the
   agent saw it, and generates `README.md` (index) and `.nao-se-aplica.json` itself.
 - `agents/docs.md`: the read-only `docs` role (no `Write`/`Edit`). It returns file contents.
-- Graph: `START -> docs_start -> triage` and `publish -> docs_end -> ceo_approval`. Both nodes
+- Graph: `START -> docs_start -> triage`, `qa -> docs_mid -> publish` (and every escalation goes `-> docs_mid -> ceo_approval`) and `publish -> docs_end -> ceo_approval`. `docs_mid` writes the ticket's single progress record (`aprendizados/<ticket>.md`) and updates checklist and backlog. All three nodes
   catch every failure into `docs_warnings`; they never change the ticket status.
 - `ensureLocalOnly`: adds `.claude/` to `.git/info/exclude` and checks `git check-ignore`; if
   git would still track it (a repo `.gitignore` un-ignores `.claude/`), nothing is written.
