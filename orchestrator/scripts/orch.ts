@@ -10,7 +10,7 @@
 //   orch rollback <incident-id> [--config-reviewed]  approve the proposed rollback of an incident; --config-reviewed accepts a changed .git/config after you looked at it
 //   orch resolve <incident-id>  close an incident by hand (the service is back, or you handled it elsewhere)
 //   orch clean <id>|--all [--force] [--remote]   remove worktree, branch, deploy record and state of finished (simulated_deploy/aborted) tickets; --remote also deletes ticket/<id> on the push remote
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { dailyCapReached, orchHome, usedToday, workRoot } from "../src/daily-cap.ts";
@@ -94,6 +94,16 @@ async function locked(id: string, fn: () => Promise<void>) {
 }
 const DONE = ["simulated_deploy", "deployed", "aborted"];
 
+// A bare `node --test` scans the whole tree, so it would also run orchestrator/tests inside every ticket worktree. `test` cannot hold the glob that scopes it
+// (no `*` allowed), so init only warns.
+function bareNodeTest(repo: string): boolean {
+  try {
+    return /^node\s+--test(\s+--[\w-]+)*\s*$/.test(JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).scripts?.test);
+  } catch {
+    return false;
+  }
+}
+
 if (cmd === "init") {
   const repo = resolve(positionals[0] ?? HOST);
   const file = join(repo, ".orchestrator.json");
@@ -101,6 +111,7 @@ if (cmd === "init") {
   else {
     writeFileSync(file, `${JSON.stringify({ test: "npm test", merge: "pr" }, null, 2)}\n`);
     console.log(`wrote ${file}: set "test" to the repo's test command, then commit it (it is read from the base commit)`);
+    if (bareNodeTest(repo)) console.warn('warning: package.json "test" is a bare `node --test`: it will also run orchestrator/tests in every ticket worktree. Point "test" at an npm script that scopes it.');
   }
   if (!existsSync(join(repo, ".claude", "CLAUDE.md")) && !existsSync(join(repo, "CLAUDE.md"))) console.log("no .claude/CLAUDE.md: the dev will have no repo conventions (commit format, style)");
   console.log(ensureLocalOnly(repo) ?? `${join(repo, ".claude", "docs")} ready and ignored by git: the graph writes the project docs there`);

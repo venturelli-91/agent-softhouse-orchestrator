@@ -77,9 +77,18 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
 // does not load it by itself, so the dev gets it in its context. Capped: it is paid for on every dev turn.
 export function loadConventions(repo: string, ref: string, max = 8000): string {
   // .claude/ is local only (never committed), so its CLAUDE.md is read from disk; the agent cannot edit it from its worktree.
+  // A copy committed at the base commit went through a PR, not through the CEO's own disk: it is not trusted over the root file.
+  // Matched case-insensitively (the disk read is) and against the index too, in case another ticket merged it after this base was cut.
+  const isRules = (names: string) => names.split("\0").some((n) => n.toLowerCase() === ".claude/claude.md");
+  let tracked: boolean;
+  try {
+    tracked = isRules(safeGit(repo, "ls-tree", "-r", "-z", "--name-only", ref)) || isRules(safeGit(repo, "ls-files", "-z"));
+  } catch {
+    tracked = true; // fail closed: if git cannot tell, do not trust the disk copy
+  }
   try {
     const local = join(repo, ".claude", "CLAUDE.md");
-    if (!lstatSync(join(repo, ".claude")).isSymbolicLink() && lstatSync(local).isFile()) return readFileSync(local, "utf8").slice(0, max);
+    if (!tracked && !lstatSync(join(repo, ".claude")).isSymbolicLink() && lstatSync(local).isFile()) return readFileSync(local, "utf8").slice(0, max);
   } catch {}
   try {
     return safeGit(repo, "show", `${ref}:CLAUDE.md`).slice(0, max);

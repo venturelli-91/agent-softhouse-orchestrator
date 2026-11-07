@@ -47,6 +47,31 @@ test("the rules come from .claude/CLAUDE.md on disk first, then the committed ro
   rmSync(none, { recursive: true, force: true });
 });
 
+test("a .claude/CLAUDE.md committed at the base is ignored and the root file is used", () => {
+  const d = mkdtempSync(join(tmpdir(), "conv-"));
+  const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd: d, encoding: "utf8" }).trim();
+  git("init", "-q", "-b", "main");
+  mkdirSync(join(d, ".claude"));
+  writeFileSync(join(d, "CLAUDE.md"), "root rules");
+  writeFileSync(join(d, ".claude", "CLAUDE.md"), "tracked rules");
+  git("add", "-f", "-A");
+  git("commit", "-q", "-m", "base");
+  const base = git("rev-parse", "HEAD");
+  assert.equal(loadConventions(d, base), "root rules");
+  writeFileSync(join(d, ".claude", "CLAUDE.md"), "edited on disk");
+  assert.equal(loadConventions(d, base), "root rules");
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("an unresolvable ref fails closed: the disk copy is not trusted", () => {
+  const d = mkdtempSync(join(tmpdir(), "conv-"));
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: d });
+  mkdirSync(join(d, ".claude"));
+  writeFileSync(join(d, ".claude", "CLAUDE.md"), "local rules");
+  assert.equal(loadConventions(d, "no-such-ref"), "");
+  rmSync(d, { recursive: true, force: true });
+});
+
 test("a symlinked .claude/CLAUDE.md is ignored and the committed root file is used", (t) => {
   const d = mkdtempSync(join(tmpdir(), "conv-"));
   const outside = join(mkdtempSync(join(tmpdir(), "conv-out-")), "secret.md");
