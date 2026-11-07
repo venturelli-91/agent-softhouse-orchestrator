@@ -52,7 +52,8 @@ test("a symlinked directory under docs is refused", (t) => {
 
 test("150 lines pass (LF, CRLF, trailing newline) and 151 is rejected keeping the old file", () => {
   const repo = tmp();
-  for (const eol of ["\n", "\r\n"]) assert.equal(writeDocs(repo, out([{ path: "a/ok.md", content: lines(MAX_LINES, eol) }]), { "a/ok.md": sha(readIfAny(repo, "a/ok.md")) }, tmp()).written.length, 1);
+  for (const eol of ["\n", "\r\n"]) assert.equal(writeDocs(repo, out([{ path: "a/ok.md", content: lines(MAX_LINES, eol) }]),
+    { "a/ok.md": sha(readIfAny(repo, "a/ok.md")) }, tmp()).written.length, 1);
   const before = readFileSync(join(docsDir(repo), "a", "ok.md"), "utf8");
   const r = writeDocs(repo, out([{ path: "a/ok.md", content: lines(MAX_LINES + 1) }]), { "a/ok.md": sha(before) }, tmp());
   assert.deepEqual(r.written, []);
@@ -88,7 +89,8 @@ test("not-applicable entries persist and coverage reports what is missing", () =
   assert.equal(coverage(repo).length, TOPICS.length);
   writeDocs(repo, out([{ path: "arquitetura/a.md", content: "x\n" }], [{ topic: "backlog", reason: "no backlog yet" }]), {}, tmp());
   writeDocs(repo, out([{ path: "testes/a.md", content: "x\n" }], [{ topic: "checklist", reason: "single ticket" }]), {}, tmp());
-  assert.deepEqual(coverage(repo).sort(), TOPICS.filter((x) => !["arquitetura", "backlog", "testes", "checklist"].includes(x)).map((x) => expectWarn(x)).sort());
+  assert.deepEqual(coverage(repo).sort(), TOPICS.filter((x) => !["arquitetura", "backlog", "testes",
+    "checklist"].includes(x)).map((x) => expectWarn(x)).sort());
   for (const topic of TOPICS) writeDocs(repo, out([], [{ topic, reason: "not relevant here" }]), {}, tmp());
   assert.deepEqual(coverage(repo), []);
 });

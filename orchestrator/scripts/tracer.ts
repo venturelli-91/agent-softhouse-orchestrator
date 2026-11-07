@@ -11,7 +11,8 @@ import { config, createWorktree, buildGraph, report, resume } from "../src/graph
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { repo: { type: "string" }, db: { type: "string" }, resume: { type: "boolean" }, id: { type: "string", default: "T-001" }, mermaid: { type: "boolean" }, clean: { type: "boolean" } },
+  options: { repo: { type: "string" }, db: { type: "string" }, resume: { type: "boolean" }, id: { type: "string", default: "T-001" },
+    mermaid: { type: "boolean" }, clean: { type: "boolean" } },
 });
 const root = mkdtempSync(join(tmpdir(), "orch-"));
 const repo = values.repo ?? createFixture(root);

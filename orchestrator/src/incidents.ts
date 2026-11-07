@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export type Incident = { id: string; ticket: string; symptom: string; status: "open" | "waiting" | "closed"; hotfix: string; rollback: "none" | "proposed" | "done"; opened: string };
+export type Incident = {
+  id: string; ticket: string; symptom: string; status: "open" | "waiting" | "closed"; hotfix: string;
+  rollback: "none" | "proposed" | "done"; opened: string;
+};
 export const MAX_OPEN_INCIDENTS = 5;
 
 const dir = (home: string) => join(home, "incidents");

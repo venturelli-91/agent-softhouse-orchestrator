@@ -9,7 +9,10 @@ export type DeployTarget = {
   deploy(d: { id: string; sha: string }): string;
   rollback(d: { id: string; sha: string; previous: string }): string;
 };
-export type CommandSettings = { rollback: string; health_url: string; env: string[]; timeout_s: number; max_latency_ms: number; environment: "staging" | "production"; git_config_hash: string };
+export type CommandSettings = {
+  rollback: string; health_url: string; env: string[]; timeout_s: number; max_latency_ms: number;
+  environment: "staging" | "production"; git_config_hash: string;
+};
 export type DeployRecord = { id: string; repo: string; sha: string; previous: string; target: string; sandbox: boolean; cmd?: CommandSettings };
 
 const targets = new Map<string, DeployTarget>([
@@ -51,7 +54,8 @@ export function commandEnv(names: string[], ctx: Ctx, src: NodeJS.ProcessEnv = p
 }
 
 // Every extension cmd.exe may resolve: the live PATHEXT plus the Windows defaults and .ps1.
-const shadowExts = (): string[] => [...new Set([...(process.env.PATHEXT ?? "").split(";"), ".com", ".exe", ".bat", ".cmd", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".msc", ".ps1"].map((e) => e.toLowerCase()).filter(Boolean))];
+const shadowExts = (): string[] => [...new Set([...(process.env.PATHEXT ?? "").split(";"), ".com", ".exe", ".bat", ".cmd", ".vbs", ".vbe", ".js",
+  ".jse", ".wsf", ".wsh", ".msc", ".ps1"].map((e) => e.toLowerCase()).filter(Boolean))];
 
 // Plain argv; on Windows the line goes through cmd.exe, which the regex makes safe. Listed env values are masked in whatever comes back.
 export function commandTarget(cfg: { command: string; rollback: string; env: string[]; timeout_s: number }, cwd: string, previous: string): DeployTarget {
@@ -59,7 +63,8 @@ export function commandTarget(cfg: { command: string; rollback: string; env: str
     if (!/^[\w ./:=@-]+$/.test(line)) throw new Error("command must be a plain command without shell operators");
     const [bin, ...args] = line.split(" ").filter(Boolean);
     const b = bin.toLowerCase();
-    if (process.platform === "win32" && readdirSync(cwd).some((f) => [b, ...shadowExts().map((e) => b + e)].includes(f.toLowerCase()))) throw new Error(`${bin} exists in ${cwd}: refusing to run a binary the working tree could shadow`);
+    if (process.platform === "win32" && readdirSync(cwd).some((f) => [b, ...shadowExts().map((e) => b
+      + e)].includes(f.toLowerCase()))) throw new Error(`${bin} exists in ${cwd}: refusing to run a binary the working tree could shadow`);
     const env = commandEnv(cfg.env, ctx);
     const mask = (s: string) => cfg.env.reduce((a, k) => (env[k] ? a.split(env[k]).join("***") : a), s).trim().slice(-300);
     try {
@@ -68,7 +73,8 @@ export function commandTarget(cfg: { command: string; rollback: string; env: str
       return mask(process.platform === "win32" ? execFileSync(line, { ...opts, shell: true }) : execFileSync(bin, args, opts));
     } catch (e) {
       const err = e as { code?: string; stdout?: string; stderr?: string; message: string };
-      throw new Error(err.code === "ETIMEDOUT" ? `command timed out after ${cfg.timeout_s}s` : `command failed: ${mask(`${err.stderr ?? ""}${err.stdout ?? ""}` || err.message)}`);
+      throw new Error(err.code === "ETIMEDOUT" ? `command timed out after ${cfg.timeout_s}s`
+        : `command failed: ${mask(`${err.stderr ?? ""}${err.stdout ?? ""}` || err.message)}`);
     }
   };
   return {

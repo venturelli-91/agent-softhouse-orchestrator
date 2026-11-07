@@ -23,7 +23,8 @@ test("review roles are read-only", () => {
 test("dev has no git push, rm -r or .env reading", () => {
   const a = claudeArgs({ role: "dev", schema }, "sys", env);
   const denied = a.slice(a.indexOf("--disallowedTools") + 1);
-  for (const t of [`${SHELL}(git push*)`, `${SHELL}(rm *)`, "Read(**/.env*)", "Write(**/.git/**)", `${SHELL}(npx*)`, "Read(~/.ssh/**)"]) assert.ok(denied.includes(t), t);
+  for (const t of [`${SHELL}(git push*)`, `${SHELL}(rm *)`, "Read(**/.env*)", "Write(**/.git/**)", `${SHELL}(npx*)`,
+    "Read(~/.ssh/**)"]) assert.ok(denied.includes(t), t);
   assert.ok(!PERMISSIONS.dev.allow.some((t) => t.includes("push")));
 });
 
@@ -60,7 +61,8 @@ test("loadPrompt strips the frontmatter and concatenates", () => {
   assert.match(p, /You are B\./);
 });
 
-const ok = { is_error: false, subtype: "success", structured_output: { ok: true }, num_turns: 2, total_cost_usd: 0.01, usage: { input_tokens: 1, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 } };
+const ok = { is_error: false, subtype: "success", structured_output: { ok: true }, num_turns: 2, total_cost_usd: 0.01, usage: { input_tokens: 1,
+  output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 } };
 
 test("valid output becomes a result with usage", () => {
   const r = parseOutput("qa", JSON.stringify(ok), schema, 5);
@@ -110,6 +112,7 @@ test("the docs role is read-only, keeps the secrets deny list, and its prompt ca
   assert.ok(!PERMISSIONS.docs.tools.some((t) => t === "Write" || t === "Edit"));
   assert.ok(PERMISSIONS.docs.deny.includes("Read(**/.env*)"));
   const prompt = loadPrompt(["docs"], join(import.meta.dirname, "..", "agents"));
-  for (const word of ["150", "CLAUDE.md", "not_applicable", "arquitetura", "backlog", "checklist", "design-patterns", "features", "testes", "trade-offs", "comunicacao", "aprendizados"])
+  for (const word of ["150", "CLAUDE.md", "not_applicable", "arquitetura", "backlog", "checklist", "design-patterns", "features", "testes",
+    "trade-offs", "comunicacao", "aprendizados"])
     assert.ok(prompt.includes(word), word);
 });

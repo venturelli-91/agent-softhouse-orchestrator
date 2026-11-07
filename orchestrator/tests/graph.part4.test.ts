@@ -33,7 +33,8 @@ test("a command deploy runs only after approval and ends in deployed with cmd se
   const d = readDeploy(process.env.ORCH_HOME!, "T-1");
   assert.equal(d.target, "command");
   assert.equal(d.sandbox, false);
-  assert.deepEqual(d.cmd, { rollback: "node --version", health_url: CMD_CFG.health_url, env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging", git_config_hash: end.git_config_hash });
+  assert.deepEqual(d.cmd, { rollback: "node --version", health_url: CMD_CFG.health_url, env: [], timeout_s: 30, max_latency_ms: 2000,
+    environment: "staging", git_config_hash: end.git_config_hash });
   assert.ok(end.evidence.some((e: string) => e.startsWith("deploy:")));
 });
 
@@ -56,7 +57,8 @@ test("the deploy command is not run when the approved commit cannot be checked o
 
 test("the approval request shows the deploy environment", async () => {
   const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: { ...CMD_CFG, environment: "production" } });
-  assert.deepEqual(paused(g.r)?.deploy, { target: "command", environment: "production", command: "node --version", rollback: "node --version", env: [], health_url: CMD_CFG.health_url });
+  assert.deepEqual(paused(g.r)?.deploy, { target: "command", environment: "production", command: "node --version", rollback: "node --version",
+    env: [], health_url: CMD_CFG.health_url });
 });
 
 test("the command runs in a checkout of the approved commit and the checkout is gone afterwards", async () => {
@@ -118,7 +120,8 @@ test("the brief (why, how, where it applies) is mandatory for the dev output and
 });
 
 test("a request that needs several commits is split into atomic tasks run one at a time, then reviewed as a whole", async () => {
-  knobs.override.triage = () => ({ title: "t", priority: "P2", specialty: "fullstack", clear: true, flags: FLAGS, criteria: ["c"], summary: "ok", split: ["engine and store", "API routes", "ops UI"] });
+  knobs.override.triage = () => ({ title: "t", priority: "P2", specialty: "fullstack", clear: true, flags: FLAGS, criteria: ["c"], summary: "ok",
+    split: ["engine and store", "API routes", "ops UI"] });
   const ctxs: string[] = [];
   let n = 0;
   knobs.override.dev = (req) => (ctxs.push(req.context), commit(req.cwd, "agent-dev"), n++, { summary: "ok", brief: BRIEF });
@@ -132,7 +135,8 @@ test("a request that needs several commits is split into atomic tasks run one at
 });
 
 test("a task that ends without a new commit is a failed revision, not progress", async () => {
-  knobs.override.triage = () => ({ title: "t", priority: "P2", specialty: "fullstack", clear: true, flags: FLAGS, criteria: ["c"], summary: "ok", split: ["one", "two"] });
+  knobs.override.triage = () => ({ title: "t", priority: "P2", specialty: "fullstack", clear: true, flags: FLAGS, criteria: ["c"], summary: "ok",
+    split: ["one", "two"] });
   let n = 0;
   knobs.override.dev = (req) => (++n === 1 ? commit(req.cwd, "agent-dev") : undefined, { summary: "ok", brief: BRIEF });
   const g = await start();

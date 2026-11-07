@@ -25,7 +25,8 @@ export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> 
     let opened: { incident: Incident; created: boolean };
     try {
       const live = listIncidents(home).find((i) => i.ticket === id && i.status !== "closed");
-      opened = live ? { incident: live.symptom === symptom ? live : updateIncident(home, live.id, { symptom }), created: false } : openIncident(home, id, symptom);
+      opened = live ? { incident: live.symptom === symptom ? live : updateIncident(home, live.id, { symptom }), created: false } : openIncident(home,
+        id, symptom);
     } catch (e) {
       if (isLimit(e)) continue;
       throw e;

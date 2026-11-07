@@ -40,7 +40,8 @@ const TRANSIENT = /api_error|overloaded|rate.?limit|429|529|503/i;
 const USAGE_LIMIT = /usage limit|hit your .*limit/i;
 
 // RETRY_DELAYS_MS="5000,20000" = up to two retries with those waits; empty disables.
-export async function withRetry<T>(fn: () => Promise<T>, delays = (process.env.RETRY_DELAYS_MS ?? "5000,20000").split(",").filter(Boolean).map(Number)): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>,
+  delays = (process.env.RETRY_DELAYS_MS ?? "5000,20000").split(",").filter(Boolean).map(Number)): Promise<T> {
   for (const wait of [...delays, null]) {
     try {
       return await fn();

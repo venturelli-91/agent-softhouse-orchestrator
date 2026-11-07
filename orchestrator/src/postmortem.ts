@@ -14,7 +14,8 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 export function writePostmortem(repo: string, incident: Incident, text: string, date = new Date()): string {
   const dir = join(repo, "playbooks");
   mkdirSync(dir, { recursive: true });
-  if (!lstatSync(dir).isDirectory() || !(realpathSync(dir) + sep).startsWith(realpathSync(repo) + sep)) throw new Error("playbooks must be a real directory inside the repo");
+  if (!lstatSync(dir).isDirectory() || !(realpathSync(dir) + sep).startsWith(realpathSync(repo)
+    + sep)) throw new Error("playbooks must be a real directory inside the repo");
   const first = (f: string) => readFileSync(join(dir, f), "utf8").split(/\r?\n/, 1)[0];
   const existing = readdirSync(dir, { withFileTypes: true }).find((e) => e.isFile() && e.name.endsWith(".md") && first(e.name) === marker(incident));
   if (existing) return join(dir, existing.name);
@@ -28,7 +29,8 @@ export function writePostmortem(repo: string, incident: Incident, text: string, 
 export async function proposePostmortem(incident: Incident, ctx: string): Promise<string> {
   const { output } = await runAgent({
     role: "knowledge", files: ["knowledge-manager"], cwd: process.cwd(), schema: z.object({ text: z.string() }),
-    context: `Incident ${incident.id} on ticket ${incident.ticket}: ${incident.symptom}\n\n${ctx}\n\nWrite the postmortem (what happened, impact, cause, fix, how to prevent it). Read-only. Answer in the structured format.`,
+    context: `Incident ${incident.id} on ticket ${incident.ticket}: ${incident.symptom}\n\n${ctx}\n\n` +
+      "Write the postmortem (what happened, impact, cause, fix, how to prevent it). Read-only. Answer in the structured format.",
   });
   return output.text;
 }

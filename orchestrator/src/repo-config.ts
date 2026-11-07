@@ -9,7 +9,8 @@ const plain = z.string().regex(/^[\w ./:=@-]+$/, "must be a plain command withou
 export const DeployConfig = z.object({
   command: plain,
   rollback: plain,
-  health_url: z.string().refine((u) => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol) && !new URL(u).username && !new URL(u).password, "health_url must be an http or https URL without credentials"),
+  health_url: z.string().refine((u) => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol) && !new URL(u).username && !new URL(u).password,
+    "health_url must be an http or https URL without credentials"),
   environment: z.enum(["staging", "production"]).default("staging"),
   env: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
   timeout_s: z.number().positive().max(3600).default(300),
@@ -82,7 +83,8 @@ export function bareNodeTest(repo: string): boolean {
   }
 }
 
-// The target repo rules: .claude/CLAUDE.md on disk, else the root CLAUDE.md from the base commit (a ticket cannot edit its own rules). `claude -p` with our flags
+// The target repo rules: .claude/CLAUDE.md on disk, else the root CLAUDE.md from the base commit (a ticket cannot edit its own rules). `claude -p`
+// with our flags
 // does not load it by itself, so the dev gets it in its context. Capped: it is paid for on every dev turn.
 export function loadConventions(repo: string, ref: string, max = 8000): string {
   // .claude/ is local only (never committed), so its CLAUDE.md is read from disk; the agent cannot edit it from its worktree.
@@ -93,7 +95,8 @@ export function loadConventions(repo: string, ref: string, max = 8000): string {
   try {
     // Only the .claude directory is listed (any case): a full listing can overflow the git output buffer on a big repo.
     const dirs = safeGit(repo, "ls-tree", "-z", "--name-only", ref).split("\0").filter((n) => n.toLowerCase() === ".claude");
-    tracked = dirs.some((d) => isRules(safeGit(repo, "ls-tree", "-r", "-z", "--name-only", ref, "--", d))) || isRules(safeGit(repo, "ls-files", "-z", "--", ":(icase).claude"));
+    tracked = dirs.some((d) => isRules(safeGit(repo, "ls-tree", "-r", "-z", "--name-only", ref, "--", d)))
+      || isRules(safeGit(repo, "ls-files", "-z", "--", ":(icase).claude"));
   } catch {
     tracked = true; // fail closed: if git cannot tell, do not trust the disk copy
   }

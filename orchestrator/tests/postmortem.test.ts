@@ -8,7 +8,8 @@ import { proposePostmortem, writePostmortem } from "../src/postmortem.ts";
 import { registerExecutor, type Req } from "../src/run-agent.ts";
 
 let repo = "";
-const inc = (id: string, symptom: string): Incident => ({ id, ticket: "T-1", symptom, status: "open", hotfix: "", rollback: "none", opened: "2026-11-02T00:00:00Z" });
+const inc = (id: string, symptom: string): Incident => ({ id, ticket: "T-1", symptom, status: "open", hotfix: "", rollback: "none",
+  opened: "2026-11-02T00:00:00Z" });
 const day = new Date("2026-11-02T12:00:00Z");
 beforeEach(() => void (repo = mkdtempSync(join(tmpdir(), "pm-"))));
 afterEach(() => rmSync(repo, { recursive: true, force: true }));
@@ -36,7 +37,8 @@ test("proposePostmortem uses the fake knowledge executor", async () => {
   registerExecutor("pm-fake", {
     async run<T>(req: Req<T>) {
       roles.push(req.role);
-      return { output: req.schema.parse({ text: "T-CANARY" }), usage: { tokens_in: 1, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 } };
+      return { output: req.schema.parse({ text: "T-CANARY" }), usage: { tokens_in: 1, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0,
+        turns: 1, ms: 1 } };
     },
   });
   process.env.EXECUTOR = "pm-fake";

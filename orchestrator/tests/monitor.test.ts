@@ -90,13 +90,15 @@ test("a healthy probe closes the incident", async () => {
 });
 
 test("a failing rollback command leaves the incident proposed and a retry succeeds", async () => {
-  const cmd = { rollback: "node --nonexistent-flag", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const, git_config_hash: "" };
+  const cmd = { rollback: "node --nonexistent-flag", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000,
+    environment: "staging" as const, git_config_hash: "" };
   recordDeploy(home, { id: "T-2", repo: process.cwd(), sha: "a", previous: "b", target: "command", sandbox: false, cmd });
   await watch(home, { ...deps(), probe: (_h, id) => (id === "T-2" ? "http 503" : null) });
   const id = listIncidents(home).find((i) => i.ticket === "T-2")!.id;
   assert.throws(() => approveRollback(home, id), /nonexistent-flag/);
   assert.equal(listIncidents(home).find((i) => i.id === id)!.rollback, "proposed");
-  recordDeploy(home, { id: "T-2", repo: process.cwd(), sha: "a", previous: "b", target: "command", sandbox: false, cmd: { ...cmd, rollback: "node --version" } });
+  recordDeploy(home, { id: "T-2", repo: process.cwd(), sha: "a", previous: "b", target: "command", sandbox: false, cmd: { ...cmd,
+    rollback: "node --version" } });
   approveRollback(home, id);
   assert.equal(listIncidents(home).find((i) => i.id === id)!.rollback, "done");
 });
@@ -120,7 +122,8 @@ test("a changed .git/config blocks the rollback until it is reviewed", async () 
   const root = mkdtempSync(join(tmpdir(), "mon-repo-"));
   try {
     const repo = createFixture(root);
-    const cmd = { rollback: "node --version", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const, git_config_hash: gitConfigHash(repo) };
+    const cmd = { rollback: "node --version", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000,
+      environment: "staging" as const, git_config_hash: gitConfigHash(repo) };
     recordDeploy(home, { id: "T-3", repo, sha: "a", previous: "b", target: "command", sandbox: false, cmd });
     await watch(home, { ...deps(), probe: (_h, id) => (id === "T-3" ? "http 503" : null) });
     const id = listIncidents(home).find((i) => i.ticket === "T-3")!.id;

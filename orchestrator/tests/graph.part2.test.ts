@@ -38,9 +38,12 @@ test("alerts flag stalled, looping, over-budget and escalated tickets, and skip 
   assert.match(found, /A \[P2\] approval for 36\.0h/);
   assert.match(found, /A review loop: 2\/3/);
   const usage = { tokens_in: 90, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 };
-  assert.match(alerts([t({ id: "B", status: "dev", history: [{ ...old[0], time: "2026-01-02T11:30:00Z", usage }] })], now, env).join(), /B token budget at 90%/);
-  assert.match(alerts([t({ id: "C", status: "escalated", summary: "qa: budget", history: [{ ...old[0], time: "2026-01-02T11:30:00Z" }] })], now, env).join(), /C escalated: qa: budget/);
-  assert.match(alerts([t({ id: "D", priority: "P0", status: "dev", history: [{ ...old[0], time: "2026-01-02T10:30:00Z" }] })], now, env).join(), /D \[P0\] dev for 1\.5h/);
+  assert.match(alerts([t({ id: "B", status: "dev", history: [{ ...old[0], time: "2026-01-02T11:30:00Z", usage }] })], now, env).join(),
+    /B token budget at 90%/);
+  assert.match(alerts([t({ id: "C", status: "escalated", summary: "qa: budget", history: [{ ...old[0], time: "2026-01-02T11:30:00Z" }] })], now,
+    env).join(), /C escalated: qa: budget/);
+  assert.match(alerts([t({ id: "D", priority: "P0", status: "dev", history: [{ ...old[0], time: "2026-01-02T10:30:00Z" }] })], now, env).join(),
+    /D \[P0\] dev for 1\.5h/);
 });
 
 test("merge=pr never merges; merge=auto merges the verified commit only after the CEO approves", async () => {

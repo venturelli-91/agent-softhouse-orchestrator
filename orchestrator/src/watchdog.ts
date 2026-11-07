@@ -9,7 +9,8 @@ const WatchdogOutput = z.object({ alerts: z.array(z.string()), summary: z.string
 export async function watchdog(tickets: z.infer<typeof Ticket>[], cwd: string) {
   const lines = tickets.map((t) => {
     const tok = t.history.reduce((a, h) => a + (h.usage ? tokens(h.usage) : 0), 0);
-    return `${t.id} [${t.priority}] status=${t.status} revisions=${t.revisions} tokens=${tok} last=${t.history.at(-1)?.node ?? "-"}:${t.history.at(-1)?.result ?? "-"}`;
+    const last = t.history.at(-1);
+    return `${t.id} [${t.priority}] status=${t.status} revisions=${t.revisions} tokens=${tok} last=${last?.node ?? "-"}:${last?.result ?? "-"}`;
   });
   const { output, usage } = await runAgent({
     role: "watchdog", files: ["watchdog"], cwd, schema: WatchdogOutput,
