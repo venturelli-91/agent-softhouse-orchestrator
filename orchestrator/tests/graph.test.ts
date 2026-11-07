@@ -10,7 +10,7 @@ import { createFixture, git } from "../scripts/fixture.ts";
 import { FileSaver } from "../src/file-saver.ts";
 import { readDeploy } from "../src/deploy.ts";
 import { gitConfigHash } from "../src/guardrails.ts";
-import { config, createWorktree, buildGraph, resume, DEV_RULES, deployTicket, Ticket } from "../src/graph.ts";
+import { config, createWorktree, buildGraph, report, resume, DEV_RULES, deployTicket, Ticket } from "../src/graph.ts";
 import { ciVerdict, registerPublisher } from "../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
 import { alerts, watchdog } from "../src/watchdog.ts";
@@ -18,6 +18,9 @@ import { alerts, watchdog } from "../src/watchdog.ts";
 type Behavior = Partial<Record<string, (req: Req<unknown>) => unknown>>;
 let override: Behavior = {};
 let calls: string[] = [];
+let docsCalls: string[] = [];
+let docsContexts: string[] = [];
+let afterFixture: ((repo: string) => void) | null = null;
 let tokensPerCall = 10;
 const roots: string[] = [];
 
@@ -35,6 +38,7 @@ const defaults: Behavior = {
   reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   watchdog: () => ({ alerts: ["T-1 stalled"], summary: "ok" }),
+  docs: () => ({ files: [], not_applicable: [], notes: "" }),
 };
 let publications: string[] = [];
 let merges: string[] = [];
@@ -50,7 +54,8 @@ registerPublisher("fake", {
 
 registerExecutor("fake", {
   async run<T>(req: Req<T>) {
-    calls.push(req.role);
+    if (req.role === "docs") (docsCalls.push(req.role), docsContexts.push(req.context));
+    else calls.push(req.role);
     const raw = (override[req.role] ?? defaults[req.role]!)(req as Req<unknown>);
     const output = req.schema.safeParse(raw);
     if (!output.success) throw new NodeFailure(`${req.role}: invalid output`);
@@ -70,6 +75,9 @@ beforeEach(() => {
   process.env.TOKEN_BUDGET_TICKET = "100000";
   override = {};
   calls = [];
+  docsCalls = [];
+  docsContexts = [];
+  afterFixture = null;
   tokensPerCall = 10;
 });
 afterEach(() => roots.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
@@ -78,6 +86,7 @@ async function start(id = "T-1", saver: MemorySaver = new MemorySaver(), extra: 
   const root = mkdtempSync(join(tmpdir(), "gt-"));
   roots.push(root);
   const repo = createFixture(root);
+  afterFixture?.(repo);
   if ("deploy_cfg" in extra) writeFileSync(join(process.env.ORCH_HOME!, "config.json"), JSON.stringify({ repos: { [resolve(repo)]: { deploy: extra.deploy_cfg } } }));
   const graph = buildGraph(saver);
   const cfg = config(id);
@@ -630,4 +639,52 @@ test("the token budget grows only with verified tasks, up to a fixed ceiling", a
   assert.match(String(budgetExceeded([u, u, u], env, 1)), /budget exceeded \(450 > 200\)/);
   assert.match(String(budgetExceeded([u], env, -3)), /budget exceeded \(150 > 100\)/);
   assert.match(String(budgetExceeded(Array(100).fill(u), env, 999)), /> 800\)/);
+});
+
+const DOC_FILE = { files: [{ path: "arquitetura/visao.md", content: "# Visao\n" }], not_applicable: [], notes: "" };
+
+test("docs run first and last, land in .claude/docs of the main checkout and never dirty it", async () => {
+  override = { docs: () => DOC_FILE };
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.equal(readFileSync(join(g.repo, ".claude", "docs", "arquitetura", "visao.md"), "utf8"), "# Visao\n");
+  assert.equal(git(g.repo, "status", "--porcelain"), "");
+  assert.equal(docsCalls.length, 2);
+  assert.match(docsContexts[0], /Mode: scan/);
+  assert.match(docsContexts[1], /commit:[0-9a-f]+/);
+  assert.match(docsContexts[1], /tests:npm test ok/);
+  assert.ok((g.r.history as { node: string }[]).filter((h) => h.node === "docs").length === 2);
+});
+
+test("a failing or invalid docs agent only adds warnings; the ticket still reaches approval", async () => {
+  for (const docs of [() => { throw new NodeFailure("boom"); }, () => ({ files: "nope" })]) {
+    override = { docs };
+    const g = await start();
+    assert.equal(paused(g.r)?.type, "approval");
+    const w = g.r.docs_warnings as string[];
+    assert.ok(w.some((x) => x.startsWith("start: ")) && w.some((x) => x.startsWith("end: ")), w.join("|"));
+    assert.match(report(Ticket.parse(g.r)), /docs/);
+  }
+});
+
+test("docs are not written when git would not ignore .claude", async () => {
+  afterFixture = (repo) => {
+    writeFileSync(join(repo, ".gitignore"), "!.claude/\n");
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "unignore");
+  };
+  override = { docs: () => DOC_FILE };
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.equal(existsSync(join(g.repo, ".claude", "docs", "arquitetura", "visao.md")), false);
+  assert.ok((g.r.docs_warnings as string[]).some((x) => /not ignored/.test(x)));
+  assert.equal(docsCalls.length, 0);
+});
+
+test("docs usage does not count against the ticket token budget", async () => {
+  tokensPerCall = 20;
+  process.env.TOKEN_BUDGET_TICKET = "90";
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.equal(g.r.status, "approval");
 });

@@ -10,6 +10,7 @@ import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } fr
 import { mergePr, publish } from "./publish.ts";
 import { DeployConfig, loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure, runAgent, type Usage } from "./run-agent.ts";
+import { coverage, docsMode, DocsOutput, ensureLocalOnly, snapshot, writeDocs } from "./docs.ts";
 
 const SPECIALTIES = ["frontend", "backend", "fullstack", "mobile", "integrations", "ai", "data"] as const;
 const DEV_FILE: Record<(typeof SPECIALTIES)[number], string> = {
@@ -73,6 +74,7 @@ export const Ticket = z.object({
   qa_id: z.string().nullable().default(null),
   revisions: z.number().default(0),
   evidence: z.array(z.string()).default([]),
+  docs_warnings: z.array(z.string()).default([]),
   history: z.array(z.object({ node: z.string(), time: z.string(), result: z.string(), ms: z.number(), usage: z.custom<Usage>().optional() })).default([]),
 });
 type T = z.infer<typeof Ticket>;
@@ -121,13 +123,45 @@ const escalate = (t: T, name: string, reason: string, usage?: Usage): Partial<T>
 // An executor failure (error, timeout, invalid output) or an exceeded budget does not break the graph:
 // the ticket stops and goes to the CEO via ceo_approval.
 const guarded = (name: string, fn: (t: T) => Promise<Partial<T>>) => async (t: T): Promise<Partial<T>> => {
-  const overrun = budgetExceeded(t.history.map((h) => h.usage), process.env, t.task_done);
+  const overrun = budgetExceeded(t.history.filter((h) => h.node !== "docs").map((h) => h.usage), process.env, t.task_done);
   if (overrun) return escalate(t, name, overrun);
   try {
     return await fn(t);
   } catch (e) {
     if (!(e instanceof NodeFailure)) throw e;
     return escalate(t, name, e.message, e.usage);
+  }
+};
+
+// Project docs under <repo>/.claude/docs (local only). Never blocks: every problem becomes a warning for `orch status`.
+// Docs usage is logged under node "docs" and left out of the ticket budget.
+const docsNode = (phase: "start" | "end") => async (t: T): Promise<Partial<T>> => {
+  const prefix = `${phase}: `;
+  const keep = t.docs_warnings.filter((w) => !w.startsWith(prefix));
+  const done = (warnings: string[], result: string, usage?: Usage): Partial<T> => ({ docs_warnings: [...keep, ...warnings.map((w) => prefix + w)], history: log(t, "docs", result, usage) });
+  try {
+    const repo = t.repo || repoOf(t.worktree);
+    const guard = ensureLocalOnly(repo);
+    if (guard) return done([guard], "skipped");
+    const mode = docsMode(repo);
+    const snap = snapshot(repo);
+    const facts = phase === "end"
+      ? [`Evidence: ${t.evidence.join(", ")}`, `Revisions: ${t.revisions}`, `Node history: ${t.history.map((h) => `${h.node}: ${h.result}`).join("; ")}`, `Diff stat:\n${sh(t.worktree, "diff", "--stat", t.base, "HEAD")}`, ticketData(t)]
+      : [];
+    const editable = Object.entries(snap.shown).map(([p, c]) => `### ${p}\n${c}`).join("\n") || "(none)";
+    const { output, usage } = await runAgent({
+      role: "docs", files: ["docs"], cwd: t.worktree, schema: DocsOutput,
+      context: [
+        phase === "start" ? "Phase: start. The CEO request just arrived: document the idea, scope and plan." : "Phase: end. The delivery is ready: record what was done, what worked and what failed, from the facts below.",
+        `Mode: ${mode}`, `CEO request: ${t.request}`, ...facts,
+        `Existing docs (path | title | lines):\n${snap.index || "(none)"}`,
+        `Contents you may edit:\n${editable}`,
+      ].join("\n\n"),
+    });
+    const w = writeDocs(repo, output, snap.seen, orchHome());
+    return done([...w.warnings, ...(phase === "end" ? coverage(repo) : [])], `${w.written.length} file(s) written`, usage);
+  } catch (e) {
+    return done([(e instanceof Error ? e.message : String(e)).slice(0, 200)], "failed");
   }
 };
 
@@ -343,13 +377,16 @@ const afterMerge = (t: T) => (t.status === "approved" ? "deploy" : "ceo_approval
 export function buildGraph(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
     .addNode("triage", triage).addNode("planner", planner).addNode("dev", dev).addNode("reviewer", reviewer).addNode("qa", qa).addNode("publish", publishNode).addNode("ceo_approval", ceoApproval).addNode("merge_pr", mergeNode).addNode("deploy", deploy)
-    .addEdge(START, "triage")
+    .addNode("docs_start", docsNode("start")).addNode("docs_end", docsNode("end"))
+    .addEdge(START, "docs_start")
+    .addEdge("docs_start", "triage")
     .addConditionalEdges("triage", afterTriage, ["dev", "planner", "ceo_approval"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "ceo_approval"])
     .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "reviewer")(t)), ["reviewer", "dev", "ceo_approval"])
     .addConditionalEdges("reviewer", route("qa", "qa"), ["qa", "dev", "ceo_approval"])
     .addConditionalEdges("qa", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
-    .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval"])
+    .addConditionalEdges("publish", route("approval", "docs_end"), ["docs_end", "dev", "ceo_approval"])
+    .addEdge("docs_end", "ceo_approval")
     .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "qa", "publish", "deploy", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["deploy", "ceo_approval"])
     .addEdge("deploy", END)
@@ -375,5 +412,5 @@ export function report(t: T): string {
     return `${h.node.padEnd(10)} tokens=${tokens(c)} (ctx ${c.cache_create + c.cache_read + c.tokens_in}, output ${c.tokens_out}) turns=${c.turns} ${(c.ms / 1000).toFixed(1)}s US$${c.cost_usd.toFixed(3)}`;
   });
   const total = t.history.reduce((a, h) => ({ tok: a.tok + (h.usage ? tokens(h.usage) : 0), usd: a.usd + (h.usage?.cost_usd ?? 0), ms: a.ms + h.ms }), { tok: 0, usd: 0, ms: 0 });
-  return [...lines, `TOTAL ${t.id} status=${t.status} revisions=${t.revisions} tokens=${total.tok} ${(total.ms / 1000).toFixed(1)}s US$${total.usd.toFixed(3)}`].join("\n");
+  return [...lines, ...t.docs_warnings.map((w) => `docs warning: ${w}`), `TOTAL ${t.id} status=${t.status} revisions=${t.revisions} tokens=${total.tok} ${(total.ms / 1000).toFixed(1)}s US$${total.usd.toFixed(3)}`].join("\n");
 }
