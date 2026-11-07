@@ -55,7 +55,7 @@ They are local to the CEO's machine: git receives the project, not the specs.
 ## Design
 
 New role `docs` (read-only, `Role` type, `PERMISSIONS`, env keys `MODEL_DOCS`, `EFFORT_DOCS`,
-`TURNS_DOCS`, `TURNS_DOCS_SCAN`). One agent prompt, `agents/docs.md`. Output schema:
+`TURNS_DOCS`). One agent prompt, `agents/docs.md`. Output schema:
 `{ files: [{ path, content }], not_applicable: [{ topic, reason }], notes }`.
 
 Graph: `START -> docs_start -> triage` and `publish -> docs_end -> ceo_approval`. Both are the same
@@ -96,7 +96,7 @@ under node `docs` and excluded from the per-ticket token budget so documentation
   language of the request, or of existing docs).
 - How the agent reads existing docs (pass contents within a cap, or read access to the docs dir); it
   must not gain write access and the `SECRETS` deny list still applies.
-- Defaults for `MODEL_DOCS` (cheaper) and `TURNS_DOCS`/`TURNS_DOCS_SCAN` in `.env.example`.
+- Defaults for `MODEL_DOCS` (cheaper) and `TURNS_DOCS` in `.env.example`.
 - Tests: the writer (traversal, symlink, length, count, size, concurrent-hash skip), mode detection,
   coverage, node never blocking with a failing fake executor, `CLAUDE.md` load order, gitignore guard.
 - README and `docs/` updates in `orchestrator/`.
@@ -106,6 +106,6 @@ under node `docs` and excluded from the per-ticket token budget so documentation
 - Ignore via `.git/info/exclude`, not the repo's `.gitignore`: editing `.gitignore` dirties the main
   checkout, which `merge: local` refuses, and it would be a host-repo change to commit.
 - A file over 150 lines is rejected and warned, not truncated or split.
-- Docs usage excluded from the ticket budget; cheaper model for updates, default model for the scan.
+- Docs usage excluded from the ticket budget; one `MODEL_DOCS` (cheaper default) and one `TURNS_DOCS` for every mode, tuned by env (no separate scan settings: YAGNI).
 - The graph never writes `CLAUDE.md`; root `CLAUDE.md` is a fallback, never moved.
 - Stale-write protection by content hash, skipping the file, not merging.
