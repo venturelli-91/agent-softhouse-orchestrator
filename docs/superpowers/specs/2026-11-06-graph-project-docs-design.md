@@ -1,0 +1,111 @@
+# Graph-written project docs in `.claude/` (design)
+
+## Intent
+
+The CEO wants to understand, months later, what the graph built and why, so they can reuse it or
+explain it in meetings to teammates, leaders and stakeholders, without rereading code. The docs are
+also the running record of the work: they start at the first prompt, while the graph is still
+thinking about the idea, and are updated as the ticket moves, including what worked and what failed.
+They are local to the CEO's machine: git receives the project, not the specs.
+
+## Goals
+
+- Every ticket run creates or updates a spec under `<repo>/.claude/docs/`, written by the graph, not by hand.
+- The docs node runs first (before triage) and last (after publish, before the CEO approval).
+- One directory per topic, `.md` files of at most 150 lines each, readable on their own.
+- The graph chooses the directories for the project, but a minimum set of topics is mandatory:
+  architecture, backlog, checklist, design patterns, features, tests, trade-offs, communication
+  (team, leaders, stakeholders), and learnings (what worked, what went wrong). Each topic either has
+  a directory with at least one file or an explicit "not applicable, because ..." entry.
+- First run on a repo with code: scan the project as it is and document it, then decide what to do.
+  Empty repo: structure everything from the request.
+- `.claude/` is never committed; `CLAUDE.md` is read from `.claude/CLAUDE.md`.
+
+## Non-goals
+
+- Versioning or backing up the docs (they are local by decision; a backup is the CEO's call).
+- A review or approval step for the docs, or translating existing docs.
+- Moving, deleting or rewriting a repo's root `CLAUDE.md`.
+
+## Anti-goals (a failure even if it "works")
+
+- The docs node blocks, escalates or fails a ticket. Any docs problem is a warning, never a stop.
+- Anything the agent produced gets written outside `.claude/docs/`, or lands in a commit or PR.
+- The docs state facts the code did not witness: "what worked" and "what failed" must cite evidence
+  the graph holds (commit, test result, reviewer and QA verdicts, revision count).
+- The agent writes `CLAUDE.md`: it is the rules channel to the dev, so the agent that reads the code
+  must not be the one who sets those rules.
+
+## Constraints
+
+- Agents are read-only and return structured JSON (`Role` permissions in `src/guardrails.ts`). The
+  docs agent keeps that: it returns file contents and code writes them. The new role gets no `Write`/`Edit`.
+- Docs live in the main checkout, not in the ticket worktree (the worktree is committed to a branch).
+- Up to 5 tickets run at once and all share one docs tree.
+- The daily token cap and secrets deny list apply to the new role like any other.
+
+## Decisions (CEO)
+
+- `.claude/` is local only; `CLAUDE.md` always lives in `.claude/`.
+- Topic directories are chosen by the graph, with the mandatory minimum above and nothing worth documenting skipped.
+- Docs problems warn in `orch status`; they never block a ticket.
+- Existing code is scanned on the first run; empty repos are structured from scratch.
+- Docs record what happened and what was thought, not only the current state.
+
+## Design
+
+New role `docs` (read-only, `Role` type, `PERMISSIONS`, env keys `MODEL_DOCS`, `EFFORT_DOCS`,
+`TURNS_DOCS`, `TURNS_DOCS_SCAN`). One agent prompt, `agents/docs.md`. Output schema:
+`{ files: [{ path, content }], not_applicable: [{ topic, reason }], notes }`.
+
+Graph: `START -> docs_start -> triage` and `publish -> docs_end -> ceo_approval`. Both are the same
+node function with a phase argument. The node never throws: failures, a reached daily cap and
+validation rejections are appended to a new state field `docs_warnings`, and the ticket continues.
+
+`docs_start` context: the request, the mode, the list of existing docs (path, first heading, line
+count) and how to read the ones it wants to update. Modes: `scan` (no `.md` under `.claude/docs/` and
+the repo has tracked code), `greenfield` (no tracked code besides `orchestrator/`, `.orchestrator.json`,
+`.gitignore`, README), `update` (docs exist). Code decides the mode, not the agent.
+`docs_end` context: code-held facts (final commit, tests result, reviewer and QA verdicts, revisions,
+node history, diff stat) and the instruction to anchor "worked/failed" sections to them.
+
+Code-side writer, a pure and testable function, runs on the agent's output:
+- path is relative, normalized, ends in `.md`, no `..`, no absolute path, depth at most 3 below docs;
+- a file over 150 lines is rejected (the previous version stays) and warned;
+- at most 40 files and 200 KB per call;
+- refuse any path whose existing components under `.claude/` are symlinks (`lstat`);
+- write to a temp file and rename; take a lock on `ORCH_HOME/docs.lock` while writing;
+- for an existing file, write only if its on-disk hash still equals the hash of the content the agent
+  was shown; otherwise skip that file and warn (a concurrent ticket changed it);
+- `README.md` index is generated by code from what is on disk plus the `not_applicable` entries;
+- coverage check: every mandatory topic has a directory or a `not_applicable` entry, otherwise warn.
+
+Local-only guard (`ensureClaudeDir`): create `.claude/docs/`, then make git ignore `.claude/`. Check
+with `git check-ignore -q`; if the docs path is not ignored after that, the node writes nothing and
+warns (fail safe: never produce files that could be committed).
+
+`CLAUDE.md`: `loadConventions` reads `<repo>/.claude/CLAUDE.md` from disk first, then falls back to the
+committed root `CLAUDE.md` at the base commit. Capped at 8000 chars as today. The graph never writes it.
+
+Warnings surface in `orch status <id>` and as a `docs!` marker in the ticket list. Docs usage is logged
+under node `docs` and excluded from the per-ticket token budget so documentation cannot starve the dev.
+
+## Left to the builder
+
+- Exact agent prompt text and mandatory-topic directory slugs (Portuguese or English; follow the
+  language of the request, or of existing docs).
+- How the agent reads existing docs (pass contents within a cap, or read access to the docs dir); it
+  must not gain write access and the `SECRETS` deny list still applies.
+- Defaults for `MODEL_DOCS` (cheaper) and `TURNS_DOCS`/`TURNS_DOCS_SCAN` in `.env.example`.
+- Tests: the writer (traversal, symlink, length, count, size, concurrent-hash skip), mode detection,
+  coverage, node never blocking with a failing fake executor, `CLAUDE.md` load order, gitignore guard.
+- README and `docs/` updates in `orchestrator/`.
+
+## Calls made without the CEO (to check)
+
+- Ignore via `.git/info/exclude`, not the repo's `.gitignore`: editing `.gitignore` dirties the main
+  checkout, which `merge: local` refuses, and it would be a host-repo change to commit.
+- A file over 150 lines is rejected and warned, not truncated or split.
+- Docs usage excluded from the ticket budget; cheaper model for updates, default model for the scan.
+- The graph never writes `CLAUDE.md`; root `CLAUDE.md` is a fallback, never moved.
+- Stale-write protection by content hash, skipping the file, not merging.
