@@ -94,16 +94,14 @@ async function locked(id: string, fn: () => Promise<void>) {
 }
 const DONE = ["simulated_deploy", "deployed", "aborted"];
 
-// A bare `node --test` scans the whole tree, so it would also run orchestrator/tests inside every ticket worktree: scope it to the repo's own test dir.
-function scopedTest(repo: string): string {
+// A bare `node --test` scans the whole tree, so it would also run orchestrator/tests inside every ticket worktree. `test` cannot hold the glob that scopes it
+// (no `*` allowed), so init only warns.
+function bareNodeTest(repo: string): boolean {
   try {
-    const script = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).scripts?.test;
-    if (typeof script !== "string" || !/^node\s+--test(\s+--[\w-]+)*\s*$/.test(script)) return "npm test";
-    const dir = ["tests", "test"].find((d) => existsSync(join(repo, d)));
-    if (dir) return `${script.trim()} ${dir}`;
-    console.warn('package.json "test" is a bare `node --test` and no tests/ or test/ dir was found: scope it by hand, or it will also run orchestrator/tests');
-  } catch {}
-  return "npm test";
+    return /^node\s+--test(\s+--[\w-]+)*\s*$/.test(JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).scripts?.test);
+  } catch {
+    return false;
+  }
 }
 
 if (cmd === "init") {
@@ -111,9 +109,9 @@ if (cmd === "init") {
   const file = join(repo, ".orchestrator.json");
   if (existsSync(file)) console.log(`${file} already exists`);
   else {
-    const test = scopedTest(repo);
-    writeFileSync(file, `${JSON.stringify({ test, merge: "pr" }, null, 2)}\n`);
-    console.log(`wrote ${file} (test: "${test}"): check the test command, then commit it (it is read from the base commit)`);
+    writeFileSync(file, `${JSON.stringify({ test: "npm test", merge: "pr" }, null, 2)}\n`);
+    console.log(`wrote ${file}: set "test" to the repo's test command, then commit it (it is read from the base commit)`);
+    if (bareNodeTest(repo)) console.warn('warning: package.json "test" is a bare `node --test`: it will also run orchestrator/tests in every ticket worktree. Point "test" at an npm script that scopes it.');
   }
   if (!existsSync(join(repo, ".claude", "CLAUDE.md")) && !existsSync(join(repo, "CLAUDE.md"))) console.log("no .claude/CLAUDE.md: the dev will have no repo conventions (commit format, style)");
   console.log(ensureLocalOnly(repo) ?? `${join(repo, ".claude", "docs")} ready and ignored by git: the graph writes the project docs there`);
