@@ -80,10 +80,12 @@ export function loadConventions(repo: string, ref: string, max = 8000): string {
   // A copy committed at the base commit went through a PR, not through the CEO's own disk: it is not trusted over the root file.
   // Matched case-insensitively (the disk read is) and against the index too, in case another ticket merged it after this base was cut.
   const isRules = (names: string) => names.split("\0").some((n) => n.toLowerCase() === ".claude/claude.md");
-  let tracked = false;
+  let tracked: boolean;
   try {
     tracked = isRules(safeGit(repo, "ls-tree", "-r", "-z", "--name-only", ref)) || isRules(safeGit(repo, "ls-files", "-z"));
-  } catch {}
+  } catch {
+    tracked = true; // fail closed: if git cannot tell, do not trust the disk copy
+  }
   try {
     const local = join(repo, ".claude", "CLAUDE.md");
     if (!tracked && !lstatSync(join(repo, ".claude")).isSymbolicLink() && lstatSync(local).isFile()) return readFileSync(local, "utf8").slice(0, max);

@@ -63,6 +63,15 @@ test("a .claude/CLAUDE.md committed at the base is ignored and the root file is 
   rmSync(d, { recursive: true, force: true });
 });
 
+test("an unresolvable ref fails closed: the disk copy is not trusted", () => {
+  const d = mkdtempSync(join(tmpdir(), "conv-"));
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: d });
+  mkdirSync(join(d, ".claude"));
+  writeFileSync(join(d, ".claude", "CLAUDE.md"), "local rules");
+  assert.equal(loadConventions(d, "no-such-ref"), "");
+  rmSync(d, { recursive: true, force: true });
+});
+
 test("a symlinked .claude/CLAUDE.md is ignored and the committed root file is used", (t) => {
   const d = mkdtempSync(join(tmpdir(), "conv-"));
   const outside = join(mkdtempSync(join(tmpdir(), "conv-out-")), "secret.md");
