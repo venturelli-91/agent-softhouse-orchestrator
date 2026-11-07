@@ -103,3 +103,13 @@ test("a run that hit the turn limit still reports what it spent", () => {
     assert.equal(e.usage?.ms, 7);
   }
 });
+
+test("the docs role is read-only, keeps the secrets deny list, and its prompt carries the rules", () => {
+  const args = claudeArgs({ role: "docs", schema }, "sys", env);
+  assert.equal(args[args.indexOf("--tools") + 1], "Read,Grep,Glob");
+  assert.ok(!PERMISSIONS.docs.tools.some((t) => t === "Write" || t === "Edit"));
+  assert.ok(PERMISSIONS.docs.deny.includes("Read(**/.env*)"));
+  const prompt = loadPrompt(["docs"], join(import.meta.dirname, "..", "agents"));
+  for (const word of ["150", "CLAUDE.md", "not_applicable", "arquitetura", "backlog", "checklist", "design-patterns", "features", "testes", "trade-offs", "comunicacao", "aprendizados"])
+    assert.ok(prompt.includes(word), word);
+});
