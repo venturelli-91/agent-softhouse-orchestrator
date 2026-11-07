@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git } from "../scripts/fixture.ts";
@@ -11,9 +11,11 @@ import { applyTeam, proposeTeam } from "../src/team.ts";
 const proposal = { specialties: ["frontend", "backend"], stack: "Next.js + Postgres", existing_stack: true, test: "npm test", rationale: "already there" };
 const usage = { tokens_in: 1, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 };
 let seen = "";
+let sawUntracked = true;
 registerExecutor("fake-team", {
   async run<T>(req: Req<T>) {
     seen = req.context;
+    sawUntracked = existsSync(join(req.cwd, "untracked.txt"));
     return { output: req.schema.parse(proposal), usage };
   },
 });
@@ -26,9 +28,11 @@ test("the agents propose a team and stack; applying keeps what the config alread
     writeFileSync(join(d, ".orchestrator.json"), JSON.stringify({ merge: "local", test: "node -e 0" }));
     git(d, "add", "-A");
     git(d, "commit", "-qm", "base");
+    writeFileSync(join(d, "untracked.txt"), "x");
     const p = await proposeTeam(d, "a checkout page with an orders API");
     assert.match(seen, /checkout page/);
     assert.match(seen, /respect it/);
+    assert.equal(sawUntracked, false);
     applyTeam(d, p);
     assert.deepEqual(JSON.parse(readFileSync(join(d, ".orchestrator.json"), "utf8")), {
       merge: "local", test: "node -e 0", specialties: ["frontend", "backend"], stack: "Next.js + Postgres",

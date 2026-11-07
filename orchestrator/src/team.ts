@@ -1,7 +1,10 @@
 // The agents decide the team and the stack for a need; the CEO confirms before anything is written to the repo config.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { safeGit } from "./guardrails.ts";
 import { runAgent } from "./run-agent.ts";
 import { SPECIALTIES } from "./specialties.ts";
 
