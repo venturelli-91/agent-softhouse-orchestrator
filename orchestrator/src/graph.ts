@@ -61,7 +61,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties } = loadRepoConfig(repo, base, home);
+  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties, stack } = loadRepoConfig(repo, base, home);
   if (install) installDeps(dir);
   return {
     worktree: dir,
@@ -76,7 +76,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
     base_repo,
     disclosure,
     base_branch,
-    rules: loadConventions(repo, base),
+    rules: [loadConventions(repo, base), stack && `Stack decided for this repo: ${stack}`].filter(Boolean).join("\n\n"),
     deploy_cfg: deploy,
     specialties,
     ...(deploy ? { deploy_target: "command" } : {}),

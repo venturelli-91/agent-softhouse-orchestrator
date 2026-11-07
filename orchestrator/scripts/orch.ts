@@ -3,6 +3,8 @@
 // State lives in ORCH_HOME (default ./.state, gitignored), one tickets/<id>.json per ticket.
 //   orch init [repo] [--team <all|web|api|mobile|ai>]   write .orchestrator.json (commit it) with that team's specialties,
 //                               and check for CLAUDE.md
+//   orch team "<need>" [--repo <path>] [--yes]   agents propose the team and the stack (respecting an existing one); confirm to write
+//                               them to .orchestrator.json
 //   orch run "<request>" [--repo <path>] [--id <id>]
 //   orch status [id]            all tickets, or one with its pending question
 //   orch approve <id> [text]    approve; for an escalation, text is the answer (e.g. retry, a clarification)
@@ -19,7 +21,7 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { approve, reject, resumeRun, run } from "./orch/flow.ts";
-import { clean, init, status } from "./orch/admin.ts";
+import { clean, init, status, team } from "./orch/admin.ts";
 import { type Ctx, die, makeCtx } from "./orch/ctx.ts";
 import { chaos, resolveByHand, rollback, watchDeployed } from "./orch/ops.ts";
 
@@ -28,10 +30,10 @@ if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
 process.env.AGENTS_DIR = resolve(ROOT, process.env.AGENTS_DIR ?? "agents");
 
 const commands: Record<string, (c: Ctx) => void | Promise<void>> = {
-  init, run, status, continue: resumeRun, approve, reject, clean, watch: watchDeployed, resolve: resolveByHand, chaos, rollback,
+  init, team, run, status, continue: resumeRun, approve, reject, clean, watch: watchDeployed, resolve: resolveByHand, chaos, rollback,
 };
 
 const ctx = makeCtx(process.argv.slice(2), resolve(ROOT, ".."));
 const command = ctx.cmd !== undefined && Object.hasOwn(commands, ctx.cmd) ? commands[ctx.cmd] : undefined;
 if (command) await command(ctx);
-else die("usage: orch init | run | status | continue | approve | reject | clean | watch | chaos | rollback | resolve");
+else die("usage: orch init | team | run | status | continue | approve | reject | clean | watch | chaos | rollback | resolve");

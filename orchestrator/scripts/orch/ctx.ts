@@ -20,7 +20,7 @@ export function makeCtx(argv: string[], host: string) {
     args: rest, allowPositionals: true,
     options: {
       repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" },
-      remote: { type: "boolean" }, clear: { type: "boolean" }, "config-reviewed": { type: "boolean" }, team: { type: "string" },
+      remote: { type: "boolean" }, clear: { type: "boolean" }, "config-reviewed": { type: "boolean" }, team: { type: "string" }, yes: { type: "boolean" },
     },
   });
 
