@@ -1,3 +1,4 @@
+import { SPECIALTIES } from "../src/specialties.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -22,10 +23,10 @@ function repo(config?: string) {
 test("the config comes from the base commit, with safe defaults", () => {
   const none = repo();
   assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null });
+    install: false, deploy: null, specialties: [...SPECIALTIES] });
   const some = repo('{"test":"pytest -q","merge":"auto"}');
   assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null });
+    install: false, deploy: null, specialties: [...SPECIALTIES] });
   // an uncommitted edit of the file does not count
   writeFileSync(join(some.d, ".orchestrator.json"), '{"test":"rm -rf x"}');
   assert.equal(loadRepoConfig(some.d, some.base).test, "pytest -q");

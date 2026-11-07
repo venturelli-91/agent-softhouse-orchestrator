@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Daily-use CLI over the graph. Drop-in: copy this folder into a repo and it works on that repo (the folder's parent).
 // State lives in ORCH_HOME (default ./.state, gitignored), one tickets/<id>.json per ticket.
-//   orch init [repo]            write .orchestrator.json (commit it) and check for CLAUDE.md
+//   orch init [repo] [--team <all|web|api|mobile|ai>]   write .orchestrator.json (commit it) with that team's specialties,
+//                               and check for CLAUDE.md
 //   orch run "<request>" [--repo <path>] [--id <id>]
 //   orch status [id]            all tickets, or one with its pending question
 //   orch approve <id> [text]    approve; for an escalation, text is the answer (e.g. retry, a clarification)

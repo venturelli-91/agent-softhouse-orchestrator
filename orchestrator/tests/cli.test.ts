@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -52,6 +52,24 @@ test("orch reject sends the ticket back and it returns for approval; approve the
     const again = sb.orch("approve", "T-1");
     assert.equal(again.code, 1);
     assert.match(again.out, /T-1 is not waiting for an answer/);
+  } finally {
+    sb.done();
+  }
+});
+
+test("orch init --team writes that team's specialties, refuses an unknown team and never overwrites an existing config", () => {
+  const sb = sandbox();
+  try {
+    const bad = sb.orch("init", sb.repo, "--team", "nope");
+    assert.equal(bad.code, 1);
+    assert.match(bad.out, /unknown team nope: all, web, api, mobile, ai/);
+    const web = sb.orch("init", sb.repo, "--team", "web");
+    assert.equal(web.code, 0, web.out);
+    const file = join(sb.repo, ".orchestrator.json");
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).specialties, ["frontend", "fullstack"]);
+    const again = sb.orch("init", sb.repo, "--team", "api");
+    assert.match(again.out, /already exists: set "specialties" there by hand/);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).specialties, ["frontend", "fullstack"]);
   } finally {
     sb.done();
   }

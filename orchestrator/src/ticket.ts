@@ -1,17 +1,10 @@
 import { z } from "zod";
 import { DeployConfig } from "./repo-config.ts";
 import type { Usage } from "./run-agent.ts";
+import { SPECIALTIES } from "./specialties.ts";
 
-export const SPECIALTIES = ["frontend", "backend", "fullstack", "mobile", "integrations", "ai", "data"] as const;
-export const DEV_FILE: Record<(typeof SPECIALTIES)[number], string> = {
-  frontend: "dev-frontend",
-  backend: "dev-backend",
-  fullstack: "dev-fullstack",
-  mobile: "dev-mobile",
-  integrations: "dev-integrations",
-  ai: "ai-engineer",
-  data: "data-engineer",
-};
+export { DEV_FILE, SPECIALTIES } from "./specialties.ts";
+
 export const summary = z.string().describe("at most 10 lines");
 export const cap = (s: string) => s.split("\n").slice(0, 10).join("\n");
 export const FlagsSchema = z.object({
@@ -60,6 +53,7 @@ export const Ticket = z.object({
   title: z.string().default(""),
   priority: z.enum(["P0", "P1", "P2", "Bug"]).default("P2"),
   specialty: z.enum(SPECIALTIES).default("fullstack"),
+  specialties: z.array(z.enum(SPECIALTIES)).default([...SPECIALTIES]),
   flags: FlagsSchema.default(EMPTY_FLAGS),
   criteria: z.array(z.string()).default([]),
   status: z.string().default("new"),
