@@ -119,7 +119,8 @@ test("an explanation from a superseded commit does not reach the approval reques
   let r = 0, q = 0;
   knobs.override = {
     reviewer: () => ({ verdict: "approved", comments: "", summary: "ok", explanation: `R${++r}-EXPL` }),
-    qa: () => (++q === 1 ? { verdict: "rejected", comments: "no", summary: "no" } : { verdict: "approved", comments: "", summary: "ok", explanation: "Q2-EXPL" }),
+    qa: () => (++q === 1 ? { verdict: "rejected", comments: "no", summary: "no" } : { verdict: "approved", comments: "", summary: "ok",
+      explanation: "Q2-EXPL" }),
   };
   const g = await start();
   const expl = String(paused(g.r)?.explanation);

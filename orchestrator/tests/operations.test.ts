@@ -18,7 +18,8 @@ import { writePostmortem } from "../src/postmortem.ts";
 import { registerPublisher } from "../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../src/run-agent.ts";
 
-const FLAGS = { touches_security: false, touches_performance: false, touches_ai: false, touches_schema: false, touches_public_api: false, touches_permissions: false, touches_external_integration: false, touches_cost: false };
+const FLAGS = { touches_security: false, touches_performance: false, touches_ai: false, touches_schema: false, touches_public_api: false,
+  touches_permissions: false, touches_external_integration: false, touches_cost: false };
 const triage = { title: "t", priority: "P2", specialty: "frontend", clear: true, flags: FLAGS, criteria: ["button says Submit order"], summary: "ok" };
 const out: Record<string, (req: Req<unknown>) => unknown> = {
   triage: () => triage,
@@ -117,7 +118,8 @@ test("a command deploy with a failing health url opens one hotfix and rolls back
   try {
     const repo = createFixture(root);
     const health_url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/health`;
-    const deploy_cfg = { command: "node --version", rollback: "node --version", health_url, environment: "staging", env: [], timeout_s: 30, max_latency_ms: 30000 };
+    const deploy_cfg = { command: "node --version", rollback: "node --version", health_url, environment: "staging", env: [], timeout_s: 30,
+      max_latency_ms: 30000 };
     const { done } = await deliver(repo, "T-1", { deploy_target: "command", deploy_cfg });
     assert.equal(done.status, "deployed");
 
@@ -151,7 +153,8 @@ test("a command deploy with a failing health url opens one hotfix and rolls back
 });
 
 test("chaos is refused on a command deploy", () => {
-  const cmd = { rollback: "x", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const, git_config_hash: "" };
+  const cmd = { rollback: "x", health_url: "http://127.0.0.1:1/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const,
+    git_config_hash: "" };
   recordDeploy(home, { id: "T-8", repo: "/r", sha: "a", previous: "b", target: "command", sandbox: false, cmd });
   assert.throws(() => injectFailure(home, "T-8", "http-500"), /sandbox/);
 });

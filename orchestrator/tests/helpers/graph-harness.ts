@@ -10,8 +10,9 @@ import { config, createWorktree, buildGraph, resume, Ticket } from "../../src/gr
 import { registerPublisher } from "../../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../../src/run-agent.ts";
 import { alerts, watchdog } from "../../src/watchdog.ts";
+import { BRIEF, type Behavior, commit, defaults, FLAGS } from "./fakes.ts";
 
-export type Behavior = Partial<Record<string, (req: Req<unknown>) => unknown>>;
+export { BRIEF, type Behavior, commit, defaults, FLAGS };
 
 export const knobs = {
   override: {} as Behavior,
@@ -26,26 +27,6 @@ export const knobs = {
 };
 
 export const roots: string[] = [];
-
-export const BRIEF = { why: "the goal of the ticket", how: "small focused change", where: "only the touched module" };
-
-export const FLAGS = { touches_security: false, touches_performance: false, touches_ai: false, touches_schema: false, touches_public_api: false, touches_permissions: false, touches_external_integration: false, touches_cost: false };
-
-export const commit = (cwd: string, author: string, file = "checkout.html", content = "<button>Submit order</button>\n") => {
-  writeFileSync(join(cwd, file), content);
-  git(cwd, "add", "-A");
-  git(cwd, "-c", `user.name=${author}`, "commit", "-q", "--allow-empty", "-m", "dev");
-};
-
-export const defaults: Behavior = {
-  triage: () => ({ title: "t", priority: "P2", specialty: "frontend", clear: true, flags: FLAGS, criteria: ["button says Submit order"], summary: "ok" }),
-  planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), question: "" }),
-  dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF }),
-  reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
-  qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),
-  watchdog: () => ({ alerts: ["T-1 stalled"], summary: "ok" }),
-  docs: () => ({ files: [], not_applicable: [], notes: "" }),
-};
 
 registerPublisher("fake", {
   publish: (p) => (knobs.publications.push(`${p.id}@${p.sha}`), "pr:https://example/pull/1"),
@@ -93,7 +74,8 @@ export async function start(id = "T-1", saver: MemorySaver = new MemorySaver(), 
   roots.push(root);
   const repo = createFixture(root);
   knobs.afterFixture?.(repo);
-  if ("deploy_cfg" in extra) writeFileSync(join(process.env.ORCH_HOME!, "config.json"), JSON.stringify({ repos: { [resolve(repo)]: { deploy: extra.deploy_cfg } } }));
+  if ("deploy_cfg" in extra) writeFileSync(join(process.env.ORCH_HOME!, "config.json"),
+    JSON.stringify({ repos: { [resolve(repo)]: { deploy: extra.deploy_cfg } } }));
   const graph = buildGraph(saver);
   const cfg = config(id);
   const r = await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, "wt")), ...extra }, cfg);
@@ -116,9 +98,11 @@ export const reviewerFailsOnce = () => {
   };
 };
 
-export const CMD_CFG = { command: "node --version", rollback: "node --version", health_url: "http://127.0.0.1:1/health", environment: "staging", env: [], timeout_s: 30, max_latency_ms: 2000 };
+export const CMD_CFG = { command: "node --version", rollback: "node --version", health_url: "http://127.0.0.1:1/health", environment: "staging",
+  env: [], timeout_s: 30, max_latency_ms: 2000 };
 
-export const writeExternal = (repo: string, deploy: object) => writeFileSync(join(process.env.ORCH_HOME!, "config.json"), JSON.stringify({ repos: { [resolve(repo)]: { deploy } } }));
+export const writeExternal = (repo: string, deploy: object) => writeFileSync(join(process.env.ORCH_HOME!, "config.json"),
+  JSON.stringify({ repos: { [resolve(repo)]: { deploy } } }));
 
 export async function commandTicket(cfgOver: object = {}) {
   const root = mkdtempSync(join(tmpdir(), "gt-"));
@@ -127,7 +111,8 @@ export async function commandTicket(cfgOver: object = {}) {
   const cfg = { ...CMD_CFG, ...cfgOver };
   writeExternal(repo, cfg);
   const sha = git(repo, "rev-parse", "HEAD");
-  const t = Ticket.parse({ id: "T-1", request: "p", worktree: repo, repo, base: sha, approved_sha: sha, git_config_hash: gitConfigHash(repo), deploy_target: "command", deploy_cfg: cfg });
+  const t = Ticket.parse({ id: "T-1", request: "p", worktree: repo, repo, base: sha, approved_sha: sha, git_config_hash: gitConfigHash(repo),
+    deploy_target: "command", deploy_cfg: cfg });
   return { t, repo, root, sha };
 }
 

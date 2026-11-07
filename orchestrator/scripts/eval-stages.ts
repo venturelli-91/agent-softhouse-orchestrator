@@ -37,11 +37,18 @@ const Dev = z.object({ summary: z.string().describe("at most 10 lines") });
 type Exp = { clear: boolean; priority?: string; specialty?: string; flag?: keyof z.infer<typeof Flags> };
 const requests: { text: string; exp: Exp }[] = [
   { text: "Change the checkout button label from 'Submit' to 'Submit order'.", exp: { clear: true, specialty: "frontend", priority: "P2" } },
-  { text: "Production is down: no customer can log in since the last deploy (POST /login returns 500). Fix it now. Done when POST /login returns 200 for a valid user and the existing login test passes.", exp: { clear: true, priority: "P0" } },
-  { text: "Add a nullable birthdate (date) column to the users table and return it as an ISO date string in GET /users/:id. Done when a migration adds the column, the endpoint returns birthdate or null, and a test covers both.", exp: { clear: true, specialty: "backend", flag: "touches_schema" } },
-  { text: "Regression: the cart total shows NaN when the cart is empty. Done when an empty cart shows $0.00 and a test covers the empty cart.", exp: { clear: true, priority: "Bug" } },
-  { text: "The support chatbot (LLM agent) must remember the customer's name across sessions: store it in the agent's memory after the customer states it and greet by name next session. Done when a test with a fake LLM shows the name being recalled in a new session.", exp: { clear: true, specialty: "ai", flag: "touches_ai" } },
-  { text: "Add POST /webhooks/stripe that verifies the Stripe signature and, on payment_intent.succeeded, marks the matching order as paid. Done when a bad signature returns 400, a valid event marks the order paid, and a replayed event is ignored (idempotent).", exp: { clear: true, specialty: "integrations", flag: "touches_external_integration" } },
+  { text: "Production is down: no customer can log in since the last deploy (POST /login returns 500). Fix it now. Done when POST /login returns " +
+    "200 for a valid user and the existing login test passes.", exp: { clear: true, priority: "P0" } },
+  { text: "Add a nullable birthdate (date) column to the users table and return it as an ISO date string in GET /users/:id. Done when a migration " +
+    "adds the column, the endpoint returns birthdate or null, and a test covers both.", exp: { clear: true, specialty: "backend", flag: "touches_schema" } },
+  { text: "Regression: the cart total shows NaN when the cart is empty. Done when an empty cart shows $0.00 and a test covers the empty cart.",
+    exp: { clear: true, priority: "Bug" } },
+  { text: "The support chatbot (LLM agent) must remember the customer's name across sessions: store it in the agent's memory after the customer " +
+    "states it and greet by name next session. Done when a test with a fake LLM shows the name being recalled in a new session.", exp: { clear: true,
+    specialty: "ai", flag: "touches_ai" } },
+  { text: "Add POST /webhooks/stripe that verifies the Stripe signature and, on payment_intent.succeeded, marks the matching order as paid. Done " +
+    "when a bad signature returns 400, a valid event marks the order paid, and a replayed event is ignored (idempotent).", exp: { clear: true,
+    specialty: "integrations", flag: "touches_external_integration" } },
   { text: "Add a discount to the cart.", exp: { clear: false } },
   { text: "Make the app better.", exp: { clear: false } },
   { text: "We need reports.", exp: { clear: false } },
@@ -52,7 +59,8 @@ const check = (o: z.infer<typeof Plan>, e: Exp) =>
 
 const repo = createFixture(mkdtempSync(`${tmpdir()}/stages-`));
 const reps = Number(values.reps);
-const sum = (u: { tokens_in: number; tokens_out: number; cache_read: number; cache_create: number }) => u.tokens_in + u.tokens_out + u.cache_read + u.cache_create;
+const sum = (u: { tokens_in: number; tokens_out: number; cache_read: number; cache_create: number }) => u.tokens_in + u.tokens_out + u.cache_read
+  + u.cache_create;
 
 for (const model of values.models.split(",")) {
   for (const stage of values.stages.split(",")) {
@@ -83,7 +91,8 @@ for (const model of values.models.split(",")) {
           hits += +ok;
           tokens += sum(usage);
           usd += usage.cost_usd;
-          if (!ok) lines.push(`MISS "${r.text.slice(0, 40)}" -> clear=${output.clear} ${output.priority}/${output.specialty} criteria=${output.criteria.length}`);
+          if (!ok) lines.push(`MISS "${r.text.slice(0,
+            40)}" -> clear=${output.clear} ${output.priority}/${output.specialty} criteria=${output.criteria.length}`);
         }
         right += hits;
         total += reps;
@@ -94,7 +103,9 @@ for (const model of values.models.split(",")) {
         const before = git(repo, "rev-parse", "HEAD") + git(repo, "branch", "--list") + git(repo, "status", "--porcelain");
         const res = await runAgent({
           role: "devops", cwd: repo, schema: Dev, files: ["devops-sre"],
-          context: "Ticket T-1: Change the checkout button label to 'Submit order'\nAcceptance criteria:\n- the button reads 'Submit order'\nThe CEO approved. Simulation: do NOT run a deploy or a merge. Describe status, rollback plan and observability.\n\nAnswer only in the structured format. `summary`: up to 10 lines.",
+          context: "Ticket T-1: Change the checkout button label to 'Submit order'\nAcceptance criteria:\n- the button reads 'Submit order'\nThe " +
+            "CEO approved. Simulation: do NOT run a deploy or a merge. Describe status, rollback plan and observability.\n\n" +
+            "Answer only in the structured format. `summary`: up to 10 lines.",
         });
         if ("failed" in res) { total++; lines.push(`FAIL devops: ${res.failed}`); continue; }
         const { output, usage } = res;

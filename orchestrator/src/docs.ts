@@ -117,7 +117,8 @@ export function writeDocs(repo: string, out: DocsOutput, seen: Record<string, st
   const warnings: string[] = [];
   const written: string[] = [];
   if (isLink(join(repo, ".claude")) || isLink(docsDir(repo))) return { written, warnings: [".claude or .claude/docs is a symlink: nothing written"] };
-  if (out.files.reduce((n, f) => n + Buffer.byteLength(f.content), 0) > MAX_BYTES) return { written, warnings: [`docs output over ${MAX_BYTES} bytes: nothing written`] };
+  if (out.files.reduce((n, f) => n + Buffer.byteLength(f.content), 0) > MAX_BYTES) return { written,
+    warnings: [`docs output over ${MAX_BYTES} bytes: nothing written`] };
   let unlock: () => void;
   try {
     unlock = lockTicket(lockDir, "docs");
@@ -132,7 +133,8 @@ export function writeDocs(repo: string, out: DocsOutput, seen: Record<string, st
       if (bad) { warnings.push(`${f.path}: ${bad}`); continue; }
       if (lineCount(f.content) > MAX_LINES) { warnings.push(`${f.path}: over ${MAX_LINES} lines, kept the previous version`); continue; }
       const file = join(dir, f.path);
-      if (existsSync(file) && seen[f.path] !== sha(readFileSync(file, "utf8"))) { warnings.push(`${f.path}: changed since the agent saw it, skipped`); continue; }
+      if (existsSync(file) && seen[f.path] !== sha(readFileSync(file,
+        "utf8"))) { warnings.push(`${f.path}: changed since the agent saw it, skipped`); continue; }
       put(file, f.content);
       written.push(f.path);
     }
