@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { dailyCapReached, orchHome, usedToday } from "../src/daily-cap.ts";
+import { dailyCapReached, orchHome, usedToday, workRoot } from "../src/daily-cap.ts";
 import { FileSaver } from "../src/file-saver.ts";
 import { buildGraph, config, createWorktree, report, resume, Ticket } from "../src/graph.ts";
 import { assertGitConfigUnchanged, repoOf, safeGit } from "../src/guardrails.ts";
@@ -110,7 +110,7 @@ if (cmd === "init") {
   await locked(id, async () => {
     const behind = behindBy(repo);
     if (behind) console.warn(`warning: ${repo} is ${behind} commit(s) behind its upstream; the ticket will branch from a stale base`);
-    const wt = createWorktree(repo, id, join(home, "worktrees", id), home);
+    const wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), home);
     await drive(id, { id, request, ...wt });
   });
 } else if (cmd === "status") {
@@ -182,7 +182,7 @@ if (cmd === "init") {
       needCap();
       const id = `H-${incident.id.slice(4)}`;
       await locked(id, async () => {
-        const wt = createWorktree(repo, id, join(home, "worktrees", id), home);
+        const wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), home);
         await drive(id, { id, request: `Hotfix for ${incident.ticket}: ${incident.symptom}. Fix the cause with the smallest safe change; a rollback is proposed separately to the CEO.`, incident: incident.id, ...wt });
       });
       return id;

@@ -1,7 +1,10 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const orchHome = (env: NodeJS.ProcessEnv = process.env) => env.ORCH_HOME ?? join(import.meta.dirname, "..", ".state");
+// Agent worktrees and deploy checkouts live outside the repo: a path inside it would let ../ reach the repo's .env and this folder's state.
+export const workRoot = (env: NodeJS.ProcessEnv = process.env) => env.ORCH_WORK ?? join(homedir(), ".orchestrator", "work");
 const ledger = (env: NodeJS.ProcessEnv) => join(orchHome(env), "usage.jsonl");
 const DAY_MS = 86_400_000;
 

@@ -5,7 +5,7 @@ import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langch
 import { z } from "zod";
 import { mergeLocal } from "./local-merge.ts";
 import { assertGitConfigUnchanged, gitConfigHash, repoOf, selfApproval, safeGit, MAX_REVISIONS, MAX_ACTIVE_TICKETS, budgetExceeded, RECURSION_LIMIT, activeTickets, installDeps, tokens, verifyEvidence } from "./guardrails.ts";
-import { orchHome } from "./daily-cap.ts";
+import { orchHome, workRoot } from "./daily-cap.ts";
 import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } from "./deploy.ts";
 import { mergePr, publish } from "./publish.ts";
 import { DeployConfig, loadConventions, loadRepoConfig } from "./repo-config.ts";
@@ -240,7 +240,7 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
     if (!isDeepStrictEqual(loadRepoConfig(repo, t.base).deploy, t.deploy_cfg)) throw new NodeFailure("deploy settings changed since the ticket started; re-run the ticket");
     const c = t.deploy_cfg;
     cmd = { rollback: c.rollback, health_url: c.health_url, env: c.env, timeout_s: c.timeout_s, max_latency_ms: c.max_latency_ms, environment: c.environment, git_config_hash: t.git_config_hash };
-    const dir = join(orchHome(), "deploy-work", t.id);
+    const dir = join(workRoot(), "deploy-work", t.id);
     rmSync(dir, { recursive: true, force: true });
     try {
       safeGit(repo, "worktree", "prune");
