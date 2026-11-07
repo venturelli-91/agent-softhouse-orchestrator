@@ -10,8 +10,9 @@ import { config, createWorktree, buildGraph, resume, Ticket } from "../../src/gr
 import { registerPublisher } from "../../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../../src/run-agent.ts";
 import { alerts, watchdog } from "../../src/watchdog.ts";
+import { BRIEF, type Behavior, commit, defaults, FLAGS } from "./fakes.ts";
 
-export type Behavior = Partial<Record<string, (req: Req<unknown>) => unknown>>;
+export { BRIEF, type Behavior, commit, defaults, FLAGS };
 
 export const knobs = {
   override: {} as Behavior,
@@ -26,27 +27,6 @@ export const knobs = {
 };
 
 export const roots: string[] = [];
-
-export const BRIEF = { why: "the goal of the ticket", how: "small focused change", where: "only the touched module" };
-
-export const FLAGS = { touches_security: false, touches_performance: false, touches_ai: false, touches_schema: false, touches_public_api: false,
-  touches_permissions: false, touches_external_integration: false, touches_cost: false };
-
-export const commit = (cwd: string, author: string, file = "checkout.html", content = "<button>Submit order</button>\n") => {
-  writeFileSync(join(cwd, file), content);
-  git(cwd, "add", "-A");
-  git(cwd, "-c", `user.name=${author}`, "commit", "-q", "--allow-empty", "-m", "dev");
-};
-
-export const defaults: Behavior = {
-  triage: () => ({ title: "t", priority: "P2", specialty: "frontend", clear: true, flags: FLAGS, criteria: ["button says Submit order"], summary: "ok" }),
-  planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), question: "" }),
-  dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF }),
-  reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
-  qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),
-  watchdog: () => ({ alerts: ["T-1 stalled"], summary: "ok" }),
-  docs: () => ({ files: [], not_applicable: [], notes: "" }),
-};
 
 registerPublisher("fake", {
   publish: (p) => (knobs.publications.push(`${p.id}@${p.sha}`), "pr:https://example/pull/1"),
