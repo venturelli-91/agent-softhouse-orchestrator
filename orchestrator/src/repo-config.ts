@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { orchHome } from "./daily-cap.ts";
 import { safeGit } from "./guardrails.ts";
+import { SPECIALTIES } from "./specialties.ts";
 
 const plain = z.string().regex(/^[\w ./:=@-]+$/, "must be a plain command without shell operators");
 // Real deploy commands run on the host with credentials, so this block is accepted only from the external config.
@@ -32,6 +33,8 @@ export const RepoConfig = z.object({
   // Run `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, tsc and build can be the test command.
   install: z.boolean().default(false),
   deploy: DeployConfig.nullable().default(null),
+  // The dev specialties triage may route to in this repo; the whole team by default.
+  specialties: z.array(z.enum(SPECIALTIES)).min(1).default([...SPECIALTIES]),
 });
 export type RepoConfig = z.infer<typeof RepoConfig>;
 

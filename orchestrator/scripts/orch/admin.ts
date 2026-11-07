@@ -10,6 +10,7 @@ import { assertGitConfigUnchanged, repoOf, safeGit } from "../../src/guardrails.
 import { listIncidents } from "../../src/incidents.ts";
 import { recordMetrics } from "../../src/metrics.ts";
 import { bareNodeTest } from "../../src/repo-config.ts";
+import { TEAMS } from "../../src/specialties.ts";
 import { ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 
@@ -18,9 +19,12 @@ const DONE = ["simulated_deploy", "deployed", "aborted"];
 export function init(c: Ctx) {
   const repo = resolve(c.positionals[0] ?? c.host);
   const file = join(repo, ".orchestrator.json");
-  if (existsSync(file)) console.log(`${file} already exists`);
+  const team = c.values.team;
+  if (team && !Object.hasOwn(TEAMS, team)) die(`unknown team ${team}: ${Object.keys(TEAMS).join(", ")}`);
+  if (existsSync(file)) console.log(`${file} already exists${team ? `: set "specialties" there by hand (${TEAMS[team].join(", ")})` : ""}`);
   else {
-    writeFileSync(file, `${JSON.stringify({ test: "npm test", merge: "pr" }, null, 2)}\n`);
+    const specialties = team && team !== "all" ? { specialties: TEAMS[team] } : {};
+    writeFileSync(file, `${JSON.stringify({ test: "npm test", merge: "pr", ...specialties }, null, 2)}\n`);
     console.log(`wrote ${file}: set "test" to the repo's test command, then commit it (it is read from the base commit)`);
     if (bareNodeTest(repo)) {
       console.warn(

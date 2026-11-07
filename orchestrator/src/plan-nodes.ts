@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { cap, FlagsSchema, SPECIALTIES, summary } from "./ticket.ts";
+import { SPECIALTIES, type Specialty } from "./specialties.ts";
+import { cap, FlagsSchema, summary, type T } from "./ticket.ts";
 import { context, guarded, log } from "./graph-kit.ts";
 import { runAgent } from "./run-agent.ts";
 
@@ -16,6 +17,10 @@ const TriageOutput = z.object({
 // `question` is empty when clear; otherwise it is what the CEO needs to answer.
 const PlanOutput = TriageOutput.extend({ question: z.string(), briefing: z.string().default(""), stories: z.array(z.string()).default([]) });
 
+// The repo's own team: only its specialties are valid answers, and the model is told which ones.
+const only = (t: T) => z.enum(t.specialties as [Specialty, ...Specialty[]]);
+const teamNote = (t: T) => (t.specialties.length < SPECIALTIES.length ? [`Specialties available in this repo: ${t.specialties.join(", ")}.`] : []);
+
 // Divide and conquer: one dev session handles one atomic task. Work that needs more is split into an ordered list of tasks
 // that the dev runs one at a time in the same worktree, one commit and one verification each.
 export const SPLIT_RULE =
@@ -29,8 +34,8 @@ export const triage = guarded("triage", async (t) => {
     role: "triage",
     files: ["triage"],
     cwd: t.worktree,
-    schema: TriageOutput,
-    context: context(`CEO request: ${t.request}`, SPLIT_RULE),
+    schema: TriageOutput.extend({ specialty: only(t) }),
+    context: context(`CEO request: ${t.request}`, ...teamNote(t), SPLIT_RULE),
   });
   const { clear, summary, split, ...rest } = output;
   return {
@@ -52,11 +57,12 @@ export const planner = guarded("planner", async (t) => {
     role: "planner",
     files: ["demand-analyst", "product-manager", "tech-lead"],
     cwd: t.worktree,
-    schema: PlanOutput,
+    schema: PlanOutput.extend({ specialty: only(t) }),
     context: context(
       `CEO request: ${t.request}`,
       `Triage (ambiguous request): ${t.summary}`,
       "If missing information prevents verifiable acceptance criteria, set clear=false and put what is missing in `question`.",
+      ...teamNote(t),
       SPLIT_RULE,
     ),
   });
