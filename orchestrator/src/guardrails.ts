@@ -75,11 +75,14 @@ const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc|conftest\.py|setup\.py|setup\
 // Modularity: every source file a ticket touches must stay within these limits (untouched legacy files are not checked).
 export const MAX_FILE_LINES = 300;
 export const MAX_LINE_COLS = 160;
-const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|py|css|scss)$/i;
+const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|py|css|scss|go|rs|java|kt|swift|rb|php|vue|svelte|html|sh|sql|c|h|cpp|cs)$/i;
+const MAX_FILE_BYTES = MAX_FILE_LINES * (MAX_LINE_COLS + 2);
 
-export function modularityViolations(wt: string, files: string[]): string[] {
+// Reads the committed blob (never the worktree file, so symlinks are not followed); a blob too big to comply is refused unread.
+function modularityViolations(wt: string, files: string[]): string[] {
   return files.filter((f) => SOURCE_FILE.test(f)).flatMap((f) => {
-    const lines = readFileSync(resolve(wt, f), "utf8").replace(/\n$/, "").split("\n");
+    if (Number(safeGit(wt, "cat-file", "-s", `HEAD:${f}`)) > MAX_FILE_BYTES) return [`${f} (over ${MAX_FILE_BYTES} bytes)`];
+    const lines = safeGit(wt, "cat-file", "blob", `HEAD:${f}`).split(/\r?\n/);
     const long = lines.filter((l) => l.length > MAX_LINE_COLS).length;
     return lines.length > MAX_FILE_LINES || long ? [`${f} (${lines.length} lines, ${long} over ${MAX_LINE_COLS} cols)`] : [];
   });

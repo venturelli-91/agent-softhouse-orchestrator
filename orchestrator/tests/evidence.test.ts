@@ -193,3 +193,19 @@ test("touched source files over the modularity limits are refused; untouched or 
     if (!ok) assert.match((r as { reason: string }).reason, /modularity/, f);
   }
 });
+
+test("modularity check reads the committed blob: a dangling symlink and a deleted oversized file do not break it", () => {
+  const { d } = repo();
+  writeFileSync(join(d, "big.ts"), "x\n".repeat(301));
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "big");
+  const base = git(d, "rev-parse", "HEAD");
+  git(d, "rm", "-q", "big.ts");
+  const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: "/nonexistent", encoding: "utf8" }).trim();
+  git(d, "update-index", "--add", "--cacheinfo", `120000,${blob},link.ts`);
+  git(d, "commit", "-qm", "delete big, add dangling symlink");
+  git(d, "reset", "-q", "--hard");
+  const r = verifyEvidence(d, base);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, true);
+});
