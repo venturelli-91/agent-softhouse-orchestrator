@@ -21,6 +21,7 @@ import { assertGitConfigUnchanged, repoOf, safeGit } from "../src/guardrails.ts"
 import { behindBy, deleteRemoteBranch } from "../src/git-remote.ts";
 import { recordMetrics } from "../src/metrics.ts";
 import { notify } from "../src/notify.ts";
+import { bareNodeTest } from "../src/repo-config.ts";
 import { clearFailure, injectFailure, SCENARIOS } from "../src/chaos.ts";
 import { defaultProbe } from "../src/probe.ts";
 import { deployedIds, forgetDeploy } from "../src/deploy.ts";
@@ -93,16 +94,6 @@ async function locked(id: string, fn: () => Promise<void>) {
   }
 }
 const DONE = ["simulated_deploy", "deployed", "aborted"];
-
-// A bare `node --test` scans the whole tree, so it would also run orchestrator/tests inside every ticket worktree. `test` cannot hold the glob that scopes it
-// (no `*` allowed), so init only warns.
-function bareNodeTest(repo: string): boolean {
-  try {
-    return /^node\s+--test(\s+--[\w-]+)*\s*$/.test(JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).scripts?.test);
-  } catch {
-    return false;
-  }
-}
 
 if (cmd === "init") {
   const repo = resolve(positionals[0] ?? HOST);
