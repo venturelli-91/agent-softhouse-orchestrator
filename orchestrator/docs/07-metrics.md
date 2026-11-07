@@ -90,4 +90,5 @@ experiment (US$ 0.160 to 0.035 per ticket on one sample) are in
   terms from `check-secrets.sh`; zero occurrences in the final search on `main`.
 - Limits and guardrails measured in code: `MAX_REVISIONS=3`, `MAX_ACTIVE_TICKETS=5`,
   `RECURSION_LIMIT=40`, `NODE_TIMEOUT_MS=600 s`, default budget
-  `TOKEN_BUDGET_TICKET=200000` (the measured ticket uses 43% of it).
+  `TOKEN_BUDGET_TICKET=400000` (it was 200000: the first measured ticket used 43% of that, but a small ticket with
+  one revision reached 200,646 because each dev call counts its cached reads per turn, so one revision exceeded it).
