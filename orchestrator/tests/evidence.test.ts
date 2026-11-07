@@ -174,3 +174,22 @@ test("a file hidden with assume-unchanged or skip-worktree voids the verificatio
     assert.match((r as { reason: string }).reason, /hidden from git/, flag);
   }
 });
+
+test("touched source files over the modularity limits are refused; untouched or non-source files are not", () => {
+  const cases: [string, string, boolean][] = [
+    ["a.ts", "x\n".repeat(301), false],
+    ["b.ts", `${"x".repeat(161)}\n`, false],
+    ["c.ts", "x\n".repeat(300), true],
+    ["d.json", "x\n".repeat(500), true],
+  ];
+  for (const [f, body, ok] of cases) {
+    const { d, base } = repo();
+    writeFileSync(join(d, f), body);
+    git(d, "add", "-A");
+    git(d, "commit", "-qm", "x");
+    const r = verifyEvidence(d, base);
+    rmSync(d, { recursive: true, force: true });
+    assert.equal(r.ok, ok, f);
+    if (!ok) assert.match((r as { reason: string }).reason, /modularity/, f);
+  }
+});
