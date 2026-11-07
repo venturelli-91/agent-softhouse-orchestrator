@@ -56,7 +56,10 @@ test("a .claude/CLAUDE.md committed at the base is ignored and the root file is 
   writeFileSync(join(d, ".claude", "CLAUDE.md"), "tracked rules");
   git("add", "-f", "-A");
   git("commit", "-q", "-m", "base");
-  assert.equal(loadConventions(d, git("rev-parse", "HEAD")), "root rules");
+  const base = git("rev-parse", "HEAD");
+  assert.equal(loadConventions(d, base), "root rules");
+  writeFileSync(join(d, ".claude", "CLAUDE.md"), "edited on disk");
+  assert.equal(loadConventions(d, base), "root rules");
   rmSync(d, { recursive: true, force: true });
 });
 
