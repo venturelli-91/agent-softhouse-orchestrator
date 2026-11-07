@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { coverage, DocsOutput, docsDir, MAX_LINES, snapshot, TOPICS, writeDocs } from "../src/docs.ts";
+import { execFileSync } from "node:child_process";
+import { coverage, DocsOutput, docsDir, docsMode, ensureLocalOnly, MAX_LINES, snapshot, TOPICS, writeDocs } from "../src/docs.ts";
 
 const dirs: string[] = [];
 const tmp = () => {
@@ -116,4 +117,73 @@ test("snapshot shows contents up to the cap and lists the rest in the index only
   assert.equal(s.seen["a/one.md"], sha("# One\nbody\n"));
   assert.match(s.index, /a\/one\.md.*One/);
   assert.match(s.index, /a\/two\.md.*Two/);
+});
+
+const gitRepo = (files: Record<string, string> = {}) => {
+  const d = tmp();
+  const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd: d, encoding: "utf8" }).trim();
+  git("init", "-q", "-b", "main");
+  for (const [f, c] of Object.entries(files)) {
+    mkdirSync(join(d, f, ".."), { recursive: true });
+    writeFileSync(join(d, f), c);
+  }
+  git("add", "-A");
+  git("commit", "-q", "--allow-empty", "-m", "base");
+  return { d, git };
+};
+
+test("ensureLocalOnly makes git ignore .claude without touching .gitignore", () => {
+  const { d, git } = gitRepo({ "a.txt": "a" });
+  assert.equal(ensureLocalOnly(d), null);
+  assert.equal(existsSync(docsDir(d)), true);
+  writeFileSync(join(docsDir(d), "x.md"), "x\n");
+  assert.equal(git("status", "--porcelain"), "");
+  assert.equal(existsSync(join(d, ".gitignore")), false);
+});
+
+test("ensureLocalOnly warns when the repo un-ignores .claude, and does not duplicate the exclude line", () => {
+  const { d } = gitRepo({ ".gitignore": "!.claude/\n" });
+  const w = ensureLocalOnly(d);
+  assert.match(w ?? "", /not ignored/);
+  ensureLocalOnly(d);
+  const exclude = readFileSync(join(d, ".git", "info", "exclude"), "utf8");
+  assert.equal(exclude.split("\n").filter((l) => l === ".claude/").length, 1);
+});
+
+test("docsMode: update when docs exist, greenfield without code, scan with code", () => {
+  const empty = gitRepo({ ".gitignore": "x\n", "README.md": "r", "orchestrator/x": "x", ".orchestrator.json": "{}" });
+  assert.equal(docsMode(empty.d), "greenfield");
+  const code = gitRepo({ "src/a.ts": "export {}" });
+  assert.equal(docsMode(code.d), "scan");
+  mkdirSync(join(docsDir(code.d), "arquitetura"), { recursive: true });
+  writeFileSync(join(docsDir(code.d), "arquitetura", "a.md"), "x\n");
+  assert.equal(docsMode(code.d), "update");
+});
+
+test("a symlinked docs directory is never written through, not even by the index", (t) => {
+  const repo = tmp();
+  const outside = tmp();
+  mkdirSync(join(repo, ".claude"), { recursive: true });
+  try {
+    symlinkSync(outside, docsDir(repo), "junction");
+  } catch {
+    return t.skip("cannot create symlinks here");
+  }
+  const r = writeDocs(repo, out([], [{ topic: "backlog", reason: "no backlog yet" }]), {}, tmp());
+  assert.equal(r.warnings.length, 1);
+  assert.equal(existsSync(join(outside, "README.md")), false);
+  assert.equal(existsSync(join(outside, ".nao-se-aplica.json")), false);
+});
+
+test("snapshot does not read through a symlinked file", (t) => {
+  const repo = tmp();
+  const secret = join(tmp(), "secret.md");
+  writeFileSync(secret, "# secret\n");
+  mkdirSync(join(docsDir(repo), "a"), { recursive: true });
+  try {
+    symlinkSync(secret, join(docsDir(repo), "a", "leak.md"), "file");
+  } catch {
+    return t.skip("cannot create file symlinks here");
+  }
+  assert.deepEqual(Object.keys(snapshot(repo).shown), []);
 });

@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
+import { safeGit } from "./guardrails.ts";
 import { lockTicket } from "./ticket-store.ts";
 
 export const MAX_LINES = 150;
@@ -31,7 +32,7 @@ function listMd(dir: string, rel = ""): string[] {
   }
   return entries.flatMap((e) => {
     const p = rel ? `${rel}/${e.name}` : e.name;
-    return e.isDirectory() ? listMd(dir, p) : e.name.endsWith(".md") && p !== "README.md" ? [p] : [];
+    return e.isDirectory() ? listMd(dir, p) : e.isFile() && e.name.endsWith(".md") && p !== "README.md" ? [p] : [];
   }).sort();
 }
 
@@ -96,16 +97,26 @@ function writeIndex(repo: string): void {
   writeFileSync(join(dir, "README.md"), `${body.slice(0, MAX_LINES - 1).join("\n")}\n`);
 }
 
+const isLink = (p: string) => {
+  try {
+    return lstatSync(p).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+
 function put(file: string, content: string): void {
+  if (isLink(file)) throw new Error(`${file} is a symlink`);
   mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}`;
-  writeFileSync(tmp, content);
+  const tmp = `${file}.tmp-${randomUUID()}`;
+  writeFileSync(tmp, content, { flag: "wx" });
   renameSync(tmp, file);
 }
 
 export function writeDocs(repo: string, out: DocsOutput, seen: Record<string, string>, lockDir: string): { written: string[]; warnings: string[] } {
   const warnings: string[] = [];
   const written: string[] = [];
+  if (isLink(join(repo, ".claude")) || isLink(docsDir(repo))) return { written, warnings: [".claude or .claude/docs is a symlink: nothing written"] };
   if (out.files.reduce((n, f) => n + Buffer.byteLength(f.content), 0) > MAX_BYTES) return { written, warnings: [`docs output over ${MAX_BYTES} bytes: nothing written`] };
   let unlock: () => void;
   try {
@@ -132,4 +143,32 @@ export function writeDocs(repo: string, out: DocsOutput, seen: Record<string, st
     unlock();
   }
   return { written, warnings };
+}
+
+// Docs stay out of git without touching the repo's .gitignore (a tracked edit would dirty the checkout `merge: local` needs clean).
+// Returns a warning when git still would not ignore them: then nothing may be written.
+export function ensureLocalOnly(repo: string): string | null {
+  mkdirSync(docsDir(repo), { recursive: true });
+  const ignored = () => {
+    try {
+      safeGit(repo, "check-ignore", "-q", ".claude/docs/x");
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (!ignored()) {
+    const file = resolve(repo, safeGit(repo, "rev-parse", "--git-path", "info/exclude"));
+    mkdirSync(dirname(file), { recursive: true });
+    const cur = existsSync(file) ? readFileSync(file, "utf8") : "";
+    if (!cur.split(/\r?\n/).includes(".claude/")) appendFileSync(file, `${cur && !cur.endsWith("\n") ? "\n" : ""}.claude/\n`);
+  }
+  return ignored() ? null : ".claude/ is not ignored by git (the repo's .gitignore un-ignores it): docs not written";
+}
+
+const GREENFIELD_OK = /^(orchestrator\/|\.claude\/|\.orchestrator\.json$|\.gitignore$|README\.md$|LICENSE$)/;
+export function docsMode(repo: string): "scan" | "greenfield" | "update" {
+  if (listMd(docsDir(repo)).length) return "update";
+  const tracked = safeGit(repo, "ls-files").split("\n").filter(Boolean);
+  return tracked.every((f) => GREENFIELD_OK.test(f)) ? "greenfield" : "scan";
 }
