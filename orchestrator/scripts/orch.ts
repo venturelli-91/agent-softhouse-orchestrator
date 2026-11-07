@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Daily-use CLI over the graph, for any repo. State lives in ORCH_HOME (default ~/.orchestrator), one tickets/<id>.json per ticket, not in the repo.
+// Daily-use CLI over the graph. Drop-in: copy this folder into a repo and it works on that repo (the folder's parent). State lives in ORCH_HOME (default ./.state, gitignored), one tickets/<id>.json per ticket.
 //   orch init [repo]            write .orchestrator.json (commit it) and check for CLAUDE.md
 //   orch run "<request>" [--repo <path>] [--id <id>]
 //   orch status [id]            all tickets, or one with its pending question
@@ -29,8 +29,9 @@ import { lockTicket, ticketFile, ticketIds } from "../src/ticket-store.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
-if (process.env.AGENTS_DIR) process.env.AGENTS_DIR = resolve(ROOT, process.env.AGENTS_DIR);
+process.env.AGENTS_DIR = resolve(ROOT, process.env.AGENTS_DIR ?? "agents");
 
+const HOST = resolve(ROOT, "..");
 const die = (msg: string): never => {
   console.error(msg);
   process.exit(1);
@@ -93,7 +94,7 @@ async function locked(id: string, fn: () => Promise<void>) {
 const DONE = ["simulated_deploy", "deployed", "aborted"];
 
 if (cmd === "init") {
-  const repo = resolve(positionals[0] ?? process.cwd());
+  const repo = resolve(positionals[0] ?? HOST);
   const file = join(repo, ".orchestrator.json");
   if (existsSync(file)) console.log(`${file} already exists`);
   else {
@@ -105,7 +106,7 @@ if (cmd === "init") {
   const request = positionals[0] ?? die('usage: orch run "<request>" [--repo <path>] [--id <id>]');
   needCap();
   const id = values.id ?? `T-${Date.now().toString(36)}`;
-  const repo = resolve(values.repo ?? process.cwd());
+  const repo = resolve(values.repo ?? HOST);
   await locked(id, async () => {
     const behind = behindBy(repo);
     if (behind) console.warn(`warning: ${repo} is ${behind} commit(s) behind its upstream; the ticket will branch from a stale base`);

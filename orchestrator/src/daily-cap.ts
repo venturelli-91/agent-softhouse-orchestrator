@@ -1,8 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const orchHome = (env: NodeJS.ProcessEnv = process.env) => env.ORCH_HOME ?? join(homedir(), ".orchestrator");
+export const orchHome = (env: NodeJS.ProcessEnv = process.env) => env.ORCH_HOME ?? join(import.meta.dirname, "..", ".state");
 const ledger = (env: NodeJS.ProcessEnv) => join(orchHome(env), "usage.jsonl");
 const DAY_MS = 86_400_000;
 
