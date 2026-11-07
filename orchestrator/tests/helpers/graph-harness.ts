@@ -72,6 +72,7 @@ beforeEach(() => {
   const orchRoot = mkdtempSync(join(tmpdir(), "oh-"));
   roots.push(orchRoot);
   process.env.ORCH_HOME = orchRoot;
+  process.env.ORCH_WORK = join(orchRoot, "work");
   process.env.PUBLISHER = "fake";
   knobs.publications = [];
   knobs.merges = [];
