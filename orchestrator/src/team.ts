@@ -52,11 +52,15 @@ export async function proposeTeam(repo: string, need: string): Promise<TeamPropo
   }
 }
 
+// Pretty JSON with short string arrays kept on one line, the way Biome/Prettier format them: the file is committed into repos that lint it.
+export const configJson = (o: object): string =>
+  `${JSON.stringify(o, null, 2).replace(/\[\s*("[^\]]*?")\s*\]/g, (_, items: string) => `[${items.split(/,\s*/).join(", ")}]`)}\n`;
+
 // Merges into .orchestrator.json, keeping whatever else the CEO already set there.
 export function applyTeam(repo: string, p: TeamProposal): string {
   const file = join(repo, ".orchestrator.json");
   const current = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { merge: "pr" };
   const next = { ...current, test: current.test ?? p.test, specialties: p.specialties, stack: p.stack };
-  writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
+  writeFileSync(file, configJson(next));
   return file;
 }

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { git } from "../scripts/fixture.ts";
 import { createWorktree } from "../src/graph.ts";
 import { registerExecutor, type Req } from "../src/run-agent.ts";
-import { applyTeam, proposeTeam } from "../src/team.ts";
+import { applyTeam, configJson, proposeTeam } from "../src/team.ts";
 
 const proposal = { specialties: ["frontend", "backend"], stack: "Next.js + Postgres", existing_stack: true, test: "npm test", rationale: "already there" };
 const usage = { tokens_in: 1, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 };
@@ -20,6 +20,13 @@ registerExecutor("fake-team", {
     sawTracked = existsSync(join(req.cwd, ".orchestrator.json"));
     return { output: req.schema.parse(proposal), usage };
   },
+});
+
+test("configJson keeps short string arrays on one line and round-trips", () => {
+  const o = { test: "npm test", specialties: ["frontend", "backend"], stack: "a, b [c]" };
+  const text = configJson(o);
+  assert.match(text, /"specialties": \["frontend", "backend"\],/);
+  assert.deepEqual(JSON.parse(text), o);
 });
 
 test("the agents propose a team and stack; applying keeps what the config already had, and the stack reaches the dev rules", async () => {

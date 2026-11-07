@@ -3,7 +3,7 @@ import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
-import { applyTeam, proposeTeam } from "../../src/team.ts";
+import { applyTeam, configJson, proposeTeam } from "../../src/team.ts";
 import { usedToday } from "../../src/daily-cap.ts";
 import { forgetDeploy } from "../../src/deploy.ts";
 import { ensureLocalOnly } from "../../src/docs.ts";
@@ -27,7 +27,7 @@ export function init(c: Ctx) {
   if (existsSync(file)) console.log(`${file} already exists${team ? `: set "specialties" there by hand (${TEAMS[team].join(", ")})` : ""}`);
   else {
     const specialties = team && team !== "all" ? { specialties: TEAMS[team] } : {};
-    writeFileSync(file, `${JSON.stringify({ test: "npm test", merge: "pr", ...specialties }, null, 2)}\n`);
+    writeFileSync(file, configJson({ test: "npm test", merge: "pr", ...specialties }));
     console.log(`wrote ${file}: set "test" to the repo's test command, then commit it (it is read from the base commit)`);
     if (bareNodeTest(repo)) {
       console.warn(
