@@ -79,7 +79,7 @@ export function loadConventions(repo: string, ref: string, max = 8000): string {
   // .claude/ is local only (never committed), so its CLAUDE.md is read from disk; the agent cannot edit it from its worktree.
   try {
     const local = join(repo, ".claude", "CLAUDE.md");
-    if (lstatSync(local).isFile()) return readFileSync(local, "utf8").slice(0, max);
+    if (!lstatSync(join(repo, ".claude")).isSymbolicLink() && lstatSync(local).isFile()) return readFileSync(local, "utf8").slice(0, max);
   } catch {}
   try {
     return safeGit(repo, "show", `${ref}:CLAUDE.md`).slice(0, max);

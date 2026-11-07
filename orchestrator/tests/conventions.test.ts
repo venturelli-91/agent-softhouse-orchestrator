@@ -64,3 +64,20 @@ test("a symlinked .claude/CLAUDE.md is ignored and the committed root file is us
   }
   assert.equal(loadConventions(d, git("rev-parse", "HEAD")), "root rules");
 });
+
+test("a symlinked .claude directory is ignored and the committed root file is used", (t) => {
+  const d = mkdtempSync(join(tmpdir(), "conv-"));
+  const elsewhere = mkdtempSync(join(tmpdir(), "conv-else-"));
+  writeFileSync(join(elsewhere, "CLAUDE.md"), "planted rules");
+  const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd: d, encoding: "utf8" }).trim();
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(d, "CLAUDE.md"), "root rules");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  try {
+    symlinkSync(elsewhere, join(d, ".claude"), "junction");
+  } catch {
+    return t.skip("cannot create symlinks here");
+  }
+  assert.equal(loadConventions(d, git("rev-parse", "HEAD")), "root rules");
+});
