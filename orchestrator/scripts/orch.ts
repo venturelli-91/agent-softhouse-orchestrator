@@ -10,7 +10,7 @@
 //   orch rollback <incident-id> [--config-reviewed]  approve the proposed rollback of an incident; --config-reviewed accepts a changed .git/config after you looked at it
 //   orch resolve <incident-id>  close an incident by hand (the service is back, or you handled it elsewhere)
 //   orch clean <id>|--all [--force] [--remote]   remove worktree, branch, deploy record and state of finished (simulated_deploy/aborted) tickets; --remote also deletes ticket/<id> on the push remote
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { dailyCapReached, orchHome, usedToday, workRoot } from "../src/daily-cap.ts";
@@ -94,13 +94,26 @@ async function locked(id: string, fn: () => Promise<void>) {
 }
 const DONE = ["simulated_deploy", "deployed", "aborted"];
 
+// A bare `node --test` scans the whole tree, so it would also run orchestrator/tests inside every ticket worktree: scope it to the repo's own test dir.
+function scopedTest(repo: string): string {
+  try {
+    const script = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).scripts?.test;
+    if (typeof script !== "string" || !/^node\s+--test(\s+--[\w-]+)*\s*$/.test(script)) return "npm test";
+    const dir = ["tests", "test"].find((d) => existsSync(join(repo, d)));
+    if (dir) return `${script.trim()} ${dir}`;
+    console.warn('package.json "test" is a bare `node --test` and no tests/ or test/ dir was found: scope it by hand, or it will also run orchestrator/tests');
+  } catch {}
+  return "npm test";
+}
+
 if (cmd === "init") {
   const repo = resolve(positionals[0] ?? HOST);
   const file = join(repo, ".orchestrator.json");
   if (existsSync(file)) console.log(`${file} already exists`);
   else {
-    writeFileSync(file, `${JSON.stringify({ test: "npm test", merge: "pr" }, null, 2)}\n`);
-    console.log(`wrote ${file}: set "test" to the repo's test command, then commit it (it is read from the base commit)`);
+    const test = scopedTest(repo);
+    writeFileSync(file, `${JSON.stringify({ test, merge: "pr" }, null, 2)}\n`);
+    console.log(`wrote ${file} (test: "${test}"): check the test command, then commit it (it is read from the base commit)`);
   }
   if (!existsSync(join(repo, ".claude", "CLAUDE.md")) && !existsSync(join(repo, "CLAUDE.md"))) console.log("no .claude/CLAUDE.md: the dev will have no repo conventions (commit format, style)");
   console.log(ensureLocalOnly(repo) ?? `${join(repo, ".claude", "docs")} ready and ignored by git: the graph writes the project docs there`);
