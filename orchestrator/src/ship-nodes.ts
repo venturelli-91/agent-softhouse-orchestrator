@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import { orchHome, workRoot } from "./daily-cap.ts";
@@ -60,8 +60,9 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
       environment: c.environment,
       git_config_hash: t.git_config_hash,
     };
-    const dir = join(workRoot(), "deploy-work", t.id);
-    rmSync(dir, { recursive: true, force: true });
+    const parent = join(workRoot(), "deploy-work");
+    mkdirSync(parent, { recursive: true });
+    const dir = mkdtempSync(join(parent, `${t.id}-`));
     try {
       safeGit(repo, "worktree", "prune");
       safeGit(repo, "worktree", "add", "--detach", dir, t.approved_sha);

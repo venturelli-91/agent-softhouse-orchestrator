@@ -2,7 +2,7 @@
 import { workRoot } from "../src/daily-cap.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { git } from "../scripts/fixture.ts";
@@ -65,7 +65,7 @@ test("the command runs in a checkout of the approved commit and the checkout is 
   const { t, sha } = await commandTicket({ command: "git rev-parse HEAD" });
   const out = await deployTicket(t);
   assert.ok((out.evidence as string[]).some((e) => e === `deploy:${sha}`), String(out.evidence));
-  assert.equal(existsSync(join(workRoot(), "deploy-work", "T-1")), false);
+  assert.deepEqual(readdirSync(join(workRoot(), "deploy-work")), []);
 });
 
 test("a git hook in the repo does not run during the deploy checkout", async () => {
