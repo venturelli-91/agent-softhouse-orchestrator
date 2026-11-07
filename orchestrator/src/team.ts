@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { z } from "zod";
 import { safeGit } from "./guardrails.ts";
 import { runAgent } from "./run-agent.ts";
@@ -24,15 +24,32 @@ const RULES =
   "If the repo is empty or has no stack, existing_stack=false and recommend one with the reason. " +
   "`test` is the plain command that verifies the project (no shell operators). Choose only the specialties the need really uses.";
 
+// The agent sees an export of the committed HEAD, never the live checkout (untracked and ignored files stay out). No commit yet = empty dir.
+function snapshot(repo: string): { dir: string; done: () => void } {
+  const dir = mkdtempSync(join(tmpdir(), "team-"));
+  const tar = `${dir}.tar`;
+  try {
+    safeGit(repo, "archive", "--format=tar", "-o", tar, "HEAD");
+    // Relative names from tmpdir: GNU tar reads "C:\..." as a remote host.
+    execFileSync("tar", ["-xf", basename(tar), "-C", basename(dir)], { cwd: tmpdir() });
+  } catch {}
+  return { dir, done: () => (rmSync(dir, { recursive: true, force: true }), rmSync(tar, { force: true })) };
+}
+
 export async function proposeTeam(repo: string, need: string): Promise<TeamProposal> {
-  const { output } = await runAgent({
-    role: "planner",
-    files: ["tech-lead"],
-    cwd: repo,
-    schema: TeamProposal,
-    context: `Need: ${need}\n${RULES}`,
-  });
-  return output;
+  const snap = snapshot(repo);
+  try {
+    const { output } = await runAgent({
+      role: "planner",
+      files: ["tech-lead"],
+      cwd: snap.dir,
+      schema: TeamProposal,
+      context: `Need: ${need}\n${RULES}`,
+    });
+    return output;
+  } finally {
+    snap.done();
+  }
 }
 
 // Merges into .orchestrator.json, keeping whatever else the CEO already set there.

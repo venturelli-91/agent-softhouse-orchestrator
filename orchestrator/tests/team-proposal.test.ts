@@ -12,10 +12,12 @@ const proposal = { specialties: ["frontend", "backend"], stack: "Next.js + Postg
 const usage = { tokens_in: 1, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 };
 let seen = "";
 let sawUntracked = true;
+let sawTracked = false;
 registerExecutor("fake-team", {
   async run<T>(req: Req<T>) {
     seen = req.context;
     sawUntracked = existsSync(join(req.cwd, "untracked.txt"));
+    sawTracked = existsSync(join(req.cwd, ".orchestrator.json"));
     return { output: req.schema.parse(proposal), usage };
   },
 });
@@ -33,6 +35,7 @@ test("the agents propose a team and stack; applying keeps what the config alread
     assert.match(seen, /checkout page/);
     assert.match(seen, /respect it/);
     assert.equal(sawUntracked, false);
+    assert.equal(sawTracked, true);
     applyTeam(d, p);
     assert.deepEqual(JSON.parse(readFileSync(join(d, ".orchestrator.json"), "utf8")), {
       merge: "local", test: "node -e 0", specialties: ["frontend", "backend"], stack: "Next.js + Postgres",
