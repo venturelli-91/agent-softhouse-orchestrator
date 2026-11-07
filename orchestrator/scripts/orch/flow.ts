@@ -1,0 +1,48 @@
+// Commands that move a ticket through the graph: run, continue, approve, reject.
+import { join, resolve } from "node:path";
+import { workRoot } from "../../src/daily-cap.ts";
+import { behindBy } from "../../src/git-remote.ts";
+import { createWorktree, resume } from "../../src/graph.ts";
+import { type Ctx, die } from "./ctx.ts";
+
+export async function run(c: Ctx) {
+  const request = c.positionals[0] ?? die('usage: orch run "<request>" [--repo <path>] [--id <id>]');
+  c.needCap();
+  const id = c.values.id ?? `T-${Date.now().toString(36)}`;
+  const repo = resolve(c.values.repo ?? c.host);
+  await c.locked(id, async () => {
+    const behind = behindBy(repo);
+    if (behind) console.warn(`warning: ${repo} is ${behind} commit(s) behind its upstream; the ticket will branch from a stale base`);
+    const wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), c.home);
+    await c.drive(id, { id, request, ...wt });
+  });
+}
+
+// A run killed mid-graph (crash, out of memory) leaves a checkpoint that is not waiting for anyone: this picks it up where it stopped.
+export async function resumeRun(c: Ctx) {
+  const id = c.positionals[0] ?? die("usage: orch continue <id>");
+  c.needCap();
+  await c.locked(id, async () => {
+    if ((await c.load(id)).pending) die(`${id} is waiting for an answer: use orch approve or orch reject`);
+    await c.drive(id, null);
+  });
+}
+
+export async function approve(c: Ctx) {
+  const id = c.positionals[0] ?? die('usage: orch approve <id> ["answer"]');
+  await c.locked(id, async () => {
+    await c.needPending(id);
+    c.needCap();
+    await c.drive(id, resume(c.positionals[1] ?? "approve"));
+  });
+}
+
+export async function reject(c: Ctx) {
+  const id = c.positionals[0] ?? die('usage: orch reject <id> "<reason>"');
+  await c.locked(id, async () => {
+    const pending = await c.needPending(id);
+    const reason = c.positionals[1] ?? (pending.type === "escalation" ? "abort" : die("rejecting an approval needs a reason"));
+    if (reason !== "abort") c.needCap();
+    await c.drive(id, resume(reason));
+  });
+}
