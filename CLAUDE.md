@@ -58,6 +58,9 @@ that is the only fixed cost, and it is low (2 agents, not all of them).
 
 ## Ticket routing
 
+The full roster by tier, where each role runs in the orchestrator graph and how to reuse
+the team in another project is in `TEAM.md`.
+
 | Type of work | Agent |
 |---|---|
 | UI, screens, components, UX | `dev-frontend` |

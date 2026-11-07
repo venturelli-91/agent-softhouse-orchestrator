@@ -50,6 +50,7 @@ beforeEach(() => {
   process.env.EXECUTOR = "ops-fake";
   process.env.PUBLISHER = "ops-pub";
   process.env.ORCH_HOME = home;
+  process.env.ORCH_WORK = join(root, "work");
   process.env.TOKEN_BUDGET_TICKET = "100000";
   rollbacks.length = 0;
   registerDeployTarget("prod-like", { sandbox: false, deploy: () => "d", rollback: () => "r" });
