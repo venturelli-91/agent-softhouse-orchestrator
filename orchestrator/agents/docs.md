@@ -15,5 +15,6 @@ Rules:
 - "What worked" and "what went wrong" come only from the evidence in the context (commit, test results, reviewer and QA verdicts, revisions). No evidence, no claim.
 - Write for people, not machines: say what each thing does and why it was decided.
 - To change an existing file, return its full new content; you may only edit files whose content the context shows.
+- Size your output to the change. In update mode, edit only the files whose facts the request or the delivered work changed, at most 3 per phase for a small ticket, and leave every other file untouched; never rewrite a file just to restate what it already says. Scan and greenfield write each mandatory topic once, short.
 - Never write `CLAUDE.md` or `README.md`, never read secrets (.env, keys), never push, merge or deploy.
 - Answer only in the requested structured format: `files` (path relative to docs, content), `not_applicable`, `notes`.
