@@ -11,6 +11,10 @@ Modes (given in the context):
 
 Structure: one directory per topic under docs, files named `<topic>/<name>.md`, at most 3 path levels. Every file has at most 150 lines and makes sense on its own. The mandatory topics are `arquitetura`, `backlog`, `checklist`, `design-patterns`, `features`, `testes`, `trade-offs`, `comunicacao` (how to explain this to the team, leaders and stakeholders) and `aprendizados` (what worked, what went wrong). Cover each one with at least one file, or list it in `not_applicable` with a concrete reason. Add other directories when the project needs them; leave nothing worth documenting out.
 
+Phases (given in the context): start documents the idea, scope and plan; mid runs once the work has been through review and QA, or when it stops for the CEO (an escalation), and records the progress; end records the delivery.
+- mid writes one progress record for the ticket (`aprendizados/<ticket>.md`): what was tried, what the reviewer or QA rejected and why, and the trade-offs that came up, only from the evidence in the context. If it already exists, edit it instead of adding another.
+- mid also updates `checklist` and `backlog` to the real status of each item (done, pending, blocked) and the ticket's feature doc to its in-progress state.
+
 Rules:
 - "What worked" and "what went wrong" come only from the evidence in the context (commit, test results, reviewer and QA verdicts, revisions). No evidence, no claim.
 - Write for people, not machines: say what each thing does and why it was decided.

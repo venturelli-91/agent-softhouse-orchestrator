@@ -8,7 +8,7 @@ import type { T } from "./ticket.ts";
 // Project docs under <repo>/.claude/docs (local only). Never blocks: every problem becomes a warning for `orch status`.
 // Docs usage is logged under node "docs" and left out of the ticket budget.
 export const docsNode =
-  (phase: "start" | "end") =>
+  (phase: "start" | "mid" | "end") =>
   async (t: T): Promise<Partial<T>> => {
     const prefix = `${phase}: `;
     const keep = t.docs_warnings.filter((w) => !w.startsWith(prefix));
@@ -23,11 +23,12 @@ export const docsNode =
       const mode = docsMode(repo);
       const snap = snapshot(repo);
       const facts =
-        phase === "end"
+        phase !== "start"
           ? [
               `Evidence: ${t.evidence.join(", ")}`,
               `Revisions: ${t.revisions}`,
               `Node history: ${t.history.map((h) => `${h.node}: ${h.result}`).join("; ")}`,
+              ...(t.rejections.length ? [`Rejections (full text, oldest first):\n${t.rejections.map((r) => `- ${r}`).join("\n")}`] : []),
               `Diff stat:\n${sh(t.worktree, "diff", "--stat", t.base, "HEAD")}`,
               ticketData(t),
             ]
@@ -42,9 +43,11 @@ export const docsNode =
         cwd: t.worktree,
         schema: DocsOutput,
         context: [
-          phase === "start"
-            ? "Phase: start. The CEO request just arrived: document the idea, scope and plan."
-            : "Phase: end. The delivery is ready: record what was done, what worked and what failed, from the facts below.",
+          {
+            start: "Phase: start. The CEO request just arrived: document the idea, scope and plan.",
+            mid: "Phase: mid. The work has run and is passing to publish or to the CEO: record the progress so far from the facts below.",
+            end: "Phase: end. The delivery is ready: record what was done, what worked and what failed, from the facts below.",
+          }[phase],
           `Mode: ${mode}`,
           `CEO request: ${t.request}`,
           ...facts,

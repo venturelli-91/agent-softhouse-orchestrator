@@ -75,6 +75,7 @@ export const Ticket = z.object({
   revisions: z.number().default(0),
   evidence: z.array(z.string()).default([]),
   docs_warnings: z.array(z.string()).default([]),
+  rejections: z.array(z.string()).default([]),
   history: z.array(z.object({ node: z.string(), time: z.string(), result: z.string(), ms: z.number(), usage: z.custom<Usage>().optional() })).default([]),
 });
 export type T = z.infer<typeof Ticket>;
