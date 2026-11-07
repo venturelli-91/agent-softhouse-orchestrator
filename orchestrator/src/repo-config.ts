@@ -77,9 +77,15 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
 // does not load it by itself, so the dev gets it in its context. Capped: it is paid for on every dev turn.
 export function loadConventions(repo: string, ref: string, max = 8000): string {
   // .claude/ is local only (never committed), so its CLAUDE.md is read from disk; the agent cannot edit it from its worktree.
+  // A copy committed at the base commit went through a PR, not through the CEO's own disk: it is not trusted over the root file.
+  let tracked = false;
+  try {
+    safeGit(repo, "cat-file", "-e", `${ref}:.claude/CLAUDE.md`);
+    tracked = true;
+  } catch {}
   try {
     const local = join(repo, ".claude", "CLAUDE.md");
-    if (!lstatSync(join(repo, ".claude")).isSymbolicLink() && lstatSync(local).isFile()) return readFileSync(local, "utf8").slice(0, max);
+    if (!tracked && !lstatSync(join(repo, ".claude")).isSymbolicLink() && lstatSync(local).isFile()) return readFileSync(local, "utf8").slice(0, max);
   } catch {}
   try {
     return safeGit(repo, "show", `${ref}:CLAUDE.md`).slice(0, max);

@@ -19,7 +19,7 @@ to teammates, leaders and stakeholders. It is local to the machine and never com
   catch every failure into `docs_warnings`; they never change the ticket status.
 - `ensureLocalOnly`: adds `.claude/` to `.git/info/exclude` and checks `git check-ignore`; if
   git would still track it (a repo `.gitignore` un-ignores `.claude/`), nothing is written.
-- `loadConventions`: `.claude/CLAUDE.md` on disk first, then the root `CLAUDE.md` at the base commit.
+- `loadConventions`: `.claude/CLAUDE.md` on disk first (only if it is not committed at the base commit), then the root `CLAUDE.md` at the base commit.
 
 ## Modes
 
