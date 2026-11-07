@@ -73,6 +73,15 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
   return RepoConfig.parse({ ...external(repo, home), ...inRepo });
 }
 
+// A bare `node --test` scans the whole tree, so it would also run orchestrator/tests inside every ticket worktree.
+export function bareNodeTest(repo: string): boolean {
+  try {
+    return /^node\s+--test(\s+--[\w-]+)*\s*$/.test(JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).scripts?.test);
+  } catch {
+    return false;
+  }
+}
+
 // The target repo rules: .claude/CLAUDE.md on disk, else the root CLAUDE.md from the base commit (a ticket cannot edit its own rules). `claude -p` with our flags
 // does not load it by itself, so the dev gets it in its context. Capped: it is paid for on every dev turn.
 export function loadConventions(repo: string, ref: string, max = 8000): string {
@@ -82,7 +91,9 @@ export function loadConventions(repo: string, ref: string, max = 8000): string {
   const isRules = (names: string) => names.split("\0").some((n) => n.toLowerCase() === ".claude/claude.md");
   let tracked: boolean;
   try {
-    tracked = isRules(safeGit(repo, "ls-tree", "-r", "-z", "--name-only", ref)) || isRules(safeGit(repo, "ls-files", "-z"));
+    // Only the .claude directory is listed (any case): a full listing can overflow the git output buffer on a big repo.
+    const dirs = safeGit(repo, "ls-tree", "-z", "--name-only", ref).split("\0").filter((n) => n.toLowerCase() === ".claude");
+    tracked = dirs.some((d) => isRules(safeGit(repo, "ls-tree", "-r", "-z", "--name-only", ref, "--", d))) || isRules(safeGit(repo, "ls-files", "-z", "--", ":(icase).claude"));
   } catch {
     tracked = true; // fail closed: if git cannot tell, do not trust the disk copy
   }
