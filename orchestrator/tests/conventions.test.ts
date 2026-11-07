@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConventions } from "../src/repo-config.ts";
+import { bareNodeTest, loadConventions } from "../src/repo-config.ts";
 
 test("the repo's CLAUDE.md comes from the base commit, capped", () => {
   const d = mkdtempSync(join(tmpdir(), "conv-"));
@@ -105,4 +105,34 @@ test("a symlinked .claude directory is ignored and the committed root file is us
     return t.skip("cannot create symlinks here");
   }
   assert.equal(loadConventions(d, git("rev-parse", "HEAD")), "root rules");
+});
+
+test("a differently-cased or index-only .claude/CLAUDE.md is not trusted", () => {
+  const d = mkdtempSync(join(tmpdir(), "conv-"));
+  const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd: d, encoding: "utf8" }).trim();
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(d, "CLAUDE.md"), "root rules");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  const base = git("rev-parse", "HEAD");
+  mkdirSync(join(d, ".claude"));
+  writeFileSync(join(d, ".claude", "CLAUDE.md"), "staged rules");
+  assert.equal(loadConventions(d, base), "staged rules");
+  git("add", "-f", ".claude/CLAUDE.md");
+  assert.equal(loadConventions(d, base), "root rules");
+  git("commit", "-q", "-m", "rules");
+  git("mv", ".claude/CLAUDE.md", ".claude/claude.md");
+  git("commit", "-q", "-m", "case");
+  assert.equal(loadConventions(d, git("rev-parse", "HEAD")), "root rules");
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("a bare node --test script is detected", () => {
+  const d = mkdtempSync(join(tmpdir(), "conv-"));
+  const at = (test: string) => (writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test } })), bareNodeTest(d));
+  assert.equal(at("node --test"), true);
+  assert.equal(at("node --test --test-concurrency"), true);
+  assert.equal(at("node --test tests"), false);
+  assert.equal(at("npm run x"), false);
+  rmSync(d, { recursive: true, force: true });
 });
