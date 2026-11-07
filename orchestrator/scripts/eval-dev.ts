@@ -148,6 +148,6 @@ for (const model of values.models.split(",")) {
         + why}; dev said: ${res.output.summary.replaceAll("\n", " ").slice(0, 900)}`);
     }
   }
-  const head = `${model} dev: ${ok}/${runs} accepted (${verified} with verified evidence), ${tokens} tokens, ${turns} turns`;
-  console.log(`${head}, ${(ms / 1000).toFixed(0)} s, US$${usd.toFixed(3)}${lines.length ? "\n  " + lines.join("\n  ") : ""}`);
+  const summaryHead = `${model} dev: ${ok}/${runs} accepted (${verified} with verified evidence), ${tokens} tokens, ${turns} turns`;
+  console.log(`${summaryHead}, ${(ms / 1000).toFixed(0)} s, US$${usd.toFixed(3)}${lines.length ? "\n  " + lines.join("\n  ") : ""}`);
 }
