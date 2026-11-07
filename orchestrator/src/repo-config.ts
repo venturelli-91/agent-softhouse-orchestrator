@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { orchHome } from "./daily-cap.ts";
@@ -78,7 +78,8 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
 export function loadConventions(repo: string, ref: string, max = 8000): string {
   // .claude/ is local only (never committed), so its CLAUDE.md is read from disk; the agent cannot edit it from its worktree.
   try {
-    return readFileSync(join(repo, ".claude", "CLAUDE.md"), "utf8").slice(0, max);
+    const local = join(repo, ".claude", "CLAUDE.md");
+    if (lstatSync(local).isFile()) return readFileSync(local, "utf8").slice(0, max);
   } catch {}
   try {
     return safeGit(repo, "show", `${ref}:CLAUDE.md`).slice(0, max);

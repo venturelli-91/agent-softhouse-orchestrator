@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConventions } from "../src/repo-config.ts";
@@ -45,4 +45,22 @@ test("the rules come from .claude/CLAUDE.md on disk first, then the committed ro
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", "commit", "-q", "--allow-empty", "-m", "b"], { cwd: none });
   assert.equal(loadConventions(none, "HEAD"), "");
   rmSync(none, { recursive: true, force: true });
+});
+
+test("a symlinked .claude/CLAUDE.md is ignored and the committed root file is used", (t) => {
+  const d = mkdtempSync(join(tmpdir(), "conv-"));
+  const outside = join(mkdtempSync(join(tmpdir(), "conv-out-")), "secret.md");
+  writeFileSync(outside, "secret");
+  const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd: d, encoding: "utf8" }).trim();
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(d, "CLAUDE.md"), "root rules");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  mkdirSync(join(d, ".claude"));
+  try {
+    symlinkSync(outside, join(d, ".claude", "CLAUDE.md"), "file");
+  } catch {
+    return t.skip("cannot create file symlinks here");
+  }
+  assert.equal(loadConventions(d, git("rev-parse", "HEAD")), "root rules");
 });
