@@ -35,6 +35,8 @@ export const RepoConfig = z.object({
   deploy: DeployConfig.nullable().default(null),
   // The dev specialties triage may route to in this repo; the whole team by default.
   specialties: z.array(z.enum(SPECIALTIES)).min(1).default([...SPECIALTIES]),
+  // The stack the team decided (`orch team`); goes into every dev's context next to the repo conventions.
+  stack: z.string().max(400).default(""),
 });
 export type RepoConfig = z.infer<typeof RepoConfig>;
 

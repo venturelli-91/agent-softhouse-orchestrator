@@ -44,18 +44,25 @@ export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, in
     return { ok: false, reason: `touched files break the modularity limit (${limit}): ${oversized.join(", ")}; split them` };
   }
   if (install) installDeps(wt);
-  try {
-    // execSync (shell) because npm is npm.cmd on Windows. `test` comes from .orchestrator.json at the base commit
-    // (a ticket cannot edit it) and RepoConfig only accepts a plain command with no shell operators.
-    execSync(test, { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
-  } catch (e) {
-    return { ok: false, reason: `${test} failed: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}` };
-  }
+  const failure = testFailure(wt, test);
+  if (failure) return { ok: false, reason: failure };
   // npm test runs repo code: if it moved HEAD or dirtied the tree, the verification is void.
   if (git("rev-parse", "HEAD") !== sha) return { ok: false, reason: "HEAD changed during verification" };
   if (git("status", "--porcelain", "--untracked-files=all").length) return { ok: false, reason: "worktree changed during verification" };
   const evidence = [`commit:${git("rev-parse", "--short", sha)}`, `tests:${test} ok`];
   return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence };
+}
+
+// execSync (shell) because npm is npm.cmd on Windows. `test` comes from .orchestrator.json at the base commit
+// (a ticket cannot edit it) and RepoConfig only accepts a plain command with no shell operators.
+// Also used on the untouched base before any agent runs: a red base would fail every ticket's verification.
+export function testFailure(wt: string, test = DEFAULT_TEST): string {
+  try {
+    execSync(test, { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
+    return "";
+  } catch (e) {
+    return `${test} failed: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}`;
+  }
 }
 
 // Host-side install for repos that opt in (`install` in the repo config): the lockfile comes from the base commit and no package script runs.

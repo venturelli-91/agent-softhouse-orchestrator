@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { installDeps, verifyEvidence } from "../src/guardrails.ts";
+import { installDeps, testFailure, verifyEvidence } from "../src/guardrails.ts";
 
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
 
@@ -67,6 +67,16 @@ test("a commit without a real passing test is rejected, even if the agent says i
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
   assert.match((r as { reason: string }).reason, /npm test failed/);
+});
+
+test("testFailure flags a red base and passes a green one", () => {
+  const red = repo('node -e "process.exit(1)"');
+  const green = repo();
+  const r = [testFailure(red.d, "npm test"), testFailure(green.d, "npm test")];
+  rmSync(red.d, { recursive: true, force: true });
+  rmSync(green.d, { recursive: true, force: true });
+  assert.match(r[0], /npm test failed/);
+  assert.equal(r[1], "");
 });
 
 test("a worktree with an uncommitted change is rejected", () => {

@@ -1,6 +1,9 @@
 // Commands that set up and tidy the orchestrator itself: init, status, clean.
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { stdin, stdout } from "node:process";
+import { createInterface } from "node:readline/promises";
+import { applyTeam, configJson, proposeTeam } from "../../src/team.ts";
 import { usedToday } from "../../src/daily-cap.ts";
 import { forgetDeploy } from "../../src/deploy.ts";
 import { ensureLocalOnly } from "../../src/docs.ts";
@@ -24,7 +27,7 @@ export function init(c: Ctx) {
   if (existsSync(file)) console.log(`${file} already exists${team ? `: set "specialties" there by hand (${TEAMS[team].join(", ")})` : ""}`);
   else {
     const specialties = team && team !== "all" ? { specialties: TEAMS[team] } : {};
-    writeFileSync(file, `${JSON.stringify({ test: "npm test", merge: "pr", ...specialties }, null, 2)}\n`);
+    writeFileSync(file, configJson({ test: "npm test", merge: "pr", ...specialties }));
     console.log(`wrote ${file}: set "test" to the repo's test command, then commit it (it is read from the base commit)`);
     if (bareNodeTest(repo)) {
       console.warn(
@@ -37,6 +40,17 @@ export function init(c: Ctx) {
     console.log("no .claude/CLAUDE.md: the dev will have no repo conventions (commit format, style)");
   }
   console.log(ensureLocalOnly(repo) ?? `${join(repo, ".claude", "docs")} ready and ignored by git: the graph writes the project docs there`);
+}
+
+export async function team(c: Ctx) {
+  const need = c.positionals[0] ?? die('usage: orch team "<need>" [--repo <path>] [--yes]');
+  c.needCap();
+  const repo = resolve(c.values.repo ?? c.host);
+  const p = await proposeTeam(repo, need);
+  console.log(`team: ${p.specialties.join(", ")}\nstack (${p.existing_stack ? "existing" : "recommended"}): ${p.stack}\ntest: ${p.test}\nwhy: ${p.rationale}`);
+  const ok = c.values.yes || (await createInterface({ input: stdin, output: stdout }).question("write this to .orchestrator.json? [y/N] ")).trim().toLowerCase() === "y";
+  if (!ok) return console.log("nothing written");
+  console.log(`wrote ${applyTeam(repo, p)}: commit it (it is read from the base commit)`);
 }
 
 export async function status(c: Ctx) {

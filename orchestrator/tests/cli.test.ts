@@ -2,16 +2,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createFixture } from "../scripts/fixture.ts";
+import { createFixture, git } from "../scripts/fixture.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const PRELOAD = pathToFileURL(join(ROOT, "tests", "helpers", "cli-fake.ts")).href;
 
-function sandbox() {
+function sandbox(green = true) {
   const dir = mkdtempSync(join(tmpdir(), "cli-"));
   const env = { ...process.env, EXECUTOR: "fake-cli", PUBLISHER: "fake-cli", TOKEN_BUDGET_TICKET: "100000",
     ORCH_HOME: join(dir, "home"), ORCH_WORK: join(dir, "work"), NOTIFY_URL: "", TOKEN_CAP_DAILY: "" };
@@ -19,8 +19,27 @@ function sandbox() {
     const r = spawnSync(process.execPath, ["--import", PRELOAD, "scripts/orch.ts", ...args], { cwd: ROOT, env, encoding: "utf8", timeout: 120_000 });
     return { code: r.status, out: `${r.stdout}${r.stderr}` };
   };
-  return { orch, repo: createFixture(dir), done: () => rmSync(dir, { recursive: true, force: true }) };
+  const repo = createFixture(dir);
+  // The fixture starts red on purpose (the tracer needs a failing test); `orch run` refuses a red base, so green it unless asked.
+  if (green) {
+    writeFileSync(join(repo, "test/checkout.test.js"), 'import { test } from "node:test";\ntest("ok", () => {});\n');
+    git(repo, "commit", "-qam", "green base");
+  }
+  return { orch, repo, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
+
+test("orch run refuses a red base before any agent runs and leaves no worktree behind", () => {
+  const sb = sandbox(false);
+  try {
+    const run = sb.orch("run", "Change the checkout button label to Submit order", "--repo", sb.repo, "--id", "T-1");
+    assert.equal(run.code, 1, run.out);
+    assert.match(run.out, /base is red/);
+    assert.equal(git(sb.repo, "worktree", "list").split("\n").length, 1);
+    assert.equal(git(sb.repo, "branch", "--list", "ticket/*"), "");
+  } finally {
+    sb.done();
+  }
+});
 
 test("orch run stops at the CEO approval, and status shows the ticket waiting", () => {
   const sb = sandbox();
