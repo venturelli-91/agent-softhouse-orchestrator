@@ -94,6 +94,7 @@ test("a worktree with an uncommitted change is rejected", () => {
   const r = verifyEvidence(d, base);
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /uncommitted changes/);
 });
 
 test("renaming a forbidden file does not hide the old path", () => {
