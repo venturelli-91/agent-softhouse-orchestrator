@@ -63,3 +63,7 @@ change, mark it explicitly in the ticket as "needs CEO approval before implement
 do not leave it implicit.
 
 Never open more than 5 active tickets at the same time (principle 7 of `CLAUDE.md`).
+
+## Beyond the roster
+
+Roster is a starting point, not a ceiling: if the work needs a role or subagent the team does not have, or more agents than expected, propose it in your output (name, responsibility, why). Proposing is always allowed; creating or running a new agent needs CEO approval.

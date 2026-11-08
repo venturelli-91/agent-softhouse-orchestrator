@@ -14,6 +14,8 @@ export const TeamProposal = z.object({
   existing_stack: z.boolean(),
   test: z.string().regex(/^[\w ./:=@-]+$/).default("npm test"),
   rationale: z.string().max(600),
+  // Roles or subagents the roster lacks. Only a proposal: a new agent needs a prompt and the CEO's approval, nothing runs it by itself.
+  proposed_agents: z.array(z.object({ name: z.string().max(60), responsibility: z.string().max(200), why: z.string().max(200) })).max(5).default([]),
 });
 export type TeamProposal = z.infer<typeof TeamProposal>;
 
@@ -22,7 +24,9 @@ const RULES =
   "Inspect the repo first (package.json, lockfiles, config, source layout). If it already has a stack, respect it: " +
   "existing_stack=true, `stack` describes what is there, and recommend nothing that replaces or adds a paid dependency. " +
   "If the repo is empty or has no stack, existing_stack=false and recommend one with the reason. " +
-  "`test` is the plain command that verifies the project (no shell operators). Choose only the specialties the need really uses.";
+  "`test` is the plain command that verifies the project (no shell operators). Choose only the specialties the need really uses. " +
+  "The roster is a starting point: if the need requires a role or subagent it lacks, or more agents than you would expect, " +
+  "list it in `proposed_agents` (name, responsibility, why); leave it empty when the roster is enough.";
 
 // The agent sees an export of the committed HEAD, never the live checkout (untracked and ignored files stay out). No commit yet = empty dir.
 function snapshot(repo: string): { dir: string; done: () => void } {
@@ -60,7 +64,8 @@ export const configJson = (o: object): string =>
 export function applyTeam(repo: string, p: TeamProposal): string {
   const file = join(repo, ".orchestrator.json");
   const current = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { merge: "pr" };
-  const next = { ...current, test: current.test ?? p.test, specialties: p.specialties, stack: p.stack };
+  const next = { ...current, test: current.test ?? p.test, specialties: p.specialties, stack: p.stack,
+    ...(p.proposed_agents.length ? { proposed_agents: p.proposed_agents } : {}) };
   writeFileSync(file, configJson(next));
   return file;
 }
