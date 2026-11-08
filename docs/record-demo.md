@@ -32,7 +32,7 @@ The base must be green: `orch run` tests a fresh worktree first and refuses a re
 ## 2. The commands to show
 
 ```bash
-node --env-file=.env scripts/orch.ts run "Rename checkout button label to 'Submit order'" --repo "$DEMO/fixture" --id DEMO-1
+node --env-file=.env scripts/orch.ts run "Change the checkout button label in checkout.html from 'Submit' to 'Submit order' and update the checkout test to expect the new label. Done when npm test passes." --repo "$DEMO/fixture" --id DEMO-1
 node --env-file=.env scripts/orch.ts status
 node --env-file=.env scripts/orch.ts approve DEMO-1
 node --env-file=.env scripts/orch.ts clean DEMO-1
@@ -40,9 +40,12 @@ node --env-file=.env scripts/orch.ts clean DEMO-1
 
 `run` stops at the approval request, `approve` ends with `DEMO-1: simulated_deploy`, `clean` removes worktree, branch and state.
 Cost per node lands in `$ORCH_HOME/metrics.jsonl`.
+These four commands and the request text mirror the run that produced the evidence, which used id `COST-1` (the demo uses `DEMO-1`).
+The first `orch run` costs real money: about US$0.23 (one sample).
 
 ## 3. Record with vhs
 
+Untested: this `.tape` was never run, and `Wait+Screen` needs a recent vhs (the minimum version was not checked).
 Save as `demo.tape` in the repo root (not committed):
 
 ```text
@@ -52,7 +55,7 @@ Set FontSize 16
 Set Width 1200
 Set Height 700
 Type "cd orchestrator" Enter
-Type `node --env-file=.env scripts/orch.ts run "Rename checkout button label to 'Submit order'" --repo "$DEMO/fixture" --id DEMO-1` Enter
+Type `node --env-file=.env scripts/orch.ts run "Change the checkout button label in checkout.html from 'Submit' to 'Submit order' and update the checkout test to expect the new label. Done when npm test passes." --repo "$DEMO/fixture" --id DEMO-1` Enter
 Wait+Screen@180s /TOTAL DEMO-1 status=approval/
 Type "node --env-file=.env scripts/orch.ts status" Enter
 Sleep 3s
