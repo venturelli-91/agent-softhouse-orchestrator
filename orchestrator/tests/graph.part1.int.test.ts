@@ -114,6 +114,7 @@ test("an exceeded token budget interrupts the ticket", async () => {
 });
 
 test("evidence declared by the dev without a real passing test is rejected", async () => {
+  knobs.realTest = true;
   knobs.override.dev = (req) => (commit(req.cwd, "agent-dev", "other.txt", "x"), { summary: "done, tests pass", brief: BRIEF });
   const g = await start();
   assert.ok(!knobs.calls.includes("reviewer"));
