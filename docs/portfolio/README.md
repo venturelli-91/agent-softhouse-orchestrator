@@ -25,7 +25,7 @@ Result: a CLI (`orch`) that takes a plain-English request, drives it through tri
 | Metric | Value |
 |---|---|
 | Source (`orchestrator/src`) | ~2,400 lines of TypeScript in 38 files |
-| Automated tests | 244 defined (82 unit, 162 integration; 2 integration tests skip where symlinks are unavailable; `node:test`, no network, no model, no credentials) |
+| Automated tests | 245 defined (82 unit, 163 integration; 2 integration tests skip where symlinks are unavailable; `node:test`, no network, no model, no credentials) |
 | Runtime dependencies | 3 (`@langchain/langgraph`, `@langchain/core`, `zod`) |
 | Graph nodes | 14 (triage, planner, dev, reviewer, design, qa, webcheck, publish, ceo_approval, merge_pr, deploy, docs_start, docs_mid, docs_end) |
 | Agent prompts | 21 in `orchestrator/agents/` |

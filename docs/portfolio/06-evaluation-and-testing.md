@@ -31,7 +31,7 @@ Instead of guessing which model each role needs, I built three eval scripts (`ev
 
 ## 12. Testing strategy
 
-- **244 tests defined with `node:test`** (82 unit, 162 integration; 2 integration tests skip where symlinks are unavailable; counts as of 2026-11-08), run on Node 24 with native TypeScript. No vitest, no tsx. `npm run test:unit` runs the fast pure tests, `npm run test:int` the ones that build real git repos and drive the graph, and `npm test` runs both.
+- **245 tests defined with `node:test`** (82 unit, 163 integration; 2 integration tests skip where symlinks are unavailable; counts as of 2026-11-08), run on Node 24 with native TypeScript. No vitest, no tsx. `npm run test:unit` runs the fast pure tests, `npm run test:int` the ones that build real git repos and drive the graph, and `npm test` runs both.
 - **Zero network, model or credentials.** A fake executor (`registerExecutor("fake", ...)`) and a fake publisher exercise the real graph. The fake dev makes **real commits** in a fixture repo.
 - Coverage includes: revision cap, self-approval, declared-but-false evidence, forbidden paths, `package.json` changes, uncommitted changes, deploy only after approval, escalation on every failure class, planner clarification loop, push/PR ordering, git config tampering, local merge safety, incident dedupe, chaos sandbox restriction, probe symptoms, deploy command masking, postmortem sanitization, per-ticket locks.
 - **CI:** GitHub Actions on Node 24 (typecheck, then `npm test`) with `permissions: contents: read` and no secrets.
