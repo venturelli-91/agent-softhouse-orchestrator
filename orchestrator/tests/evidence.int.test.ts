@@ -110,7 +110,7 @@ test("renaming a forbidden file does not hide the old path", () => {
   assert.match((r as { reason: string }).reason, /forbidden/);
 });
 
-test("an npm test that moves HEAD voids the verification", () => {
+test("a test command that moves HEAD voids the verification", () => {
   const { d, base } = repo();
   writeFileSync(join(d, "a.txt"), "x");
   git(d, "add", "-A");
