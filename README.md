@@ -1,6 +1,7 @@
 # Agent Softhouse Orchestrator
 
-A TypeScript CLI where a [LangGraph.js](https://langchain-ai.github.io/langgraphjs/) state machine drives a team of AI agents (triage, planner, dev, reviewer, QA) from a plain-English request to a draft PR, then to merge and deploy after a human approves.
+A TypeScript CLI where a [LangGraph.js](https://langchain-ai.github.io/langgraphjs/) state machine drives a team of AI agents (triage, planner, dev, reviewer, QA)
+from a plain-English request to a draft PR, then to merge and deploy after a human approves.
 
 - The flow is a graph in code. The model cannot skip a step by being persuaded.
 - Limits (token budget, revision cap, no self-approval) are code checks, not prompt advice.
@@ -47,11 +48,15 @@ npm run test:unit
 
 The unit tests need no network, no model and no credentials (81 tests passed on a clean clone).
 
-A real run (`npm run orch -- run "<request>" --repo <path>`) needs the Claude Code CLI logged in, a `.env` copied from `orchestrator/.env.example`, and a target git repo. Running `npm run orch` with no arguments prints the command list. I did not execute a live model run for this README.
+A real run (`npm run orch -- run "<request>" --repo <path>`) needs the Claude Code CLI logged in,
+a `.env` copied from `orchestrator/.env.example`, and a target git repo.
+Running `npm run orch` with no arguments prints the command list.
+No live model run was executed for this README.
 
 ## Key decisions
 
-- **Flow as a graph in code, not a prompt:** nodes and edges live in [`graph.ts`](orchestrator/src/graph.ts); tested in [`graph.part1.int.test.ts`](orchestrator/tests/graph.part1.int.test.ts).
+- **Flow as a graph in code, not a prompt:** nodes and edges live in [`graph.ts`](orchestrator/src/graph.ts).
+  - Tested in [`graph.part1.int.test.ts`](orchestrator/tests/graph.part1.int.test.ts).
 - **Guardrails enforced in code:**
   - Token budget ([`flow-limits.ts`](orchestrator/src/flow-limits.ts)): an overrun escalates, test "an exceeded token budget interrupts the ticket".
     `budgetExceeded` also throws when `TOKEN_BUDGET_TICKET` is missing; no test covers the missing-value case.
