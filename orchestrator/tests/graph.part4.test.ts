@@ -227,7 +227,7 @@ test("docs are not written when git would not ignore .claude", async () => {
 
 test("docs usage does not count against the ticket token budget", async () => {
   knobs.tokensPerCall = 20;
-  process.env.TOKEN_BUDGET_TICKET = "90";
+  process.env.TOKEN_BUDGET_TICKET = "110";
   const g = await start();
   assert.equal(paused(g.r)?.type, "approval");
   assert.equal(g.r.status, "approval");

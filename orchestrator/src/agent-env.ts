@@ -4,7 +4,7 @@ import { devNull } from "./git-safe.ts";
 // On Windows the shell of claude -p is PowerShell; on POSIX, Bash.
 export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
 
-export type Role = "triage" | "planner" | "dev" | "reviewer" | "qa" | "devops" | "watchdog" | "knowledge" | "docs";
+export type Role = "triage" | "planner" | "dev" | "reviewer" | "design" | "qa" | "devops" | "watchdog" | "knowledge" | "docs";
 
 export const ALLOWED_ENV = [
   "PATH", "PATHEXT", "SystemRoot", "windir", "COMSPEC", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH",

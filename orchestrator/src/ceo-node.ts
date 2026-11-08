@@ -56,5 +56,5 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
   return { status: "dev_failed", revisions: 0, summary: `CEO instructed: ${r}`.slice(0, 500), history: h("resumed") };
 };
 
-const RETRYABLE = ["triage", "planner", "dev", "reviewer", "qa", "publish", "deploy"];
-const POST_DEV = ["reviewer", "qa", "publish", "deploy"];
+const RETRYABLE = ["triage", "planner", "dev", "reviewer", "design", "qa", "publish", "deploy"];
+const POST_DEV = ["reviewer", "design", "qa", "publish", "deploy"];

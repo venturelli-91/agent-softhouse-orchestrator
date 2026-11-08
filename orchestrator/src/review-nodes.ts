@@ -18,7 +18,7 @@ const diff = (t: T) => {
   return d;
 };
 
-function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: string) {
+function reviewStep(name: "reviewer" | "design" | "qa", files: (t: T) => string[], next: string | ((t: T) => string)) {
   return guarded(name, async (t) => {
     // Flow rules in code: independence and verified evidence before spending tokens.
     const who = `agent-${name}`;
@@ -39,11 +39,11 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
         `Diff:\n${diff(t)}`,
       ),
     });
-    const id = name === "reviewer" ? { reviewer_id: `agent-${name}` } : { qa_id: `agent-${name}` };
+    const id = { [`${name}_id`]: `agent-${name}` };
     if (output.verdict === "approved")
       return {
         ...id,
-        status: next,
+        status: typeof next === "function" ? next(t) : next,
         summary: cap(output.summary),
         explanation: [t.explanation, output.explanation.trim().split("\n").slice(0, 6).join("\n")].filter(Boolean).join("\n"),
         history: log(t, name, "approved", usage),
@@ -58,6 +58,8 @@ function reviewStep(name: "reviewer" | "qa", files: (t: T) => string[], next: st
     };
   });
 }
+// ponytail: UI review only for tickets routed to a UI specialty; a backend ticket has no screen to critique.
+const UI_SPECIALTIES: string[] = ["frontend", "fullstack"];
 export const reviewer = reviewStep(
   "reviewer",
   (t) => [
@@ -66,6 +68,7 @@ export const reviewer = reviewStep(
     ...(t.flags.touches_performance ? ["performance"] : []),
     ...(t.flags.touches_ai ? ["evals-engineer"] : []),
   ],
-  "qa",
+  (t) => (UI_SPECIALTIES.includes(t.specialty) ? "design" : "qa"),
 );
+export const design = reviewStep("design", () => ["design-reviewer"], "qa");
 export const qa = reviewStep("qa", () => ["qa-automation"], "publish");

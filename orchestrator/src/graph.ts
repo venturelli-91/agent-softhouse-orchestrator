@@ -6,7 +6,7 @@ import { docsNode } from "./docs-node.ts";
 import { sh } from "./graph-kit.ts";
 import { planner, SPLIT_RULE, triage } from "./plan-nodes.ts";
 import { loadConventions, loadRepoConfig } from "./repo-config.ts";
-import { DIFF_LIMIT, evidenceNote, qa, reviewer } from "./review-nodes.ts";
+import { DIFF_LIMIT, design, evidenceNote, qa, reviewer } from "./review-nodes.ts";
 import { deploy, deployTicket, mergeNode, publishNode } from "./ship-nodes.ts";
 import { Brief, briefMarkdown, Ticket, type T } from "./ticket.ts";
 
@@ -15,6 +15,7 @@ export { Brief, briefMarkdown, Ticket, DEV_RULES, devRules, partialWork, taskBlo
 // Review loop: above the cap, or on any escalation/ambiguity, the ticket goes to the CEO, through docs_mid so the progress is recorded.
 const route = (ok: string, node: string) => (t: T) =>
   t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "docs_mid";
+const afterReview = (t: T) => (t.status === "design" ? "design" : route("qa", "qa")(t));
 const afterTriage = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguous" ? "planner" : "docs_mid");
 // docs_mid changes no status: a passed QA goes on to publish, anything else is an escalation.
 const afterMid = (t: T) => (t.status === "publish" ? "publish" : "ceo_approval");
@@ -29,6 +30,7 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addNode("planner", planner)
     .addNode("dev", dev)
     .addNode("reviewer", reviewer)
+    .addNode("design", design)
     .addNode("qa", qa)
     .addNode("publish", publishNode)
     .addNode("ceo_approval", ceoApproval)
@@ -42,12 +44,13 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("triage", afterTriage, ["dev", "planner", "docs_mid"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "docs_mid"])
     .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "reviewer")(t)), ["reviewer", "dev", "docs_mid"])
-    .addConditionalEdges("reviewer", route("qa", "qa"), ["qa", "dev", "docs_mid"])
+    .addConditionalEdges("reviewer", afterReview, ["design", "qa", "dev", "docs_mid"])
+    .addConditionalEdges("design", route("qa", "qa"), ["qa", "dev", "docs_mid"])
     .addConditionalEdges("qa", route("publish", "docs_mid"), ["docs_mid", "dev"])
     .addConditionalEdges("publish", route("approval", "docs_end"), ["docs_end", "dev", "docs_mid"])
     .addConditionalEdges("docs_mid", afterMid, ["publish", "ceo_approval"])
     .addEdge("docs_end", "ceo_approval")
-    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "qa", "publish", "deploy", "merge_pr", END])
+    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "design", "qa", "publish", "deploy", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["deploy", "ceo_approval"])
     .addEdge("deploy", END)
     .compile({ checkpointer });
