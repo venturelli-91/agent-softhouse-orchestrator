@@ -58,7 +58,7 @@ export function loadPrompt(files: string[], dir = process.env.AGENTS_DIR): strin
   return files
     .map((a) => {
       const body = readFileSync(join(dir, `${a}.md`), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
-      if (/^Leia .* e siga\.$/.test(body)) throw new NodeFailure(`${a}: AGENTS_DIR=${dir} holds pointer stubs, point it at orchestrator/agents`);
+      if (/^Leia .* e siga\.$/.test(body)) throw new NodeFailure(`AGENTS_DIR=${dir} holds pointer stubs, point it at orchestrator/agents`);
       return body;
     })
     .join("\n\n---\n\n");

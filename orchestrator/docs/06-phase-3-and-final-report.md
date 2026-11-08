@@ -44,8 +44,8 @@ manager as a node.
 ## What did not need to be done
 
 A database or ticket repository; executor abstraction beyond the registry; module mocks
-(fake node through the executor); changing `.claude/agents`, `.claude/commands` or
-`CLAUDE.md` for the graph to work.
+(fake node through the executor); changing `.claude/commands` or `CLAUDE.md` for the graph to
+work. (`.claude/agents` was later reduced to pointer stubs; the prompts live in `orchestrator/agents`.)
 
 ## Known limits
 

@@ -41,6 +41,22 @@ test("orch run refuses a red base before any agent runs and leaves no worktree b
   }
 });
 
+test("orch run fails on AGENTS_DIR pointing at stubs before creating a worktree or branch", () => {
+  const sb = sandbox();
+  try {
+    const stubs = join(ROOT, "..", ".claude", "agents");
+    const r = spawnSync(process.execPath, ["--import", PRELOAD, "scripts/orch.ts", "run", "x", "--repo", sb.repo, "--id", "T-1"],
+      { cwd: ROOT, env: { ...process.env, AGENTS_DIR: stubs, EXECUTOR: "fake-cli", ORCH_HOME: join(sb.repo, "..", "home"), ORCH_WORK: join(sb.repo, "..", "work"), TOKEN_CAP_DAILY: "" }, encoding: "utf8" });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /^AGENTS_DIR=.* holds pointer stubs/);
+    assert.doesNotMatch(r.stderr.trim(), /\n/);
+    assert.equal(git(sb.repo, "worktree", "list").split(/\n/).length, 1);
+    assert.equal(git(sb.repo, "branch", "--list", "ticket/*"), "");
+  } finally {
+    sb.done();
+  }
+});
+
 test("orch run stops at the CEO approval, and status shows the ticket waiting", () => {
   const sb = sandbox();
   try {
