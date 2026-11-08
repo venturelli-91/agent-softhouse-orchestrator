@@ -16,8 +16,13 @@ const host = (u: string) => {
     return "";
   }
 };
-// ponytail: an id counts as loaded when a request to a Google host carries it in its URL; no per-product endpoint parsing.
-const loaded = (r: WebReport, id: string) => r.requests.some((u) => GOOGLE_HOST.test(host(u)) && u.includes(id));
+// ponytail: an id counts as loaded when a request to a Google host carries it as the `id` (gtm.js, gtag/js) or `tid` (collect) parameter; no per-product endpoint parsing.
+const loaded = (r: WebReport, id: string) =>
+  r.requests.some((u) => {
+    if (!GOOGLE_HOST.test(host(u))) return false;
+    const q = new URL(u).searchParams;
+    return q.get("id") === id || q.get("tid") === id;
+  });
 
 export function evaluate(r: WebReport, e: WebExpect): string[] {
   const out: string[] = [];
@@ -27,7 +32,7 @@ export function evaluate(r: WebReport, e: WebExpect): string[] {
   for (const [k, max] of [["lcp_ms", e.lcp_ms], ["cls", e.cls], ["inp_ms", e.inp_ms]] as const) {
     if (max === undefined) continue;
     const v = r.vitals[k];
-    if (v === undefined) out.push(`${k} was not measured on ${r.url}`);
+    if (typeof v !== "number" || !Number.isFinite(v)) out.push(`${k} was not measured on ${r.url}`);
     else if (v > max) out.push(`${k} ${v} is over the budget ${max} on ${r.url}`);
   }
   return out;
