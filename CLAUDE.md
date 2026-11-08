@@ -1,6 +1,6 @@
 # AI Agent Software House — Framework
 
-This repository is the software house's **reusable skeleton**: roles (`.claude/agents/`),
+This repository is the software house's **reusable skeleton**: roles (stubs in `.claude/agents/` pointing to `orchestrator/agents/`),
 flows (`.claude/commands/`) and rules (this file). It has no product code.
 
 **How to use it in a real project**: copy `.claude/` and this `CLAUDE.md` to the root of

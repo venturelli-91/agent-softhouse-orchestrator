@@ -30,7 +30,7 @@ exercised with a real model/remote at this point; Phase 4 did it
 
 ## What I reused
 
-`.claude/agents/*.md` and `CLAUDE.md` as the source of roles and rules (the guardrail
+`orchestrator/agents/*.md` (since T3 the single prompt source, `.claude/agents` are stubs) and `CLAUDE.md` as the source of roles and rules (the guardrail
 values mirror `CLAUDE.md`); the Claude Code login (no key); the LangGraph Mermaid;
 `node:test` and Node 24 type stripping (no vitest/tsx); active-ticket state in git's own
 worktrees (no database).

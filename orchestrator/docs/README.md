@@ -1,9 +1,7 @@
 # Orchestrator (LangGraph.js) — overview
 
 A thin orchestration layer over the software house. It lives in `orchestrator/` and
-**does not change** `.claude/agents`, `.claude/commands` or `CLAUDE.md`: the graph only
-reads those files. Deleting `orchestrator/` returns
-the system to its previous state; `/request`, `/ticket` and `/demand` keep working.
+**owns the role prompts** (`orchestrator/agents/`, the single source; `.claude/agents` are pointer stubs to them) and reads `.claude/commands` and `CLAUDE.md`. Removing `orchestrator/` means restoring the full prompts in `.claude/agents`; `/request`, `/ticket` and `/demand` read the same prompts.
 
 Thesis: **flow control in code, not in prompts.** The agent prompt is the weakest layer;
 the real barriers are code, CLI permissions, an isolated worktree and a minimal env.

@@ -14,7 +14,7 @@ Run this chain, in order, using the Agent tool:
    summary, validation instructions and risks/open items.
 3. Invoke **`code-reviewer`** (never the same agent that implemented) on the resulting
    PR — it mandatorily includes the Ponytail audit (unnecessary complexity **and**
-   excessive defensiveness, see `code-reviewer.md`). If it returns "blocking comments",
+   excessive defensiveness, see `orchestrator/agents/code-reviewer.md`). If it returns "blocking comments",
    go back to step 2 before proceeding.
 4. Invoke **`qa-automation`** on the PR approved in review. If "rejected", go back to
    step 2 with the reported bugs.
