@@ -36,6 +36,26 @@ flowchart TD
     merge_pr -.->|merge failed| gate
 ```
 
+## What a run looks like
+
+One trivial ticket (rename a button label) on a throwaway repo, trimmed from [`docs/evidence/cost-1/run.log`](docs/evidence/cost-1/run.log).
+It cost US$0.231 (the rounded TOTAL printed in the log; the exact sum in `metrics.jsonl` is 0.2308) and took 86 s of model time; [`docs/interview.md`](docs/interview.md) explains how to read the numbers.
+The run stops at the approval request (JSON, cut); `orch approve COST-1` then prints the second `TOTAL` line and the final `simulated_deploy`.
+
+```text
+docs       tokens=17154 (ctx 15704, output 1450) turns=5 13.8s US$0.037
+triage     tokens=9945 (ctx 9337, output 608) turns=4 7.6s US$0.026
+dev        tokens=71434 (ctx 69807, output 1627) turns=10 26.5s US$0.066
+reviewer   tokens=5330 (ctx 4881, output 449) turns=2 5.7s US$0.024
+design     tokens=5522 (ctx 5121, output 401) turns=2 6.2s US$0.014
+qa         tokens=5282 (ctx 4876, output 406) turns=2 5.4s US$0.013
+...
+TOTAL COST-1 status=approval revisions=0 tokens=130878 86.1s US$0.231
+...
+TOTAL COST-1 status=simulated_deploy revisions=0 tokens=130878 86.1s US$0.231
+COST-1: simulated_deploy
+```
+
 ## Run it in 3 commands
 
 Needs Node 24 or newer.
