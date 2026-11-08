@@ -47,7 +47,8 @@ const withDiscount = (c: string, withTests = true): Files => ({
   }),
 });
 
-const cases: { name: string; files: Files; expect: "approved" | "rejected" }[] = [
+const SECRET = 'const STRIPE_KEY = "sk_live_51Habc123EXAMPLEEXAMPLE";\n';
+const cases: { name: string; files: Files; expect: "approved" | "rejected"; only?: string }[] = [
   { name: "good", files: withDiscount(code()), expect: "approved" },
   { name: "no tests", files: withDiscount(code(), false), expect: "rejected" },
   { name: "rounds up (Math.ceil)", files: withDiscount(code("Math.ceil")), expect: "rejected" },
@@ -57,6 +58,8 @@ const cases: { name: string; files: Files; expect: "approved" | "rejected" }[] =
     files: { ...withDiscount(code()), "src/format.js": "export const formatPrice = (cents) => `USD ${(cents / 100).toFixed(2)}`;\n" },
     expect: "rejected",
   },
+  // Exercises the security add-on (code-reviewer + security prompts, as the graph loads them when touches_security).
+  { name: "hardcoded secret", files: withDiscount(SECRET + code()), expect: "rejected", only: "security" },
 ];
 
 // Fresh repo per case: base commit, then the candidate change on top; returns the worktree and the diff against base.
@@ -85,20 +88,21 @@ function makeRepo(files: Files) {
 }
 
 const Out = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary: z.string() });
-const files = { reviewer: ["code-reviewer"], qa: ["qa-automation"] } as const;
+const files = { reviewer: ["code-reviewer"], qa: ["qa-automation"], security: ["code-reviewer", "security"] } as const;
 const reps = Number(values.reps);
 
 for (const model of values.models.split(",")) {
-  for (const role of ["reviewer", "qa"] as const) {
-    process.env[`MODEL_${role.toUpperCase()}`] = model;
+  for (const role of ["reviewer", "qa", "security"] as const) {
+    process.env[`MODEL_${role === "security" ? "REVIEWER" : role.toUpperCase()}`] = model;
     let right = 0, tokens = 0, usd = 0;
     const marks: string[] = [];
-    for (const c of cases) {
+    const mine = cases.filter((c) => !c.only || c.only === role);
+    for (const c of mine) {
       let hits = 0;
       for (let i = 0; i < reps; i++) {
         const { repo, diff, evidence } = makeRepo(c.files);
         const { output, usage } = await runAgent({
-          role, files: [...files[role]], cwd: repo, schema: Out,
+          role: role === "security" ? "reviewer" : role, files: [...files[role]], cwd: repo, schema: Out,
           context: `${ticket}\n\n${evidenceNote(evidence)}\n\nDiff:\n${diff}\n\nAnswer only in the structured format. \`summary\`: up to 10 lines.`,
         });
         const ok = output.verdict === c.expect;
@@ -110,6 +114,6 @@ for (const model of values.models.split(",")) {
       right += hits;
       marks.push(`${c.name}: ${hits}/${reps}`);
     }
-    console.log(`${model} ${role}: ${right}/${cases.length * reps} correct, ${tokens} tokens, US$${usd.toFixed(3)}\n  ${marks.join("\n  ")}`);
+    console.log(`${model} ${role}: ${right}/${mine.length * reps} correct, ${tokens} tokens, US$${usd.toFixed(3)}\n  ${marks.join("\n  ")}`);
   }
 }
