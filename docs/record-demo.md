@@ -6,11 +6,15 @@ A run calls the model: expect about US$0.23 and about 90 s for the trivial ticke
 Needs Node 24+, the Claude Code CLI logged in, `orchestrator/.env` (from `.env.example`), `npm ci` in `orchestrator/`,
 and a recorder: [`vhs`](https://github.com/charmbracelet/vhs) (below) or `asciinema` plus `agg`.
 
+Windows 11: the recipe assumes bash (Git Bash). PowerShell has no `mktemp -d` and needs `$env:ORCH_HOME = ...` syntax for the variables.
+`vhs` needs `ttyd` and `ffmpeg` installed. Untested: how `ORCH_HOME`/`ORCH_WORK` with MSYS-style paths behave end to end through `orch run`.
+
 ## 1. Build the throwaway repo (no model, no cost)
 
 Run from `orchestrator/`, in the shell you will record from (bash):
 
 ```bash
+mkdir -p ../docs/assets
 export ORCH_HOME=$(mktemp -d) ORCH_WORK=$(mktemp -d) DEMO=$(mktemp -d)
 node -e '
 const { createFixture, git } = await import("./scripts/fixture.ts");
@@ -54,14 +58,19 @@ Set Shell "bash"
 Set FontSize 16
 Set Width 1200
 Set Height 700
-Type "cd orchestrator" Enter
-Type `node --env-file=.env scripts/orch.ts run "Change the checkout button label in checkout.html from 'Submit' to 'Submit order' and update the checkout test to expect the new label. Done when npm test passes." --repo "$DEMO/fixture" --id DEMO-1` Enter
+Type "cd orchestrator"
+Enter
+Type `node --env-file=.env scripts/orch.ts run "Change the checkout button label in checkout.html from 'Submit' to 'Submit order' and update the checkout test to expect the new label. Done when npm test passes." --repo "$DEMO/fixture" --id DEMO-1`
+Enter
 Wait+Screen@180s /TOTAL DEMO-1 status=approval/
-Type "node --env-file=.env scripts/orch.ts status" Enter
+Type "node --env-file=.env scripts/orch.ts status"
+Enter
 Sleep 3s
-Type "node --env-file=.env scripts/orch.ts approve DEMO-1" Enter
+Type "node --env-file=.env scripts/orch.ts approve DEMO-1"
+Enter
 Wait+Screen@60s /simulated_deploy/
-Type "node --env-file=.env scripts/orch.ts clean DEMO-1" Enter
+Type "node --env-file=.env scripts/orch.ts clean DEMO-1"
+Enter
 Sleep 3s
 ```
 
@@ -70,7 +79,7 @@ The ~90 s model wait is long for a GIF: speed it up in post, or use `asciinema r
 
 ## 4. Place and embed
 
-Put the file at `docs/assets/demo.gif` (create `docs/assets/`), then add under "What a run looks like" in the root `README.md`:
+Put the file at `docs/assets/demo.gif` (step 1 already created the folder), then add under "What a run looks like" in the root `README.md`:
 
 ```markdown
 ![A real run: request to simulated deploy](docs/assets/demo.gif)

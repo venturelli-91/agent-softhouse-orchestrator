@@ -39,7 +39,7 @@ flowchart TD
 ## What a run looks like
 
 One trivial ticket (rename a button label) on a throwaway repo, trimmed from [`docs/evidence/cost-1/run.log`](docs/evidence/cost-1/run.log).
-It cost US$0.231 (0.2308 in `metrics.jsonl`) and took 86 s of model time; [`docs/interview.md`](docs/interview.md) explains how to read the numbers.
+It cost US$0.231 (the rounded TOTAL printed in the log; the exact sum in `metrics.jsonl` is 0.2308) and took 86 s of model time; [`docs/interview.md`](docs/interview.md) explains how to read the numbers.
 The run stops at the approval request (JSON, cut); `orch approve COST-1` then prints the second `TOTAL` line and the final `simulated_deploy`.
 
 ```text
