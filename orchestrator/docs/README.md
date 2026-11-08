@@ -19,6 +19,9 @@ the real barriers are code, CLI permissions, an isolated worktree and a minimal 
 | [07-metrics.md](07-metrics.md) | consolidated metrics for consumption, tests, code and process |
 | [08-real-repo-validation.md](08-real-repo-validation.md) | runs on a real GitHub repo, ambiguous route, persistent approval, model-cost experiment |
 | [09-hardening.md](09-hardening.md) | retry, verified evidence, dev shell rules, rule-based watchdog, what was left out and why |
+| [10-project-docs.md](10-project-docs.md) | `.claude/docs` project spec written by the `docs_*` nodes |
+| [11-reference.md](11-reference.md) | all commands, env vars, per-repo config keys, current graph |
+| [12-operations.md](12-operations.md) | deploy, watch, probe, chaos, webcheck, project docs summary, defenses, limits |
 
 ## Decisions and findings (task 1)
 
