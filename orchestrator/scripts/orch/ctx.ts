@@ -5,6 +5,7 @@ import { dailyCapReached, orchHome } from "../../src/daily-cap.ts";
 import { FileSaver } from "../../src/file-saver.ts";
 import { buildGraph, config, report, Ticket } from "../../src/graph.ts";
 import { notify } from "../../src/notify.ts";
+import { loadPrompt } from "../../src/run-agent.ts";
 import { lockTicket, ticketFile } from "../../src/ticket-store.ts";
 
 export const die = (msg: string): never => {
@@ -60,6 +61,14 @@ export function makeCtx(argv: string[], host: string) {
     const capped = dailyCapReached();
     if (capped) die(capped);
   };
+  // Every graph run starts at triage: fail before any worktree or branch exists if AGENTS_DIR is unusable.
+  const needPrompts = () => {
+    try {
+      loadPrompt(["triage"]);
+    } catch (e) {
+      die((e as Error).message);
+    }
+  };
   const needPending = async (id: string) => (await load(id)).pending ?? die(`${id} is not waiting for an answer`);
 
   // Takes the ticket's lock for the duration of one command; a second command on the same id refuses.
@@ -77,7 +86,7 @@ export function makeCtx(argv: string[], host: string) {
     }
   }
 
-  return { cmd, values, positionals, host, home, load, drive, needCap, needPending, locked };
+  return { cmd, values, positionals, host, home, load, drive, needCap, needPrompts, needPending, locked };
 }
 
 export type Ctx = ReturnType<typeof makeCtx>;
