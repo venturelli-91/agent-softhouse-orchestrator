@@ -94,6 +94,7 @@ test("a worktree with an uncommitted change is rejected", () => {
   const r = verifyEvidence(d, base);
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /uncommitted changes/);
 });
 
 test("renaming a forbidden file does not hide the old path", () => {
@@ -110,7 +111,7 @@ test("renaming a forbidden file does not hide the old path", () => {
   assert.match((r as { reason: string }).reason, /forbidden/);
 });
 
-test("an npm test that moves HEAD voids the verification", () => {
+test("a test command that moves HEAD voids the verification", () => {
   const { d, base } = repo();
   writeFileSync(join(d, "a.txt"), "x");
   git(d, "add", "-A");
@@ -119,6 +120,17 @@ test("an npm test that moves HEAD voids the verification", () => {
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
   assert.match((r as { reason: string }).reason, /HEAD changed/);
+});
+
+test("a test command that dirties the worktree voids the verification", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "dirty.js"), "require('fs').writeFileSync('dirt.txt', 'x');");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "add dirty script");
+  const r = verifyEvidence(d, base, "node dirty.js");
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /worktree changed during verification/);
 });
 
 function withCommit(lock = false) {
