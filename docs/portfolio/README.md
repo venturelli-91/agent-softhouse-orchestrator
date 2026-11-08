@@ -29,7 +29,7 @@ Result: a CLI (`orch`) that takes a plain-English request, drives it through tri
 | Runtime dependencies | 3 (`@langchain/langgraph`, `@langchain/core`, `zod`) |
 | Graph nodes | 14 (triage, planner, dev, reviewer, design, qa, webcheck, publish, ceo_approval, merge_pr, deploy, docs_start, docs_mid, docs_end) |
 | Agent prompts | 21 in `orchestrator/agents/` |
-| Cost per ticket | to be measured (`orch clean` appends per-ticket numbers to `ORCH_HOME/metrics.jsonl`; none are recorded in this repo) |
+| Cost per ticket | one sample: US$0.2308 for a trivial ticket (86 s, 0 revisions), as of 2026-11-08, evidence in `docs/evidence/cost-1/`; a typical cost is to be measured |
 
 
 ## Documentation index

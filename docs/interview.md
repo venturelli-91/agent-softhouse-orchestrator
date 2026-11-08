@@ -25,7 +25,7 @@ O que sustenta cada frase:
 | decisões documentadas | `docs/portfolio/` (especialmente `04-guardrails-and-security.md` e `07-lessons-and-limits.md`) |
 
 Seja direto sobre o uso de IA: o histórico tem trailers `Co-Authored-By` nos commits feitos com assistência, e o repositório
-tem cerca de 220 commits em 8 dias de atividade (`git rev-list --count main`; datas em `docs/portfolio/VERIFIED.md`). Esconder
+tem mais de 200 commits em 8 dias de atividade (`git rev-list --count main`; datas em `docs/portfolio/VERIFIED.md`). Esconder
 isso é pior do que contar. O que você precisa conseguir defender é cada decisão do `docs/portfolio/`, não a autoria de cada linha.
 
 ## "Por que LangGraph e não um loop simples?"
@@ -37,7 +37,7 @@ Três propriedades que um loop teria de reimplementar:
 2. **Estado que sobrevive ao processo.** `FileSaver` (`src/file-saver.ts`) estende o `MemorySaver` e grava o checkpoint em
    disco. Uma execução morta no meio é retomada de onde parou por `orch continue` (`scripts/orch/flow.ts:30`, `resumeRun`).
 3. **Roteamento condicional explícito.** Falha de agente, estouro de orçamento e teto de revisões vão para o portão humano por
-   arestas declaradas (`src/graph.ts`, `afterCeo`, `RETRYABLE`), não por `if` espalhado.
+   arestas declaradas (`afterCeo` em `src/graph.ts:24`, `RETRYABLE` em `src/ceo-node.ts:59`), não por `if` espalhado.
 
 Custo e limite honestos: são 3 dependências de runtime (`@langchain/core`, `@langchain/langgraph`, `zod`). O `FileSaver`
 reescreve o arquivo inteiro a cada checkpoint, e o código diz isso (`src/file-saver.ts:11`: serve para poucos tickets locais,
@@ -55,17 +55,19 @@ A verificação não confia no que o agente diz. `verifyEvidence` (`src/evidence
   O comando de teste vem do `.orchestrator.json` do **commit base**, então o ticket não consegue editá-lo.
 - Recusa diffs que tocam arquivos que rodam código no host; vão para revisão do CEO.
 - Invalida a verificação se o `HEAD` mudar ou a árvore sujar durante o teste.
-- Antes de qualquer agente rodar, testa a base: base vermelha é recusada sem gastar token. Observado de verdade nesta
-  sessão: o primeiro `orch run` recusou o ticket com "base is red before any agent ran (no tokens spent)".
+- Antes de qualquer agente rodar, testa a base: base vermelha é recusada sem gastar token (mensagem "base is red before any
+  agent ran (no tokens spent)" em `scripts/orch/flow.ts:19-24`, coberta por `tests/cli.int.test.ts`).
 - A aprovação do CEO é presa ao commit publicado: se o commit mudou, o merge é recusado (`src/ship-nodes.ts`, teste "the
   merge is bound to the commit that was published and approved" em `tests/graph.part2.int.test.ts`).
 
-Limites a admitir: `docs/portfolio/07-lessons-and-limits.md` lista o que não é coberto.
+Limites a admitir: `docs/portfolio/07-lessons-and-limits.md` reúne as lições aprendidas e os limites conhecidos.
 
 ## "Quanto custa um ticket?"
 
 Medido com um ticket real, rodado em um repositório descartável (`COST-1`: trocar o texto de um botão e atualizar o teste).
-Gerado por `orch run`, `orch approve` e `orch clean`; a linha de métricas gravada em `metrics.jsonl`:
+Gerado por `orch run`, `orch approve` e `orch clean`. O log da execução e a linha gravada em `metrics.jsonl` estão versionados
+em `docs/evidence/cost-1/` (`run.log` e `metrics.jsonl`, sem edição); a tabela abaixo vem deles. A linha de métricas, abreviada
+(o arquivo completo traz também `first`, `last` e o detalhe por nó):
 
 ```
 {"id":"COST-1","status":"simulated_deploy","priority":"P2","specialty":"frontend","route":"clear","tasks":1,"revisions":0,"escalations":0,"ms":86147,"tokens":7853,"usd":0.2308}
@@ -79,14 +81,14 @@ Gerado por `orch run`, `orch approve` e `orch clean`; a linha de métricas grava
 | reviewer | 1 | 5.330 | 0,024 |
 | design | 1 | 5.522 | 0,014 |
 | qa | 1 | 5.282 | 0,013 |
-| **Total** | | **130.878** | **0,231** |
+| **Total** | | **130.878** | **0,2308** (soma dos valores exatos; as linhas arredondadas somam 0,232) |
 
 Como falar disso: **US$ 0,23 e 86 segundos para um ticket trivial, 0 revisões, 0 escalações.** O agente de docs custou 38% e
 o dev 29%. A leitura honesta é que o custo de um ticket não é dominado por escrever código.
 
 Ressalvas que você deve dizer junto: é **uma** amostra de um ticket trivial, não uma média. O valor em dólar é a estimativa
-do Claude CLI a preços de API; com a assinatura não é uma cobrança. O campo `tokens` do `metrics.jsonl` (7.853) soma só os
-tokens de **saída**; os 130.878 incluem o contexto em cache. Para uma média real, rode mais tickets e leia
+do Claude CLI a preços de API; com a assinatura não é uma cobrança. O campo `tokens` do `metrics.jsonl` (7.853) soma tokens de
+entrada (sem cache) e de saída (`src/metrics.ts:14`); os 130.878 incluem também o contexto em cache (leitura e criação). Para uma média real, rode mais tickets e leia
 `orchestrator/.state/metrics.jsonl` (ou `ORCH_HOME/metrics.jsonl`). Os custos antigos do portfolio foram removidos por não
 terem fonte (`docs/portfolio/VERIFIED.md`).
 
@@ -99,8 +101,9 @@ terem fonte (`docs/portfolio/VERIFIED.md`).
   artificiais. O `node --test` já roda os arquivos em paralelo (soma isolada de cerca de 912 s contra cerca de 290 s de relógio),
   então o limite é a taxa de criação de processos. Dividir um arquivo ganhou de 2 a 6%, dentro do ruído, e foi descartado.
 - O que sobra mudaria o desenho de segurança (rodar `verifyEvidence` menos vezes) ou a máquina (excluir a pasta temporária do
-  antivírus). Os números do perfil vêm de uma medição feita nesta sessão; a saída bruta não está versionada, então
-  apresente-os como medição pontual.
+  antivírus). Os números do perfil (144 processos, 39%, 45 a 70 ms, 912 s contra 290 s) vêm do relato de uma medição pontual
+  em 2026-11-08; a saída bruta não está versionada e não são reproduzíveis a partir do repositório, então apresente-os como
+  medição pontual e não como dado do projeto.
 
 ## Como reproduzir os números
 
