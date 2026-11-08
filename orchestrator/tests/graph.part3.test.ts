@@ -1,12 +1,13 @@
 // Flow guardrails against fake nodes (part 3 of 4): no model, no credentials.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { ciVerdict } from "../src/publish.ts";
 import { NodeFailure, type Req } from "../src/run-agent.ts";
 import { BRIEF, commit, defaults, start, paused, answer, approved, reviewerFailsOnce, knobs } from "./helpers/graph-harness.ts";
-import { setCollector, playwrightCollector } from "../src/webcheck.ts";
+import { AppFailure, InfraError, setCollector, playwrightCollector } from "../src/webcheck.ts";
 import { WebcheckConfig } from "../src/repo-config.ts";
 
 test("the reviewer gets the repo conventions and QA does not", async () => {
@@ -166,16 +167,16 @@ test("a UI ticket without webcheck configured passes with a warning, and a faili
   }
 });
 
-test("a collector crash does not block the ticket: it is skipped with a warning", async () => {
-  setCollector(async () => { throw new Error("chromium missing"); });
+test("a missing browser does not block the ticket: it is skipped with a warning", async () => {
+  setCollector(async () => { throw new InfraError("chromium missing"); });
   try {
     const g = await start("T-3", new MemorySaver(), { webcheck_cfg: WEB });
     assert.equal(paused(g.r)?.type, "approval");
     assert.match(g.r.docs_warnings.join(), /webcheck skipped: chromium missing/);
   } finally {
     setCollector(playwrightCollector);
-});
   }
+});
 
 test("a fullstack ticket also goes through the design review", async () => {
   knobs.override.triage = () => ({ ...(defaults.triage!({} as Req<unknown>) as object), specialty: "fullstack" });
@@ -195,4 +196,39 @@ test("a CEO retry of a failed design node re-runs design and not the reviewer", 
   assert.equal(paused(r)?.type, "approval");
   assert.equal(knobs.calls.filter((c) => c === "design").length, 2);
   assert.equal(knobs.calls.filter((c) => c === "reviewer").length, 1);
+});
+
+
+test("an app that does not start goes back to the dev, and an unexpected collector error escalates", async () => {
+  knobs.calls = [];
+  setCollector(async () => { throw new AppFailure("the serve command exited before the app answered"); });
+  try {
+    const g = await start("T-4", new MemorySaver(), { webcheck_cfg: WEB });
+    assert.match(g.r.rejections.join(), /webcheck: the serve command exited/);
+    assert.equal(knobs.calls.filter((c) => c === "dev").length, 3);
+    setCollector(async () => { throw new Error("boom"); });
+    const h = await start("T-5", new MemorySaver(), { webcheck_cfg: WEB });
+    assert.equal(paused(h.r)?.type, "escalation");
+    assert.match(String(h.r.summary), /webcheck: boom/);
+  } finally {
+    setCollector(playwrightCollector);
+  }
+});
+
+test("webcheck refuses to start the app when the external settings changed since the ticket began", async () => {
+  setCollector(async () => { throw new Error("must not run"); });
+  knobs.override.dev = (req) => {
+    const f = join(process.env.ORCH_HOME!, "config.json");
+    const c = JSON.parse(readFileSync(f, "utf8"));
+    for (const k of Object.keys(c.repos)) c.repos[k].webcheck.gtm = ["GTM-OTHER1"];
+    writeFileSync(f, JSON.stringify(c));
+    return defaults.dev!(req);
+  };
+  try {
+    const g = await start("T-6", new MemorySaver(), { webcheck_cfg: WEB });
+    assert.equal(paused(g.r)?.type, "escalation");
+    assert.match(String(g.r.summary), /webcheck settings changed/);
+  } finally {
+    setCollector(playwrightCollector);
+  }
 });

@@ -168,5 +168,6 @@ test("webcheck is validated and only accepted from the external config", () => {
   assert.throws(() => WebcheckConfig.parse({ serve: "npm start; rm -rf x", base_url: "http://localhost:3000" }));
   assert.throws(() => WebcheckConfig.parse({ serve: "npm start", base_url: "http://example.com" }));
   assert.throws(() => WebcheckConfig.parse({ serve: "npm start", base_url: "http://localhost:3000", gtm: ["nope"] }));
+  assert.throws(() => WebcheckConfig.parse({ serve: "npm start", base_url: "http://localhost:3000", paths: ["//evil.com"] }));
   assert.equal(WebcheckConfig.parse({ serve: "npm start", base_url: "http://127.0.0.1:3000" }).paths[0], "/");
 });
