@@ -133,7 +133,9 @@ test("every .claude/agents stub is a one-line pointer to an existing orchestrato
   if (!existsSync(stubs)) return t.skip("no .claude/agents in this repo");
   for (const file of readdirSync(stubs).filter((f) => f.endsWith(".md"))) {
     const role = file.slice(0, -3);
-    const body = readFileSync(join(stubs, file), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
+    const text = readFileSync(join(stubs, file), "utf8");
+    assert.equal(text.match(/^name:\s*(\S+)/m)?.[1], role, `${file} front matter name differs from the file name`);
+    const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
     assert.equal(body, `Leia orchestrator/agents/${role}.md e siga.`, `${file} body is not the pointer line`);
     assert.ok(existsSync(join(root, "orchestrator", "agents", file)), `${file} points to a missing orchestrator/agents prompt`);
   }
