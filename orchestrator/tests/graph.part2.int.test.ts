@@ -22,6 +22,7 @@ test("dev gets the shell rules and qa gets the code-verified evidence", async ()
     const base = defaults[role]!;
     knobs.override[role] = (req) => ((ctx[role] = req.context), base(req));
   }
+  knobs.realTest = true;
   await start();
   assert.ok(ctx.dev.includes(DEV_RULES));
   assert.match(ctx.qa, /Evidence checked by the orchestrator in code.*tests:npm test ok/);

@@ -9,7 +9,7 @@ import { git } from "../scripts/fixture.ts";
 import { readDeploy } from "../src/deploy.ts";
 import { config, report, deployTicket, Ticket } from "../src/graph.ts";
 import { NodeFailure } from "../src/run-agent.ts";
-import { BRIEF, FLAGS, commit, start, paused, answer, approved, CMD_CFG, writeExternal, commandTicket, DOC_FILE, knobs } from "./helpers/graph-harness.ts";
+import { BRIEF, FLAGS, commit, start, paused, answer, approved, CMD_CFG, writeExternal, commandTicket, DOC_FILE, knobs, FAST_TEST } from "./helpers/graph-harness.ts";
 
 test("after approval the deploy node runs the ticket's target and ends in simulated_deploy", async () => {
   const g = await start();
@@ -175,7 +175,7 @@ test("docs run first, in the middle and last, land in .claude/docs of the main c
   assert.match(knobs.docsContexts[1], /Revisions: 0/);
   assert.match(knobs.docsContexts[2], /Phase: end/);
   assert.match(knobs.docsContexts[2], /commit:[0-9a-f]+/);
-  assert.match(knobs.docsContexts[2], /tests:npm test ok/);
+  assert.match(knobs.docsContexts[2], new RegExp(`tests:${FAST_TEST.replaceAll(".", "\\.")} ok`));
   assert.ok((g.r.history as { node: string }[]).filter((h) => h.node === "docs").length === 3);
 });
 
