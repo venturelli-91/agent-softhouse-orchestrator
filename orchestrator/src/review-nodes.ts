@@ -70,4 +70,4 @@ export const reviewer = reviewStep(
   (t) => (UI_SPECIALTIES.has(t.specialty) ? "design" : "qa"),
 );
 export const design = reviewStep("design", () => ["design-reviewer"], "qa");
-export const qa = reviewStep("qa", () => ["qa-automation"], "publish");
+export const qa = reviewStep("qa", () => ["qa-automation"], "webcheck");

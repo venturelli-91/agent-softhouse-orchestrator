@@ -8,6 +8,7 @@ import { planner, SPLIT_RULE, triage } from "./plan-nodes.ts";
 import { loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { DIFF_LIMIT, design, evidenceNote, qa, reviewer } from "./review-nodes.ts";
 import { deploy, deployTicket, mergeNode, publishNode } from "./ship-nodes.ts";
+import { webcheck } from "./webcheck.ts";
 import { Brief, briefMarkdown, Ticket, type T } from "./ticket.ts";
 
 export { Brief, briefMarkdown, Ticket, DEV_RULES, devRules, partialWork, taskBlock, SPLIT_RULE, DIFF_LIMIT, evidenceNote, deployTicket };
@@ -32,6 +33,7 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addNode("reviewer", reviewer)
     .addNode("design", design)
     .addNode("qa", qa)
+    .addNode("webcheck", webcheck)
     .addNode("publish", publishNode)
     .addNode("ceo_approval", ceoApproval)
     .addNode("merge_pr", mergeNode)
@@ -46,11 +48,12 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "reviewer")(t)), ["reviewer", "dev", "docs_mid"])
     .addConditionalEdges("reviewer", afterReview, ["design", "qa", "dev", "docs_mid"])
     .addConditionalEdges("design", route("qa", "qa"), ["qa", "dev", "docs_mid"])
-    .addConditionalEdges("qa", route("publish", "docs_mid"), ["docs_mid", "dev"])
+    .addConditionalEdges("qa", route("webcheck", "webcheck"), ["webcheck", "dev", "docs_mid"])
+    .addConditionalEdges("webcheck", route("publish", "docs_mid"), ["docs_mid", "dev"])
     .addConditionalEdges("publish", route("approval", "docs_end"), ["docs_end", "dev", "docs_mid"])
     .addConditionalEdges("docs_mid", afterMid, ["publish", "ceo_approval"])
     .addEdge("docs_end", "ceo_approval")
-    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "design", "qa", "publish", "deploy", "merge_pr", END])
+    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "publish", "deploy", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["deploy", "ceo_approval"])
     .addEdge("deploy", END)
     .compile({ checkpointer });
@@ -64,7 +67,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties, stack } = loadRepoConfig(repo, base, home);
+  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties, stack, webcheck } = loadRepoConfig(repo, base, home);
   if (install) installDeps(dir);
   return {
     worktree: dir,
@@ -81,6 +84,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
     base_branch,
     rules: [loadConventions(repo, base), stack && `Stack decided for this repo: ${stack}`].filter(Boolean).join("\n\n"),
     deploy_cfg: deploy,
+    webcheck_cfg: webcheck,
     specialties,
     ...(deploy ? { deploy_target: "command" } : {}),
   };

@@ -19,6 +19,23 @@ export const DeployConfig = z.object({
 });
 export type DeployConfig = z.infer<typeof DeployConfig>;
 
+const tagId = (prefix: string) => z.array(z.string().regex(new RegExp(`^${prefix}-[A-Z0-9]+$`))).default([]);
+// The app is started on the host from the ticket's worktree, so, like deploy, this block comes only from the external config.
+export const WebcheckConfig = z.object({
+  serve: plain,
+  base_url: z.string().refine((u) => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol) && ["localhost", "127.0.0.1"].includes(new URL(u).hostname),
+    "base_url must be an http(s) URL on localhost or 127.0.0.1"),
+  paths: z.array(z.string().regex(/^\/(?!\/)[\w./-]*$/)).min(1).default(["/"]),
+  gtm: tagId("GTM"),
+  ga4: tagId("G"),
+  ads: tagId("AW"),
+  lcp_ms: z.number().positive().optional(),
+  cls: z.number().positive().optional(),
+  timeout_s: z.number().positive().max(600).default(60),
+  env: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
+});
+export type WebcheckConfig = z.infer<typeof WebcheckConfig>;
+
 // Per-repo settings: defaults < `repos[<abs path>]` in ~/.orchestrator/config.json < `.orchestrator.json` at the base
 // commit. The in-repo file is read from the base commit, never from the worktree: a ticket cannot rewrite its own rules.
 export const RepoConfig = z.object({
@@ -33,6 +50,7 @@ export const RepoConfig = z.object({
   // Run `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, tsc and build can be the test command.
   install: z.boolean().default(false),
   deploy: DeployConfig.nullable().default(null),
+  webcheck: WebcheckConfig.nullable().default(null),
   // The dev specialties triage may route to in this repo; the whole team by default.
   specialties: z.array(z.enum(SPECIALTIES)).min(1).default([...SPECIALTIES]),
   // The stack the team decided (`orch team`); goes into every dev's context next to the repo conventions.
@@ -71,7 +89,7 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
   try {
     const text = safeGit(repo, "show", `${ref}:.orchestrator.json`);
     const raw = readJson(".orchestrator.json", text);
-    if (raw && typeof raw === "object" && "deploy" in raw) throw new Error(".orchestrator.json: deploy is only accepted in the external config");
+    for (const k of ["deploy", "webcheck"]) if (raw && typeof raw === "object" && k in raw) throw new Error(`.orchestrator.json: ${k} is only accepted in the external config`);
     inRepo = check(".orchestrator.json", raw);
   } catch (e) {
     if ((e as Error).message.startsWith(".orchestrator.json:")) throw e;
