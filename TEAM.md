@@ -2,7 +2,7 @@
 
 One roster, one prompt source. The prompt of every role lives in `orchestrator/agents/<role>.md`, which is what `orch` feeds to `claude -p` (one node of the graph per role). `.claude/agents/<role>.md` is a stub (frontmatter plus a one-line pointer) so the interactive flow (`/request`, `/ticket`, `/demand`) reads the same prompt. `design-reviewer` and `docs` exist only in `orchestrator/agents/`.
 
-`orchestrator/tests/conventions.test.ts` fails if a stub body drifts from the pointer line or points to a missing prompt; `orchestrator/tests/team.test.ts` fails if the graph asks for a role whose prompt is missing.
+`orchestrator/tests/conventions.int.test.ts` fails if a stub body drifts from the pointer line or points to a missing prompt; `orchestrator/tests/team.test.ts` fails if the graph asks for a role whose prompt is missing.
 
 ## Roster
 
