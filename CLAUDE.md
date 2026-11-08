@@ -36,7 +36,7 @@ matrix" (section below) may be taken without them.
 CEO request → Triage
             → [clear]     → Specialized dev → Code Review → QA Automation
             → [ambiguous] → Demand Analyst → Product Manager → Tech Lead
-                            → Prompt Engineer → Evals Engineer
+                            → Evals Engineer
                             → Specialized dev → Code Review → QA Automation
         → Security / Performance / AI (when applicable)
         → CEO approval → DevOps / Deploy → Watchdog → Knowledge Manager
@@ -75,7 +75,6 @@ the team in another project is in `TEAM.md`.
 | Pipeline, deploy, logs and incident | `devops-sre` |
 | Tests and final validation | `qa-automation` |
 | Every PR | `code-reviewer` |
-| Internal prompts and playbooks | `prompt-engineer` |
 | Quality of prompts, agents and workflows | `evals-engineer` |
 | Visual/UX review and Nielsen's heuristics | `dev-frontend` (build) + `qa-automation` (independent audit) |
 
