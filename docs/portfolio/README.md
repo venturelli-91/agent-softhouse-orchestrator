@@ -5,7 +5,7 @@
 
 **Repository:** Agent Softhouse Orchestrator (URL pending the repo rename)
 **Role:** Solo author (design, implementation, security hardening, evaluation)
-**Timeline:** Oct 31 – Nov 8, 2026 · 213 commits · 31 merged PRs (counts as of 2026-11-08, see [VERIFIED.md](VERIFIED.md))
+**Timeline:** Oct 31 – Nov 8, 2026 · over 200 commits · over 30 merged PRs (measured on 2026-11-08, see [VERIFIED.md](VERIFIED.md))
 **Stack:** TypeScript, Node 24, LangGraph.js, zod, Claude Code CLI (`claude -p`), GitHub CLI, GitHub Actions
 **License:** MIT
 
