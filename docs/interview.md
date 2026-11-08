@@ -5,13 +5,18 @@ Números medidos em 2026-11-08 (Windows 11, Node 24). Os caminhos são relativos
 
 ## "Quanto disso é seu?"
 
-Resposta-base (ajuste ao que for verdade para você; as frases sobre decisão de arquitetura e modelo de ameaças são suas para
-confirmar, o repositório só prova o que está no código):
+Resposta-base. Cada frase abaixo é sustentada pelo repositório (tabela a seguir); nenhuma afirma autoria que o repositório não
+prova:
 
 > Construí um orquestrador multiagente em que o fluxo é um grafo em código, não um prompt. Os guardrails, como orçamento de
 > tokens, limite de revisões e a regra de que nenhum agente aprova a própria entrega, são verificados por código. Toda ação
-> irreversível passa por aprovação humana. Usei IA para acelerar a implementação, mas a arquitetura, o modelo de ameaças e os
-> trade-offs são decisões minhas, e estão documentados.
+> irreversível passa por aprovação humana. Usei IA (Claude Code) para escrever a maior parte do código; o meu papel foi o de
+> quem define o que o sistema pode fazer sozinho e aprova ou rejeita cada merge. Os trade-offs e as falhas que encontrei estão
+> registrados em `docs/portfolio/` e em `playbooks/`.
+
+Duas frases foram retiradas de propósito da versão anterior: "arquitetura, modelo de ameaças e trade-offs são decisões
+minhas". O repositório não prova quem decidiu o quê. Só diga em primeira pessoa o que você conseguir explicar sem consultar
+notas; o teste está logo abaixo da tabela.
 
 O que sustenta cada frase:
 
@@ -24,9 +29,18 @@ O que sustenta cada frase:
 | ação irreversível passa por humano | `interrupt()` em `src/ceo-node.ts:19`; merge e deploy presos ao commit aprovado (`approved_sha`) |
 | decisões documentadas | `docs/portfolio/` (especialmente `04-guardrails-and-security.md` e `07-lessons-and-limits.md`) |
 
-Seja direto sobre o uso de IA: o histórico tem trailers `Co-Authored-By` nos commits feitos com assistência, e o repositório
-tem mais de 200 commits em 8 dias de atividade (`git rev-list --count main`; datas em `docs/portfolio/VERIFIED.md`). Esconder
-isso é pior do que contar. O que você precisa conseguir defender é cada decisão do `docs/portfolio/`, não a autoria de cada linha.
+Seja direto sobre o uso de IA: o histórico tem o trailer `Co-Authored-By` em 117 commits (`git log --format=%B | grep -ci
+"^Co-Authored-By"`, em 2026-11-08), e o repositório tem mais de 200 commits em 8 dias de atividade (`git rev-list --count
+main`; datas em `docs/portfolio/VERIFIED.md`). Esconder isso é pior do que contar.
+
+O que o repositório prova sobre o seu papel: o `CLAUDE.md` define o humano como quem aprova (matriz de autonomia: merge, deploy,
+mudança de schema, dependência paga e API pública exigem aprovação), e o grafo exige essa aprovação em código
+(`ceo_approval`). O que ele não prova: quem escolheu cada trade-off.
+
+Teste antes da entrevista: sem abrir nada, explique em voz alta (1) por que o merge é preso ao commit aprovado, (2) por que
+`.orchestrator.json` não pode ser editado por um ticket, (3) por que uma base vermelha é recusada antes de gastar token. Se
+travar em alguma, leia a prova correspondente e só então use "eu decidi" para aquela decisão; senão diga "eu aprovei" ou
+"eu dirigi". O que você precisa conseguir defender é cada decisão do `docs/portfolio/`, não a autoria de cada linha.
 
 ## "Por que LangGraph e não um loop simples?"
 
