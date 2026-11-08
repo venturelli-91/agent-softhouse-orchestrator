@@ -28,3 +28,22 @@ test("a budget with no measurement fails closed, and an id on a non-Google host 
   assert.match(f.join("\n"), /inp_ms was not measured/);
   assert.match(f.join("\n"), /GTM-ABC123 was never requested/);
 });
+
+test("an id only counts when it is the id or tid parameter, not a substring or a page location", () => {
+  const near = { ...ok, requests: ["https://www.google-analytics.com/g/collect?tid=G-ABCD&dl=https%3A%2F%2Fx%2F%3Fq%3DG-AB"] };
+  assert.match(evaluate(near, { ga4: ["G-AB"] }).join(), /GA4 G-AB was never requested/);
+  assert.deepEqual(evaluate(near, { ga4: ["G-ABCD"] }), []);
+});
+
+test("a missing Ads id is reported alone, and empty expectations ask for nothing", () => {
+  assert.deepEqual(evaluate(ok, { ads: ["AW-1"] }), ["Ads AW-1 was never requested on http://localhost:3000/"]);
+  assert.deepEqual(evaluate({ ...ok, dataLayer: [] }, { gtm: [], ga4: [], ads: [] }), []);
+});
+
+test("a NaN or null metric is not measured, and a budget of zero is enforced", () => {
+  const bad = { ...ok, vitals: { cls: Number.NaN, inp_ms: null as unknown as number, lcp_ms: 1 } };
+  const f = evaluate(bad, { cls: 0.1, inp_ms: 200, lcp_ms: 0.5 });
+  assert.equal(f.filter((m) => /not measured/.test(m)).length, 2);
+  assert.match(f.join(), /lcp_ms 1 is over the budget 0.5/);
+  assert.deepEqual(evaluate({ ...ok, vitals: { cls: 0 } }, { cls: 0.0001 }), []);
+});
