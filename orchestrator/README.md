@@ -11,6 +11,7 @@ graph TD;
   planner(planner)
   dev(dev)
   reviewer(reviewer)
+  design(design)
   qa(qa)
   publish(publish)
   ceo_approval(ceo_approval)
@@ -24,9 +25,13 @@ graph TD;
   planner -.-> docs_mid;
   dev -.-> reviewer;
   dev -.-> docs_mid;
+  reviewer -.-> design;
   reviewer -.-> qa;
   reviewer -.-> dev;
   reviewer -.-> docs_mid;
+  design -.-> qa;
+  design -.-> dev;
+  design -.-> docs_mid;
   qa -.-> docs_mid;
   qa -.-> dev;
   publish -.-> docs_end;
@@ -38,6 +43,7 @@ graph TD;
   ceo_approval -.-> dev;
   ceo_approval -.-> planner;
   ceo_approval -.-> reviewer;
+  ceo_approval -.-> design;
   ceo_approval -.-> qa;
   ceo_approval -.-> publish;
   ceo_approval -.-> deploy;
