@@ -56,7 +56,7 @@ A verificação não confia no que o agente diz. `verifyEvidence` (`src/evidence
 - Recusa diffs que tocam arquivos que rodam código no host; vão para revisão do CEO.
 - Invalida a verificação se o `HEAD` mudar ou a árvore sujar durante o teste.
 - Antes de qualquer agente rodar, testa a base: base vermelha é recusada sem gastar token (mensagem "base is red before any
-  agent ran (no tokens spent)" em `scripts/orch/flow.ts:19-24`, coberta por `tests/cli.int.test.ts`).
+  agent ran (no tokens spent)" em `scripts/orch/flow.ts:19-23`, coberta por `tests/cli.int.test.ts`).
 - A aprovação do CEO é presa ao commit publicado: se o commit mudou, o merge é recusado (`src/ship-nodes.ts`, teste "the
   merge is bound to the commit that was published and approved" em `tests/graph.part2.int.test.ts`).
 

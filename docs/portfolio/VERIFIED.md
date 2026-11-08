@@ -34,7 +34,7 @@ Checked against `main` as of 2026-11-08 (date only; all counts here, such as com
 
 This list intentionally keeps the old numbers as an audit log. They must not be reintroduced without a source in a real `metrics.jsonl` or eval output file.
 
-No `metrics.jsonl` or eval output file exists in the repo, so every cost/token/dollar figure was removed or replaced with "to be measured":
+When these figures were removed, no `metrics.jsonl` or eval output file existed in the repo, so every cost/token/dollar figure was removed or replaced with "to be measured" (one measured sample was added later, see the Cost per ticket row above):
 
 - README: "Typical ticket cost ~85k-95k tokens, ~US$0.04-0.11" and "Cost reduction ~78% (US$0.160 to 0.035)".
 - 05-operations-and-cost: the baseline table (tokens, turns, time, US$ per node, total 85,246 / 46.4 s / 0.104), "output under 3-5% of tokens", "3.4k-6.7k tokens per turn", "dev ~50-55% of spend", "ambiguous route ~50% more", and the Haiku A/B (US$0.160 to 0.035, ~78%). They exist only as prose in `orchestrator/docs/07-metrics.md` and `08-real-repo-validation.md`, with no raw data on disk.
