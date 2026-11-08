@@ -80,16 +80,16 @@ the team in another project is in `TEAM.md`.
 
 ## Skills and plugins
 
-Each agent lists, in its own file (`.claude/agents/<role>.md`), the skills and plugins
-specific to its work. Two sources are available to all:
+Agent prompts (`orchestrator/agents/<role>.md`) are headless and do not list skills or
+plugins. Two sources are available to the interactive session:
 
 - **Skills already registered in this Claude Code instance** (invocable with the `Skill`
   tool, by name) — e.g. `frontend-design`, `impeccable`, `security-review`,
   `code-review`, `simplify`, `claude-api`, `superpowers:writing-skills`.
 - **Personal skill library in `$SKILLS_DIR`** — reference `SKILL.md` files that are NOT
   registered as skills in this session (the `Skill` tool does not invoke them by name).
-  Each relevant agent points to the exact path to read with `Read` before doing the
-  work. If that folder is moved, update the paths cited in the agents.
+  Read the relevant `SKILL.md` with `Read` before doing the work (e.g. `backend/api-design`,
+  `security/agentic-actions-auditor`).
 
 **Plugins/MCP used by the software house**:
 - **Playwright MCP** (`mcp__plugin_playwright_playwright__*`) — open the locally running
