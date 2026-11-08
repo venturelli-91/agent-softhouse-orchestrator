@@ -8,7 +8,10 @@ A TypeScript CLI where a [LangGraph.js](https://langchain-ai.github.io/langgraph
 
 ## The ticket graph
 
-Derived from [`orchestrator/src/graph.ts`](orchestrator/src/graph.ts). The `docs_start`, `docs_mid` and `docs_end` nodes (project docs) are left out, as are the gate's retry and replan routes (back to `triage`, `planner` or the failed node) and its abort route to the end. Any agent failure, timeout, exceeded budget or the revision cap sends the ticket to the human gate instead of crashing.
+Derived from [`orchestrator/src/graph.ts`](orchestrator/src/graph.ts).
+Left out for readability: the `docs_start`, `docs_mid` and `docs_end` nodes (project docs), the gate's retry and replan routes
+(back to `triage`, `planner` or the failed node) and its abort route to the end.
+Any agent failure, timeout, exceeded budget or the revision cap sends the ticket to the human gate instead of crashing.
 
 ```mermaid
 flowchart TD
@@ -49,9 +52,17 @@ A real run (`npm run orch -- run "<request>" --repo <path>`) needs the Claude Co
 ## Key decisions
 
 - **Flow as a graph in code, not a prompt:** nodes and edges live in [`graph.ts`](orchestrator/src/graph.ts); tested in [`graph.part1.int.test.ts`](orchestrator/tests/graph.part1.int.test.ts).
-- **Guardrails enforced in code:** token budget ([`flow-limits.ts`](orchestrator/src/flow-limits.ts); an overrun escalates, test "an exceeded token budget interrupts the ticket"; `budgetExceeded` also throws when `TOKEN_BUDGET_TICKET` is missing, not covered by a test I checked); revision cap of 3 ("the cap of 3 revisions escalates to the CEO"); reviewer and QA refuse to run if they authored the commit ("self-approval blocked").
-- **Irreversible actions need a human:** merge and deploy sit behind a LangGraph `interrupt()` in [`ceo-node.ts`](orchestrator/src/ceo-node.ts); the approval is bound to the published commit SHA and the evidence is re-verified first ([`evidence.ts`](orchestrator/src/evidence.ts); test "the merge is bound to the commit that was published and approved" in [`graph.part2.int.test.ts`](orchestrator/tests/graph.part2.int.test.ts)).
-- **Single prompt source:** [`orchestrator/agents/`](orchestrator/agents) is canonical; [`.claude/agents/`](.claude/agents) holds one-line pointer stubs, checked by [`conventions.int.test.ts`](orchestrator/tests/conventions.int.test.ts), and `loadPrompt` refuses to load a stub ([`run-agent.test.ts`](orchestrator/tests/run-agent.test.ts)).
+- **Guardrails enforced in code:**
+  - Token budget ([`flow-limits.ts`](orchestrator/src/flow-limits.ts)): an overrun escalates, test "an exceeded token budget interrupts the ticket".
+    `budgetExceeded` also throws when `TOKEN_BUDGET_TICKET` is missing; no test covers the missing-value case.
+  - Revision cap of 3: test "the cap of 3 revisions escalates to the CEO".
+  - Reviewer and QA refuse to run if they authored the commit: test "self-approval blocked".
+- **Irreversible actions need a human:** merge and deploy sit behind a LangGraph `interrupt()` in [`ceo-node.ts`](orchestrator/src/ceo-node.ts).
+  - The approval is bound to the published commit SHA and the evidence is re-verified first ([`evidence.ts`](orchestrator/src/evidence.ts)).
+  - Test "the merge is bound to the commit that was published and approved" in [`graph.part2.int.test.ts`](orchestrator/tests/graph.part2.int.test.ts).
+- **Single prompt source:** [`orchestrator/agents/`](orchestrator/agents) is canonical; [`.claude/agents/`](.claude/agents) holds one-line pointer stubs.
+  - Checked by [`conventions.int.test.ts`](orchestrator/tests/conventions.int.test.ts).
+  - `loadPrompt` refuses to load a stub ([`run-agent.test.ts`](orchestrator/tests/run-agent.test.ts)).
 
 ## Go deeper
 
@@ -59,6 +70,6 @@ A real run (`npm run orch -- run "<request>" --repo <path>`) needs the Claude Co
 - [CLAUDE.md](CLAUDE.md) - the rulebook the agents follow (instructions for the AI).
 - [orchestrator/README.md](orchestrator/README.md) - orchestrator usage.
 - [orchestrator/docs/](orchestrator/docs/README.md) - design notes, measurements and hardening, one file per phase.
-- [docs/portfolio/](docs/portfolio/README.md) - the case study: problem, architecture, guardrails, cost, evaluation, limits.
+- [docs/portfolio/](docs/portfolio/README.md) - the case study: problem, architecture, guardrails, evaluation, limits.
 
 License: MIT ([orchestrator/LICENSE](orchestrator/LICENSE)).
