@@ -19,7 +19,7 @@ O que sustenta cada frase:
 |---|---|
 | fluxo é um grafo em código | `orchestrator/src/graph.ts` (nós e arestas); diagrama em `README.md` |
 | orçamento de tokens | `src/flow-limits.ts` (`budgetExceeded`, falha fechado sem `TOKEN_BUDGET_TICKET`); `guarded` em `src/graph-kit.ts` |
-| limite de revisões | `MAX_REVISIONS = 3` em `src/flow-limits.ts:4`; teste "the cap of 3 revisions escalates to the CEO" |
+| limite de revisões | `MAX_REVISIONS = 3` em `src/flow-limits.ts:3`; teste "the cap of 3 revisions escalates to the CEO" |
 | ninguém aprova a própria entrega | `selfApproval` em `src/flow-limits.ts:22`, chamado em `src/review-nodes.ts` antes de reviewer, design e qa |
 | ação irreversível passa por humano | `interrupt()` em `src/ceo-node.ts:19`; merge e deploy presos ao commit aprovado (`approved_sha`) |
 | decisões documentadas | `docs/portfolio/` (especialmente `04-guardrails-and-security.md` e `07-lessons-and-limits.md`) |
@@ -33,11 +33,11 @@ isso é pior do que contar. O que você precisa conseguir defender é cada decis
 Três propriedades que um loop teria de reimplementar:
 
 1. **Pausar e retomar depois de uma aprovação humana.** O nó do CEO chama `interrupt()` (`src/ceo-node.ts:19`) e a execução
-   continua com `Command({ resume })` (`src/graph.ts:63`). Dá para aprovar horas depois, de outro processo: `orch approve <id>`.
+   continua com `Command({ resume })` (`src/graph.ts:64`). Dá para aprovar horas depois, de outro processo: `orch approve <id>`.
 2. **Estado que sobrevive ao processo.** `FileSaver` (`src/file-saver.ts`) estende o `MemorySaver` e grava o checkpoint em
    disco. Uma execução morta no meio é retomada de onde parou por `orch continue` (`scripts/orch/flow.ts:30`, `resumeRun`).
 3. **Roteamento condicional explícito.** Falha de agente, estouro de orçamento e teto de revisões vão para o portão humano por
-   arestas declaradas (`afterCeo` em `src/graph.ts:24`, `RETRYABLE` em `src/ceo-node.ts:59`), não por `if` espalhado.
+   arestas declaradas (`afterCeo` em `src/graph.ts:25`, `RETRYABLE` em `src/ceo-node.ts:59`), não por `if` espalhado.
 
 Custo e limite honestos: são 3 dependências de runtime (`@langchain/core`, `@langchain/langgraph`, `zod`). O `FileSaver`
 reescreve o arquivo inteiro a cada checkpoint, e o código diz isso (`src/file-saver.ts:11`: serve para poucos tickets locais,

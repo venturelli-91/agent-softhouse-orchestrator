@@ -5,7 +5,7 @@ Checked against `main` as of 2026-11-08 (date only; all counts here, such as com
 | Claim | Old value | Verified value | How verified |
 |---|---|---|---|
 | Source size | ~1,400 lines | 2,426 lines (2,235 non-blank) in 38 files; written as "~2,400 lines, 38 files" | `cat src/*.ts \| wc -l`; `ls src/*.ts \| wc -l` |
-| Automated tests | 170+ | 242 = 81 unit + 161 integration | Unit: `npm run test:unit` reporter, `tests 81`. Integration: STATIC count only (`grep -cE "^\s*(test\|it)\(" tests/*.int.test.ts`, summed = 161); the int suite was not run (about 5 min). The same static count on the unit files gives 81, equal to the reporter, so the method is consistent |
+| Automated tests | 170+ | 244 = 82 unit + 162 integration | Unit: `npm run test:unit` reporter, `tests 82`. Integration: STATIC count only (`grep -cE "^\s*(test\|it)\(" tests/*.int.test.ts`, summed = 162); the int suite was not rerun for this count (the full run of 2026-11-08 before two later tests reported 161 integration tests, 159 passed, 2 skipped). The same static count on the unit files gives 82, equal to the reporter, so the method is consistent |
 | Test scripts | `npm test` only | `test:unit`, `test:int`, `test` runs both | `package.json` scripts |
 | Runtime dependencies | 3 | 3 (`@langchain/core`, `@langchain/langgraph`, `zod`) | `package.json` dependencies |
 | Commits | 111 | over 200 (213 at commit 0b9be7f, 222 at 27d79d6; it grows with every merge, so the README gives a floor) | `git rev-list --count main` |
