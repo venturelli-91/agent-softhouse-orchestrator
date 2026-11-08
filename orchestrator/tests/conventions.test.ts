@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { bareNodeTest, loadConventions } from "../src/repo-config.ts";
 
 test("the repo's CLAUDE.md comes from the base commit, capped", () => {
@@ -125,6 +125,18 @@ test("a differently-cased or index-only .claude/CLAUDE.md is not trusted", () =>
   git("commit", "-q", "-m", "case");
   assert.equal(loadConventions(d, git("rev-parse", "HEAD")), "root rules");
   rmSync(d, { recursive: true, force: true });
+});
+
+test("every .claude/agents stub is a one-line pointer to an existing orchestrator/agents prompt", (t) => {
+  const root = resolve(import.meta.dirname, "..", "..");
+  const stubs = join(root, ".claude", "agents");
+  if (!existsSync(stubs)) return t.skip("no .claude/agents in this repo");
+  for (const file of readdirSync(stubs).filter((f) => f.endsWith(".md"))) {
+    const role = file.slice(0, -3);
+    const body = readFileSync(join(stubs, file), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
+    assert.equal(body, `Leia orchestrator/agents/${role}.md e siga.`, `${file} body is not the pointer line`);
+    assert.ok(existsSync(join(root, "orchestrator", "agents", file)), `${file} points to a missing orchestrator/agents prompt`);
+  }
 });
 
 test("a bare node --test script is detected", () => {
