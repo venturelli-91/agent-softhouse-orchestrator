@@ -94,22 +94,33 @@ terem fonte (`docs/portfolio/VERIFIED.md`).
 
 ## "Os testes são lentos. O que você fez?"
 
-- Separei a suíte: `npm run test:unit` roda os testes sem git nem worktree e leva cerca de 1,3 segundo; `npm run test:int` leva
-  cerca de 5 minutos. `npm test` roda os dois.
-- Tentei acelerar a de integração e não houve ganho seguro. Perfil de um teste de grafo: 144 processos criados, dos quais cerca
-  de 39% do tempo são 8 execuções de `npm test` embutidas; cada `git` custa de 45 a 70 ms nesta máquina; não há esperas
-  artificiais. O `node --test` já roda os arquivos em paralelo (soma isolada de cerca de 912 s contra cerca de 290 s de relógio),
-  então o limite é a taxa de criação de processos. Dividir um arquivo ganhou de 2 a 6%, dentro do ruído, e foi descartado.
+- Separei a suíte: `npm run test:unit` roda os testes sem git nem worktree e leva cerca de 1,3 segundo; `npm run test:int`
+  roda os testes que usam git e worktree reais. `npm test` roda os dois.
+- Primeiro diagnostiquei: o gargalo é a criação de processos no Windows, não o código. O CI no Linux roda o job inteiro (checkout,
+  `npm ci`, `typecheck` e a suíte completa) em 69 a 102 segundos nos 6 últimos runs (`gh run list`), contra cerca de 4 a 5 minutos
+  só da integração na máquina local.
+- Uma primeira tentativa, dividir o arquivo mais lento em cinco, ganhou de 2 a 6%, dentro do ruído, e foi descartada. Regra que
+  adotei depois: medir antes e depois com repetição e só manter se o ganho passar de 15%.
+- A segunda tentativa funcionou: nos fixtures dos testes, o comando de teste passou a ser um comando simples
+  (`node test/checkout.test.js`) em vez do `npm test` real, que respondia por cerca de 39% do tempo. Só testes mudaram; nada em
+  `src/`. Pelo menos cinco testes continuam usando o `npm test` real de ponta a ponta. Resultado: `graph.part1` de 130,6 s para 97,0 s
+  (mediana de 3 execuções, 25,7%), e a suíte de integração completa de 258 s para 193 s numa execução de cada lado no QA
+  independente (cerca de 25%; o dev tinha medido 32%, vale citar o número mais conservador).
+- Para confirmar que não perdi eficácia, a revisão fez mutação: quebrou a verificação de propósito e viu se os testes acusavam.
+  5 de 6 quebras foram pegas. A que não foi (a checagem "worktree changed during verification") já não tinha teste antes
+  desta mudança, e está registrada como lacuna conhecida.
 - O que sobra mudaria o desenho de segurança (rodar `verifyEvidence` menos vezes) ou a máquina (excluir a pasta temporária do
-  antivírus). Os números do perfil (144 processos, 39%, 45 a 70 ms, 912 s contra 290 s) vêm do relato de uma medição pontual
-  em 2026-11-08; a saída bruta não está versionada e não são reproduzíveis a partir do repositório, então apresente-os como
-  medição pontual e não como dado do projeto.
+  antivírus, ou usar um Dev Drive). Os números do perfil (144 processos, 39%, 45 a 70 ms, 912 s contra 290 s) vêm do relato de
+  uma medição pontual em 2026-11-08; a saída bruta não está versionada e não são reproduzíveis a partir do repositório, então
+  apresente-os como medição pontual e não como dado do projeto. Os 25% e os 69 a 102 s são mais fáceis de defender: vêm de
+  duas execuções com o mesmo comando e do histórico do CI.
 
 ## Como reproduzir os números
 
 | Número | Comando |
 |---|---|
 | testes unitários e tempo | `cd orchestrator && npm run test:unit` |
-| testes de integração | `npm run test:int` (cerca de 5 minutos) |
+| testes de integração | `npm run test:int` (193 s no QA, em Windows, em 2026-11-08) |
+| tempo do CI | `gh run list --limit 6 --json createdAt,updatedAt,conclusion` |
 | custo de um ticket | `npm run orch -- run "<pedido>"`, `orch approve <id>`, `orch clean <id>`, depois `ORCH_HOME/metrics.jsonl` |
 | commits e datas | `git rev-list --count main`, `git log --format=%ad --date=short \| sort -u` |
