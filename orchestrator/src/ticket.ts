@@ -71,6 +71,7 @@ export const Ticket = z.object({
   deploy_cfg: DeployConfig.nullable().default(null),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
+  design_id: z.string().nullable().default(null),
   qa_id: z.string().nullable().default(null),
   revisions: z.number().default(0),
   evidence: z.array(z.string()).default([]),

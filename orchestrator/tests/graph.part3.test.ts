@@ -126,3 +126,37 @@ test("an explanation from a superseded commit does not reach the approval reques
   const expl = String(paused(g.r)?.explanation);
   assert.ok(expl.includes("R2-EXPL") && expl.includes("Q2-EXPL") && !expl.includes("R1-EXPL"), expl);
 });
+
+test("a UI ticket goes through the design review and a design rejection sends it back to the dev", async () => {
+  let d = 0;
+  knobs.override.design = () => (++d === 1 ? { verdict: "rejected", comments: "no focus ring", summary: "no" } : { verdict: "approved", comments: "", summary: "ok" });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.deepEqual(knobs.calls.filter((c) => ["reviewer", "design", "qa"].includes(c)), ["reviewer", "design", "reviewer", "design", "qa"]);
+});
+
+test("a backend ticket skips the design review", async () => {
+  knobs.override.triage = () => ({ ...(defaults.triage!({} as Req<unknown>) as object), specialty: "backend" });
+  await start();
+  assert.ok(!knobs.calls.includes("design"));
+});
+
+test("a fullstack ticket also goes through the design review", async () => {
+  knobs.override.triage = () => ({ ...(defaults.triage!({} as Req<unknown>) as object), specialty: "fullstack" });
+  await start();
+  assert.ok(knobs.calls.includes("design"));
+});
+
+test("a CEO retry of a failed design node re-runs design and not the reviewer", async () => {
+  let n = 0;
+  knobs.override.design = () => {
+    if (n++ === 0) throw new NodeFailure("boom");
+    return approved();
+  };
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  const r = await answer(g, "retry");
+  assert.equal(paused(r)?.type, "approval");
+  assert.equal(knobs.calls.filter((c) => c === "design").length, 2);
+  assert.equal(knobs.calls.filter((c) => c === "reviewer").length, 1);
+});

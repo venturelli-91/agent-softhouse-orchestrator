@@ -30,6 +30,7 @@ const out: Record<string, (req: Req<unknown>) => unknown> = {
     return { summary: "ok", brief: { why: "the goal of the ticket", how: "small focused change", where: "only the touched module" } };
   },
   reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
+  design: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),
 };
 registerExecutor("ops-fake", {
