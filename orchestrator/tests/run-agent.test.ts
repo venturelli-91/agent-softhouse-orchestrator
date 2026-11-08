@@ -61,6 +61,14 @@ test("loadPrompt strips the frontmatter and concatenates", () => {
   assert.match(p, /You are B\./);
 });
 
+test("loadPrompt rejects pointer stubs but loads real prompts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ag-"));
+  writeFileSync(join(dir, "dev.md"), "---\nname: dev\n---\nLeia orchestrator/agents/dev.md e siga.\n");
+  writeFileSync(join(dir, "real.md"), "You are real.\n");
+  assert.throws(() => loadPrompt(["dev"], dir), (e) => e instanceof NodeFailure && e.message.startsWith("dev:") && e.message.includes(dir));
+  assert.equal(loadPrompt(["real"], dir), "You are real.");
+});
+
 const ok = { is_error: false, subtype: "success", structured_output: { ok: true }, num_turns: 2, total_cost_usd: 0.01, usage: { input_tokens: 1,
   output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 } };
 
