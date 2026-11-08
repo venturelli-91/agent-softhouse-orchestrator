@@ -8,7 +8,7 @@
 - `scripts/check-secrets.sh`: keys/tokens and machine paths in the tree and the history;
   personal terms come from `PERSONAL_TERMS`, never from the public code. `LICENSE` MIT,
   `README.md` with the LangGraph diagram.
-- Publishing: whole repo at `venturelli-91/venturelli-house` (public). Before that,
+- Publishing: whole repo at `venturelli-91/agent-softhouse-orchestrator` (public; named `venturelli-house` until 2026-11-08). Before that,
   `d:\...\skills` became `$SKILLS_DIR` across the whole history (`git filter-branch`).
   CI moved to `.github/workflows/ci.yml` (root), green.
 
