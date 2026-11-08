@@ -9,7 +9,7 @@ Checked against `main` as of 2026-11-08 (date only; all counts here, such as com
 | Test scripts | `npm test` only | `test:unit`, `test:int`, `test` runs both | `package.json` scripts |
 | Runtime dependencies | 3 | 3 (`@langchain/core`, `@langchain/langgraph`, `zod`) | `package.json` dependencies |
 | Commits | 111 | over 200 (213 at commit 0b9be7f, 222 at 27d79d6; it grows with every merge, so the README gives a floor) | `git rev-list --count main` |
-| Merged PRs | 7 | over 30 (31 merge commits at 0b9be7f, highest PR number #33) | `git log --oneline main | grep -ci "merge pull request"` |
+| Merged PRs | 7 | over 30 (31 merge commits at 0b9be7f, highest PR number #33) | `git log --oneline main \| grep -ci "merge pull request"` |
 | Skipped integration tests | not stated | 2 (the symlink tests in `conventions.int.test.ts`, skipped when the OS cannot create symlinks; observed on Windows 11, run of 2026-11-08: tests 161, pass 159, skipped 2) | `npm test` run on main, int suite reporter |
 | Timeline | Oct 31 - Nov 4 | Oct 31 - Nov 8 (commits on 8 distinct days) | `git log --format=%ad --date=short` |
 | Role prompts | "20" (original framework), 18 in `examples/agents` | 20 stubs in `.claude/agents/` at the first commit (baseline claim kept); now 21 prompts in `orchestrator/agents/`, 19 stubs in `.claude/agents/` | `git ls-tree -r --name-only <root commit>`; `ls orchestrator/agents`; `ls .claude/agents` |
