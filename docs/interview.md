@@ -29,7 +29,7 @@ O que sustenta cada frase:
 | ação irreversível passa por humano | `interrupt()` em `src/ceo-node.ts:19`; merge e deploy presos ao commit aprovado (`approved_sha`) |
 | decisões documentadas | `docs/portfolio/` (especialmente `04-guardrails-and-security.md` e `07-lessons-and-limits.md`) |
 
-Seja direto sobre o uso de IA: o histórico tem o trailer `Co-Authored-By` em 117 commits (`git log --format=%B | grep -ci
+Seja direto sobre o uso de IA: o histórico tem o trailer `Co-Authored-By` em mais de 100 commits (`git log --format=%B | grep -ci
 "^Co-Authored-By"`, em 2026-11-08), e o repositório tem mais de 200 commits em 8 dias de atividade (`git rev-list --count
 main`; datas em `docs/portfolio/VERIFIED.md`). Esconder isso é pior do que contar.
 
