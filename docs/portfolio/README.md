@@ -25,11 +25,11 @@ Result: a CLI (`orch`) that takes a plain-English request, drives it through tri
 | Metric | Value |
 |---|---|
 | Source (`orchestrator/src`) | ~2,400 lines of TypeScript in 38 files |
-| Automated tests | 242 defined (81 unit, 161 integration; 2 integration tests skip where symlinks are unavailable; `node:test`, no network, no model, no credentials) |
+| Automated tests | 244 defined (82 unit, 162 integration; 2 integration tests skip where symlinks are unavailable; `node:test`, no network, no model, no credentials) |
 | Runtime dependencies | 3 (`@langchain/langgraph`, `@langchain/core`, `zod`) |
 | Graph nodes | 14 (triage, planner, dev, reviewer, design, qa, webcheck, publish, ceo_approval, merge_pr, deploy, docs_start, docs_mid, docs_end) |
 | Agent prompts | 21 in `orchestrator/agents/` |
-| Cost per ticket | to be measured (`orch clean` appends per-ticket numbers to `ORCH_HOME/metrics.jsonl`; none are recorded in this repo) |
+| Cost per ticket | one sample: US$0.2308 for a trivial ticket (86 s, 0 revisions), as of 2026-11-08, evidence in `docs/evidence/cost-1/`; a typical cost is to be measured |
 
 
 ## Documentation index

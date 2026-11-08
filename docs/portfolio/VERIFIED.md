@@ -5,12 +5,13 @@ Checked against `main` as of 2026-11-08 (date only; all counts here, such as com
 | Claim | Old value | Verified value | How verified |
 |---|---|---|---|
 | Source size | ~1,400 lines | 2,426 lines (2,235 non-blank) in 38 files; written as "~2,400 lines, 38 files" | `cat src/*.ts \| wc -l`; `ls src/*.ts \| wc -l` |
-| Automated tests | 170+ | 242 = 81 unit + 161 integration | Unit: `npm run test:unit` reporter, `tests 81`. Integration: STATIC count only (`grep -cE "^\s*(test\|it)\(" tests/*.int.test.ts`, summed = 161); the int suite was not run (about 5 min). The same static count on the unit files gives 81, equal to the reporter, so the method is consistent |
+| Automated tests | 170+ | 244 = 82 unit + 162 integration | Unit: `npm run test:unit` reporter, `tests 82`. Integration: STATIC count only (`grep -cE "^\s*(test\|it)\(" tests/*.int.test.ts`, summed = 162); the int suite was not rerun for this count (the full run of 2026-11-08 before two later tests reported 161 integration tests, 159 passed, 2 skipped). The same static count on the unit files gives 82, equal to the reporter, so the method is consistent |
 | Test scripts | `npm test` only | `test:unit`, `test:int`, `test` runs both | `package.json` scripts |
 | Runtime dependencies | 3 | 3 (`@langchain/core`, `@langchain/langgraph`, `zod`) | `package.json` dependencies |
 | Commits | 111 | over 200 (213 at commit 0b9be7f, 222 at 27d79d6; it grows with every merge, so the README gives a floor) | `git rev-list --count main` |
 | Merged PRs | 7 | over 30 (31 merge commits at 0b9be7f, highest PR number #33) | `git log --oneline main \| grep -ci "merge pull request"` |
 | Skipped integration tests | not stated | 2 (the symlink tests in `conventions.int.test.ts`, skipped when the OS cannot create symlinks; observed on Windows 11, run of 2026-11-08: tests 161, pass 159, skipped 2) | `npm test` run on main, int suite reporter |
+| Cost per ticket | to be measured | US$0.2308 for ONE trivial ticket (86 s, 0 revisions, 130,878 tokens including cached context; the `tokens` field of metrics.jsonl is 7,853 = input without cache plus output); a sample, not an average | `docs/evidence/cost-1/metrics.jsonl` and `run.log`; `src/metrics.ts:14` |
 | Timeline | Oct 31 - Nov 4 | Oct 31 - Nov 8 (commits on 8 distinct days) | `git log --format=%ad --date=short` |
 | Role prompts | "20" (original framework), 18 in `examples/agents` | 20 stubs in `.claude/agents/` at the first commit (baseline claim kept); now 21 prompts in `orchestrator/agents/`, 19 stubs in `.claude/agents/` | `git ls-tree -r --name-only <root commit>`; `ls orchestrator/agents`; `ls .claude/agents` |
 | `AGENTS_DIR` default | `.claude/agents`; `examples/agents` | `agents` in `.env.example`, resolved to `orchestrator/agents`; `examples/` does not exist; unset in code is an error | `.env.example:3`; `scripts/orch.ts:38`; `src/run-agent.ts:57` |
@@ -33,7 +34,7 @@ Checked against `main` as of 2026-11-08 (date only; all counts here, such as com
 
 This list intentionally keeps the old numbers as an audit log. They must not be reintroduced without a source in a real `metrics.jsonl` or eval output file.
 
-No `metrics.jsonl` or eval output file exists in the repo, so every cost/token/dollar figure was removed or replaced with "to be measured":
+When these figures were removed, no `metrics.jsonl` or eval output file existed in the repo, so every cost/token/dollar figure was removed or replaced with "to be measured" (one measured sample was added later, see the Cost per ticket row above):
 
 - README: "Typical ticket cost ~85k-95k tokens, ~US$0.04-0.11" and "Cost reduction ~78% (US$0.160 to 0.035)".
 - 05-operations-and-cost: the baseline table (tokens, turns, time, US$ per node, total 85,246 / 46.4 s / 0.104), "output under 3-5% of tokens", "3.4k-6.7k tokens per turn", "dev ~50-55% of spend", "ambiguous route ~50% more", and the Haiku A/B (US$0.160 to 0.035, ~78%). They exist only as prose in `orchestrator/docs/07-metrics.md` and `08-real-repo-validation.md`, with no raw data on disk.
