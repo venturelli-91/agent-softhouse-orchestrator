@@ -2,6 +2,7 @@ import { z } from "zod";
 import { selfApproval, verifyEvidence } from "./guardrails.ts";
 import { context, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
 import { NodeFailure, runAgent } from "./run-agent.ts";
+import { UI_SPECIALTIES } from "./specialties.ts";
 import { cap, summary, type T } from "./ticket.ts";
 
 const ReviewOutput = z.object({ verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary, explanation: z.string().default("") });
@@ -58,8 +59,6 @@ function reviewStep(name: "reviewer" | "design" | "qa", files: (t: T) => string[
     };
   });
 }
-// ponytail: UI review only for tickets routed to a UI specialty; a backend ticket has no screen to critique.
-const UI_SPECIALTIES: string[] = ["frontend", "fullstack"];
 export const reviewer = reviewStep(
   "reviewer",
   (t) => [
@@ -68,7 +67,7 @@ export const reviewer = reviewStep(
     ...(t.flags.touches_performance ? ["performance"] : []),
     ...(t.flags.touches_ai ? ["evals-engineer"] : []),
   ],
-  (t) => (UI_SPECIALTIES.includes(t.specialty) ? "design" : "qa"),
+  (t) => (UI_SPECIALTIES.has(t.specialty) ? "design" : "qa"),
 );
 export const design = reviewStep("design", () => ["design-reviewer"], "qa");
 export const qa = reviewStep("qa", () => ["qa-automation"], "publish");

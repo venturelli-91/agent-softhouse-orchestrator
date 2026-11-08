@@ -140,3 +140,23 @@ test("a backend ticket skips the design review", async () => {
   await start();
   assert.ok(!knobs.calls.includes("design"));
 });
+
+test("a fullstack ticket also goes through the design review", async () => {
+  knobs.override.triage = () => ({ ...(defaults.triage!({} as Req<unknown>) as object), specialty: "fullstack" });
+  await start();
+  assert.ok(knobs.calls.includes("design"));
+});
+
+test("a CEO retry of a failed design node re-runs design and not the reviewer", async () => {
+  let n = 0;
+  knobs.override.design = () => {
+    if (n++ === 0) throw new NodeFailure("boom");
+    return approved();
+  };
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  const r = await answer(g, "retry");
+  assert.equal(paused(r)?.type, "approval");
+  assert.equal(knobs.calls.filter((c) => c === "design").length, 2);
+  assert.equal(knobs.calls.filter((c) => c === "reviewer").length, 1);
+});
