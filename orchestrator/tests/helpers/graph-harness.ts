@@ -74,8 +74,8 @@ export async function start(id = "T-1", saver: MemorySaver = new MemorySaver(), 
   roots.push(root);
   const repo = createFixture(root);
   knobs.afterFixture?.(repo);
-  if ("deploy_cfg" in extra) writeFileSync(join(process.env.ORCH_HOME!, "config.json"),
-    JSON.stringify({ repos: { [resolve(repo)]: { deploy: extra.deploy_cfg } } }));
+  if ("deploy_cfg" in extra || "webcheck_cfg" in extra) writeFileSync(join(process.env.ORCH_HOME!, "config.json"),
+    JSON.stringify({ repos: { [resolve(repo)]: { deploy: extra.deploy_cfg, webcheck: extra.webcheck_cfg } } }));
   const graph = buildGraph(saver);
   const cfg = config(id);
   const r = await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, "wt")), ...extra }, cfg);
