@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "playwright": "^1.65.0",
     "typescript": "^7.0.2"
   },
   "bin": {

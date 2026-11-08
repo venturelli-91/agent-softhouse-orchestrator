@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { permissionArgs, SHELL, verifyEvidence } from "../src/guardrails.ts";
-import { loadRepoConfig } from "../src/repo-config.ts";
+import { loadRepoConfig, WebcheckConfig } from "../src/repo-config.ts";
 
 process.env.ORCH_HOME = mkdtempSync(join(tmpdir(), "rc-home-"));
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
@@ -23,10 +23,10 @@ function repo(config?: string) {
 test("the config comes from the base commit, with safe defaults", () => {
   const none = repo();
   assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null, specialties: [...SPECIALTIES], stack: "" });
+    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "" });
   const some = repo('{"test":"pytest -q","merge":"auto"}');
   assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null, specialties: [...SPECIALTIES], stack: "" });
+    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "" });
   // an uncommitted edit of the file does not count
   writeFileSync(join(some.d, ".orchestrator.json"), '{"test":"rm -rf x"}');
   assert.equal(loadRepoConfig(some.d, some.base).test, "pytest -q");
@@ -162,4 +162,11 @@ test("health_url with credentials is rejected", () => {
   const t = withDeploy({ ...okDeploy, health_url: "https://user:pw@x.example/health" });
   assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /without credentials/);
   t.done();
+});
+
+test("webcheck is validated and only accepted from the external config", () => {
+  assert.throws(() => WebcheckConfig.parse({ serve: "npm start; rm -rf x", base_url: "http://localhost:3000" }));
+  assert.throws(() => WebcheckConfig.parse({ serve: "npm start", base_url: "http://example.com" }));
+  assert.throws(() => WebcheckConfig.parse({ serve: "npm start", base_url: "http://localhost:3000", gtm: ["nope"] }));
+  assert.equal(WebcheckConfig.parse({ serve: "npm start", base_url: "http://127.0.0.1:3000" }).paths[0], "/");
 });

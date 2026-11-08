@@ -6,6 +6,8 @@ import { MemorySaver } from "@langchain/langgraph";
 import { ciVerdict } from "../src/publish.ts";
 import { NodeFailure, type Req } from "../src/run-agent.ts";
 import { BRIEF, commit, defaults, start, paused, answer, approved, reviewerFailsOnce, knobs } from "./helpers/graph-harness.ts";
+import { setCollector, playwrightCollector } from "../src/webcheck.ts";
+import { WebcheckConfig } from "../src/repo-config.ts";
 
 test("the reviewer gets the repo conventions and QA does not", async () => {
   const seen: Record<string, string> = {};
@@ -139,4 +141,38 @@ test("a backend ticket skips the design review", async () => {
   knobs.override.triage = () => ({ ...(defaults.triage!({} as Req<unknown>) as object), specialty: "backend" });
   await start();
   assert.ok(!knobs.calls.includes("design"));
+});
+
+const WEB = WebcheckConfig.parse({ serve: "npm start", base_url: "http://localhost:3000", gtm: ["GTM-ABC123"], lcp_ms: 2500 });
+const page = (over: object = {}) => ({ url: "http://localhost:3000/", vitals: { lcp_ms: 1000 }, dataLayer: [{ event: "gtm.js" }], consoleErrors: [],
+  requests: ["https://www.googletagmanager.com/gtm.js?id=GTM-ABC123"], ...over });
+
+test("a UI ticket without webcheck configured passes with a warning, and a failing webcheck goes back to the dev", async () => {
+  const skipped = await start();
+  assert.equal(paused(skipped.r)?.type, "approval");
+  assert.match(skipped.r.docs_warnings.join(), /webcheck skipped: no webcheck configured/);
+
+  knobs.calls = [];
+  let n = 0;
+  setCollector(async () => [n++ === 0 ? page({ requests: [] }) : page()]);
+  try {
+    const g = await start("T-2", new MemorySaver(), { webcheck_cfg: WEB });
+    assert.equal(paused(g.r)?.type, "approval");
+    assert.equal(g.r.revisions, 1);
+    assert.match(g.r.rejections.join(), /webcheck: GTM GTM-ABC123 was never requested/);
+    assert.equal(knobs.calls.filter((c) => c === "dev").length, 2);
+  } finally {
+    setCollector(playwrightCollector);
+  }
+});
+
+test("a collector crash does not block the ticket: it is skipped with a warning", async () => {
+  setCollector(async () => { throw new Error("chromium missing"); });
+  try {
+    const g = await start("T-3", new MemorySaver(), { webcheck_cfg: WEB });
+    assert.equal(paused(g.r)?.type, "approval");
+    assert.match(g.r.docs_warnings.join(), /webcheck skipped: chromium missing/);
+  } finally {
+    setCollector(playwrightCollector);
+  }
 });
