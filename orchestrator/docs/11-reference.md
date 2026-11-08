@@ -6,17 +6,19 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 
 | Command | What it does |
 |---|---|
-| `orch setup <repo> [--team <name>] [--no-install] [--yes]` | Drop-in: copies this folder to `<repo>/orchestrator` (never overwriting; leaves out `node_modules`, `.env`, `.state`), creates `.env` from `.env.example`, runs `npm ci`, asks before downloading Chromium for `webcheck` (`--yes` accepts, no terminal skips), then runs `init`. Committing `orchestrator/` and `.orchestrator.json` stays with you. |
-| `orch init` | Writes `../.orchestrator.json` (commit it). Warns when `package.json` has a bare `node --test`. |
+| `orch setup <repo> [--team <name>] [--no-install] [--yes]` | Drop-in; refuses if `<repo>/orchestrator` already exists. Copies this folder to `<repo>/orchestrator` (never overwriting; leaves out `node_modules`, `.env`, `.state`), creates `.env` from `.env.example`, runs `npm ci`, asks before downloading Chromium for `webcheck` (`--yes` accepts, no terminal skips), then runs `init`. Committing `orchestrator/` and `.orchestrator.json` stays with you, so tickets branch from a base that has them. By hand: copy this folder to the repo root, then `cd orchestrator && npm ci && cp .env.example .env`. |
+| `orch init [repo] [--team <all\|web\|api\|mobile\|ai>]` | Writes `../.orchestrator.json` (commit it) with that team's specialties and checks for `CLAUDE.md`. Warns when `package.json` has a bare `node --test`. |
+| `orch team "<need>" [--repo <path>] [--yes]` | Agents propose the team and the stack (respecting an existing one); after you confirm, writes them to `.orchestrator.json`. |
 | `orch run "request"` | Runs the graph on a request. Warns when the repo is behind its upstream. |
 | `orch status [id]` | Lists tickets, then incidents; shows token usage and `docs!` warnings. |
 | `orch continue <id>` | Resumes a run that was killed mid-graph. |
 | `orch approve <id> ["answer"]` | CEO approval (for a deploy it shows the environment and the exact commands). |
-| `orch reject <id> "reason"` | CEO rejection. |
+| `orch reject <id> [reason]` | CEO rejection; on an escalation with no reason it aborts the ticket. |
 | `orch clean <id>\|--all [--force] [--remote]` | Removes worktree, branch and state of finished tickets; `--remote` also deletes `ticket/<id>` on the push remote. Before deleting it appends one line to `ORCH_HOME/metrics.jsonl`: route, tasks, revisions, escalations, time, tokens and cost, total and per node. |
-| `orch watch` | One monitor pass over deployed tickets (see [12-operations.md](12-operations.md)). |
+| `orch watch` | One monitor pass over deployed tickets; incidents and hotfixes in [12-operations.md](12-operations.md). |
+| `orch resolve <incident-id>` | Closes an incident by hand (the service is back, or you handled it elsewhere). |
 | `orch rollback <incident-id> [--config-reviewed]` | Your approval of the proposed rollback; `--config-reviewed` accepts a changed `.git/config` after review. |
-| `orch chaos <ticket-id> <scenario>\|--clear` | Injects (or clears) a failure on a sandbox deploy (see [12-operations.md](12-operations.md)). |
+| `orch chaos <ticket-id> <scenario>\|--clear` | Injects (or clears) a failure on a sandbox deploy; scenarios in [12-operations.md](12-operations.md). |
 | `npm run tracer -- --clean` | End-to-end ticket on the Claude Code login, no key: `echo approve \| npm run tracer -- --clean`. Real repo: `--repo <path> --id T-1 "request"`. Approve later from another process: add `--db state.json`, rerun with `--resume`. |
 | `npm run watchdog -- --db state.json` | Free, rule-based sweep for stalled, looping or over-budget tickets; `--llm` adds the Watchdog agent. |
 | `npm run eval:review\|eval:stages\|eval:dev -- --models a,b --reps 3` | Scores a model per stage on cases with known answers (dev uses hidden acceptance tests). Matrix in [08](08-real-repo-validation.md); `.env.example` ships what it supports. |
@@ -27,14 +29,16 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 
 | Variable | Meaning |
 |---|---|
-| `AGENTS_DIR` | Role prompts; default `agents/` (bundled, the single prompt source). Pointing it at the `.claude/agents` pointer stubs fails loudly. |
-| `MODEL_*`, `EFFORT_*`, `TURNS_*` | Per role (e.g. `MODEL_REVIEWER`, `TURNS_DEV`); `.env.example` runs the read-only nodes on a cheaper model. `MODEL_DOCS` and `TURNS_DOCS` tune the docs agent. |
-| `TOKEN_BUDGET_TICKET` | Token budget per ticket. |
-| `TOKEN_CAP_DAILY` | Rolling 24h cap over every agent call; stops with an escalation, `orch status` shows usage. Tune to your plan. |
+| `AGENTS_DIR` | Role prompts; default `agents/` (bundled, the single prompt source). Point it elsewhere to use your own roles; pointing it at the `.claude/agents` pointer stubs fails loudly. |
+| `MODEL_*`, `EFFORT_*`, `TURNS_*` | Per role (e.g. `MODEL_REVIEWER`, `TURNS_DEV`). Lookup: `X_<ROLE>`, then `X_DEFAULT`; throws if both are missing. `.env.example` runs the read-only nodes on a cheaper model. `MODEL_DOCS` and `TURNS_DOCS` tune the docs agent. |
+| `TOKEN_BUDGET_TICKET` | Token budget per ticket (`.env.example`: 400000). Unset is a hard error (fail closed); the cap is multiplied by 1 + verified tasks, up to 7. |
+| `TOKEN_CAP_DAILY` | Rolling 24h cap over every agent call (`.env.example`: 1500000); stops with an escalation, `orch status` shows usage. Unset means no cap and no ledger. Tune to your plan. |
 | `NOTIFY_URL` | Plain-text POST when a ticket waits for you (e.g. an ntfy.sh topic on your phone). |
-| `EXECUTOR` | Agent executor. |
-| `PUBLISHER` | `github` opens a draft PR. |
-| `RETRY_DELAYS_MS` | Waits between retries of a busy API, default `5000,20000`; a usage limit is never retried. |
+| `EXECUTOR` | Only built-in value is `claude-subscription` (default; uses the Claude Code login, no key). Anything else fails with `unknown EXECUTOR: <name>`. |
+| `PUBLISHER` | `github` (opens a draft PR) or `none` (`.env.example`). Unset fails closed. |
+| `RETRY_DELAYS_MS` | Waits between retries of a busy API, default `5000,20000`; a usage limit is never retried; empty disables retries. |
+| `STALE_HOURS` | Watchdog: hours without movement before a ticket is flagged (default 24; a P0 waits 1h). |
+| `MERGE_WAIT_MS` | How long `merge: auto` waits for CI (default 600000); no checks at all means no automatic merge. |
 | `ORCH_HOME` | State and external config (default `orchestrator/.state`): `tickets/<id>.json`, plus `tickets/<id>.lock` while a command runs (a second command refuses with "already running"; a lock from a dead process is replaced). |
 | `ORCH_WORK` | Ticket worktrees and deploy checkouts (default `~/.orchestrator/work`), outside the repo so the agent cannot reach its `.env` with `../`. |
 
@@ -51,7 +55,7 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 | `push_remote` | Default `origin`. |
 | `base_repo` | `owner/name` of the upstream the PR targets. |
 | `disclosure` | Default `true`: the PR body says it came from an automated pipeline. |
-| `install` | `true` runs `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, `tsc` and `next build` can be the test command. Before every verification it wipes what the agent left outside the commit (`git clean -fdX`) and reinstalls. A diff touching `package-lock.json` (like `package.json`) goes to the CEO. Needs a committed lockfile and network. |
+| `install` | `true` runs `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, `tsc` and `next build` can be the test command. Before every verification it wipes what the agent left outside the commit (`git clean -fdX`) and reinstalls, so a planted file in `node_modules` never runs. A diff touching `package-lock.json` (like `package.json`) goes to the CEO. Needs a committed lockfile and network. |
 | `deploy`, `webcheck` | External config only (`ORCH_HOME/config.json`); see [12-operations.md](12-operations.md). |
 
 Repo you cannot push to: `gh repo fork --remote`, then in `ORCH_HOME/config.json`:
@@ -65,58 +69,71 @@ Target repo rules: the dev receives the repo's `CLAUDE.md` (from the base commit
 
 ## Graph
 
+Generated from `src/graph.ts`; regenerate with `buildGraph().getGraphAsync()` then `.drawMermaid()` (needs `TOKEN_BUDGET_TICKET` set).
+`ceo_approval` is the only human gate: every merge, deploy and escalation passes through it.
+
 ```mermaid
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
 graph TD;
-  docs_start(docs_start)
-  docs_mid(docs_mid)
-  docs_end(docs_end)
-  triage(triage)
-  planner(planner)
-  dev(dev)
-  reviewer(reviewer)
-  design(design)
-  qa(qa)
-  webcheck(webcheck)
-  publish(publish)
-  ceo_approval(ceo_approval)
-  merge_pr(merge_pr)
-  deploy(deploy)
-  docs_start --> triage;
-  triage -.-> dev;
-  triage -.-> planner;
-  triage -.-> docs_mid;
-  planner -.-> dev;
-  planner -.-> docs_mid;
-  dev -.-> reviewer;
-  dev -.-> docs_mid;
-  reviewer -.-> design;
-  reviewer -.-> qa;
-  reviewer -.-> dev;
-  reviewer -.-> docs_mid;
-  design -.-> qa;
-  design -.-> dev;
-  design -.-> docs_mid;
-  qa -.-> webcheck;
-  qa -.-> dev;
-  qa -.-> docs_mid;
-  webcheck -.-> docs_mid;
-  webcheck -.-> dev;
-  publish -.-> docs_end;
-  publish -.-> dev;
-  publish -.-> docs_mid;
-  docs_mid -.-> publish;
-  docs_mid -.-> ceo_approval;
-  docs_end --> ceo_approval;
-  ceo_approval -.-> dev;
-  ceo_approval -.-> planner;
-  ceo_approval -.-> reviewer;
-  ceo_approval -.-> design;
-  ceo_approval -.-> qa;
-  ceo_approval -.-> webcheck;
-  ceo_approval -.-> publish;
-  ceo_approval -.-> deploy;
-  ceo_approval -.-> merge_pr;
-  merge_pr -.-> deploy;
-  merge_pr -.-> ceo_approval;
-  dev -.-> dev;
+	__start__([<p>__start__</p>]):::first
+	triage(triage)
+	planner(planner)
+	dev(dev)
+	reviewer(reviewer)
+	design(design)
+	qa(qa)
+	webcheck(webcheck)
+	publish(publish)
+	ceo_approval(ceo_approval)
+	merge_pr(merge_pr)
+	deploy(deploy)
+	docs_start(docs_start)
+	docs_mid(docs_mid)
+	docs_end(docs_end)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> docs_start;
+	deploy --> __end__;
+	docs_end --> ceo_approval;
+	docs_start --> triage;
+	triage -.-> dev;
+	triage -.-> planner;
+	triage -.-> docs_mid;
+	planner -.-> dev;
+	planner -.-> docs_mid;
+	dev -.-> reviewer;
+	dev -.-> docs_mid;
+	reviewer -.-> design;
+	reviewer -.-> qa;
+	reviewer -.-> dev;
+	reviewer -.-> docs_mid;
+	design -.-> qa;
+	design -.-> dev;
+	design -.-> docs_mid;
+	qa -.-> webcheck;
+	qa -.-> dev;
+	qa -.-> docs_mid;
+	webcheck -.-> docs_mid;
+	webcheck -.-> dev;
+	publish -.-> docs_end;
+	publish -.-> dev;
+	publish -.-> docs_mid;
+	docs_mid -.-> publish;
+	docs_mid -.-> ceo_approval;
+	ceo_approval -.-> triage;
+	ceo_approval -.-> planner;
+	ceo_approval -.-> dev;
+	ceo_approval -.-> reviewer;
+	ceo_approval -.-> design;
+	ceo_approval -.-> qa;
+	ceo_approval -.-> webcheck;
+	ceo_approval -.-> publish;
+	ceo_approval -.-> deploy;
+	ceo_approval -.-> merge_pr;
+	ceo_approval -.-> __end__;
+	merge_pr -.-> deploy;
+	merge_pr -.-> ceo_approval;
+	dev -.-> dev;
+	classDef default fill:#f2f0ff,line-height:1.2;
+	classDef first fill-opacity:0;
+	classDef last fill:#bfb6fc;
 ```

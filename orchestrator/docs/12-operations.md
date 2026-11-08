@@ -1,4 +1,4 @@
-# Operations: deploy, watch, webcheck, project docs, defenses
+# Operations: deploy, watch, probe, chaos, webcheck
 
 Commands and variables are in [11-reference.md](11-reference.md).
 
@@ -83,31 +83,8 @@ port that already answers escalates to you; no `webcheck` configured, or Playwri
 warning in the docs record. INP needs real interaction, so there is no INP budget. Ads, Analytics and GTM are checked
 only through the browser: no account APIs or credentials.
 
-## Project docs (`.claude/docs`, local only)
+## See also
 
-The graph writes the project spec as small markdown files, one directory per topic, each file at most 150 lines.
-`docs_start` runs before triage, `docs_mid` after QA passes (or before any escalation to the CEO) and `docs_end` after
-publish (a read-only `docs` agent returns the files, code validates and writes them into the main checkout, never the
-worktree). The first run on a repo with code scans it; on an empty repo it structures everything from the request.
-Mandatory topics: `arquitetura`, `backlog`, `checklist`, `design-patterns`, `features`, `testes`, `trade-offs`,
-`comunicacao`, `aprendizados` (each has files or a written "not applicable"). `.claude/` is kept out of git through
-`.git/info/exclude` (the repo's `.gitignore` is not touched); if git would still track it, nothing is written. Problems
-are warnings (`docs!` in `orch status`, lines in the report), never a stop; docs usage is outside the ticket budget.
-The repo rules are read from `.claude/CLAUDE.md` first, then the committed root `CLAUDE.md`; the graph never writes
-that file. Details in [10-project-docs.md](10-project-docs.md).
-
-## Back to the old flow
-
-Delete `orchestrator/` (and `.orchestrator.json`); nothing outside it depends on it.
-
-## Defenses
-
-Worktree per ticket, minimal env, per-role permissions, evidence (commit, `npm test`, diff) checked in code,
-author != reviewer != QA, max 3 revisions and 5 tickets, token budget, merge/deploy only with the CEO.
-
-## Limits
-
-A `Bash` allowlist is weak (the real barrier is a worktree without secrets); the checkpointer is a JSON file; the
-built-in deploy target is simulated and the command target (real deploy + HTTP probe) is not yet proven against a live
-service; QA reads the diff and does not run the tests (the graph does and hands it the verified evidence); validated on
-a handful of tickets in a throwaway repo; individual and local use, not a service for third parties.
+- Project docs written by the `docs_*` nodes: [10-project-docs.md](10-project-docs.md).
+- Defenses and limits: [09-hardening.md](09-hardening.md).
+- Removing the orchestrator (back to the old flow): [README.md](../README.md).

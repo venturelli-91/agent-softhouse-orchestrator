@@ -21,6 +21,15 @@ to teammates, leaders and stakeholders. It is local to the machine and never com
   git would still track it (a repo `.gitignore` un-ignores `.claude/`), nothing is written.
 - `loadConventions`: `.claude/CLAUDE.md` on disk first (only if it is not committed at the base commit), then the root `CLAUDE.md` at the base commit.
 
+## Behavior
+
+- Triggers: `docs_start` runs before triage, `docs_mid` after QA passes (or before any escalation to the CEO) and `docs_end` after publish. The read-only `docs` agent returns the files; code validates and writes them into the main checkout, never the worktree.
+- First run on a repo with code scans it; on an empty repo it structures everything from the request.
+- Mandatory topics: `arquitetura`, `backlog`, `checklist`, `design-patterns`, `features`, `testes`, `trade-offs`, `comunicacao`, `aprendizados` (each has files or a written "not applicable"). One directory per topic, each file at most 150 lines.
+- The repo's `.gitignore` is not touched (`.claude/` is excluded through `.git/info/exclude`).
+- Problems are warnings (`docs!` in `orch status`, lines in the report), never a stop; docs usage is outside the ticket budget. `MODEL_DOCS` and `TURNS_DOCS` tune it.
+- The repo rules are read from `.claude/CLAUDE.md` first, then the committed root `CLAUDE.md`.
+
 ## Modes
 
 `scan` (no docs yet, repo has code), `greenfield` (nothing but orchestrator files), `update`.
