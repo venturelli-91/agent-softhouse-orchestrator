@@ -1,6 +1,7 @@
 // Commands that set up and tidy the orchestrator itself: init, status, clean.
-import { existsSync, unlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, cpSync, existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { applyTeam, configJson, proposeTeam } from "../../src/team.ts";
@@ -40,6 +41,31 @@ export function init(c: Ctx) {
     console.log("no .claude/CLAUDE.md: the dev will have no repo conventions (commit format, style)");
   }
   console.log(ensureLocalOnly(repo) ?? `${join(repo, ".claude", "docs")} ready and ignored by git: the graph writes the project docs there`);
+}
+
+// Copies this folder into another repo and prepares it. Never overwrites: an existing orchestrator/ there stops the command.
+const NOT_COPIED = new Set(["node_modules", ".env", ".state", ".git", ".github"]);
+// Fixed arguments only; on Windows npm and npx are .cmd shims, which need a shell and a single command line.
+const run = (bin: string, args: string[], cwd: string) =>
+  process.platform === "win32" ? execFileSync(`${bin} ${args.join(" ")}`, { cwd, stdio: "inherit", shell: true }) : execFileSync(bin, args, { cwd, stdio: "inherit" });
+
+export async function setup(c: Ctx) {
+  const target = resolve(c.positionals[0] ?? die("usage: orch setup <repo> [--team <name>] [--no-install] [--yes]"));
+  if (!existsSync(join(target, ".git"))) die(`${target} is not the root of a git repo`);
+  const dest = join(target, "orchestrator");
+  if (existsSync(dest)) die(`${dest} already exists: nothing copied`);
+  cpSync(resolve(import.meta.dirname, "../.."), dest, { recursive: true, filter: (src) => !NOT_COPIED.has(basename(src)) });
+  copyFileSync(join(dest, ".env.example"), join(dest, ".env"));
+  console.log(`copied to ${dest} (.env created from .env.example: set PUBLISHER and the models there)`);
+  if (!c.values["no-install"]) {
+    run("npm", ["ci"], dest);
+    // The browser is a ~150 MB download used only by the webcheck node: ask, and skip when there is nobody to ask.
+    const browser = c.values.yes || (stdin.isTTY && (await createInterface({ input: stdin, output: stdout }).question("download Chromium for the webcheck node? [y/N] ")).trim().toLowerCase() === "y");
+    if (browser) run("npx", ["playwright", "install", "chromium"], dest);
+    else console.log("Chromium skipped: run `npx playwright install chromium` in orchestrator/ before using webcheck");
+  }
+  init({ ...c, positionals: [target] });
+  console.log(`next: commit orchestrator/ and .orchestrator.json in ${target}; webcheck, if wanted, is configured by hand in ORCH_HOME/config.json`);
 }
 
 export async function team(c: Ctx) {
