@@ -45,3 +45,8 @@ T-301 (`lastItem` helper with tests, clone of the sandbox, `PUBLISHER=none`, Hai
 reviewer/qa/devops, default model elsewhere): 0 revisions, 93,741 tokens, 47 s, US$ 0.113
 reported. Same shape as T-104 (156,679 tokens, 2 revisions) before the changes; one sample,
 not a benchmark. Node tokens: triage 5.3k, dev 71.4k, reviewer 5.9k, qa 6.1k, devops 5.1k.
+
+## Defenses and limits (summary)
+
+- **Defenses:** worktree per ticket, minimal env, per-role permissions, evidence (commit, `npm test`, diff) checked in code, author != reviewer != QA, max 3 revisions and 5 tickets, token budget, merge/deploy only with the CEO.
+- **Limits:** a `Bash` allowlist is weak (the real barrier is a worktree without secrets); the checkpointer is a JSON file; the built-in deploy target is simulated and the command target (real deploy + HTTP probe) is not yet proven against a live service; QA reads the diff and does not run the tests (the graph does and hands it the verified evidence); validated on a handful of tickets in a throwaway repo; individual and local use, not a service for third parties.
