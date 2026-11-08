@@ -15,7 +15,9 @@
     "eval:review": "node --env-file=.env scripts/eval-review.ts",
     "eval:stages": "node --env-file=.env scripts/eval-stages.ts",
     "eval:dev": "node --env-file=.env scripts/eval-dev.ts",
-    "test": "node --test \"tests/**/*.test.ts\""
+    "test:unit": "node --test \"tests/!(*.int).test.ts\"",
+    "test:int": "node --test \"tests/*.int.test.ts\"",
+    "test": "npm run test:unit && npm run test:int"
   },
   "dependencies": {
     "@langchain/core": "^1.3.2",
