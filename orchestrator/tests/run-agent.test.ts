@@ -65,7 +65,7 @@ test("loadPrompt rejects pointer stubs but loads real prompts", () => {
   const dir = mkdtempSync(join(tmpdir(), "ag-"));
   writeFileSync(join(dir, "dev.md"), "---\nname: dev\n---\nLeia orchestrator/agents/dev.md e siga.\n");
   writeFileSync(join(dir, "real.md"), "You are real.\n");
-  assert.throws(() => loadPrompt(["dev"], dir), (e) => e instanceof NodeFailure && e.message.startsWith("dev:") && e.message.includes(dir));
+  assert.throws(() => loadPrompt(["dev"], dir), (e) => e instanceof NodeFailure && e.message.startsWith("AGENTS_DIR=") && e.message.includes(dir));
   assert.equal(loadPrompt(["real"], dir), "You are real.");
 });
 

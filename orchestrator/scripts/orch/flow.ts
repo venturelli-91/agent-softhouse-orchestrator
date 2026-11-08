@@ -4,11 +4,17 @@ import { workRoot } from "../../src/daily-cap.ts";
 import { behindBy } from "../../src/git-remote.ts";
 import { createWorktree, resume } from "../../src/graph.ts";
 import { safeGit, testFailure } from "../../src/guardrails.ts";
+import { loadPrompt } from "../../src/run-agent.ts";
 import { type Ctx, die } from "./ctx.ts";
 
 export async function run(c: Ctx) {
   const request = c.positionals[0] ?? die('usage: orch run "<request>" [--repo <path>] [--id <id>]');
   c.needCap();
+  try {
+    loadPrompt(["triage"]);
+  } catch (e) {
+    die((e as Error).message);
+  }
   const id = c.values.id ?? `T-${Date.now().toString(36)}`;
   const repo = resolve(c.values.repo ?? c.host);
   await c.locked(id, async () => {
