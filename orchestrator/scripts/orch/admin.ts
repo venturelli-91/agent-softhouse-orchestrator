@@ -15,7 +15,7 @@ import { listIncidents } from "../../src/incidents.ts";
 import { recordMetrics } from "../../src/metrics.ts";
 import { bareNodeTest } from "../../src/repo-config.ts";
 import { TEAMS } from "../../src/specialties.ts";
-import { ticketFile, ticketIds } from "../../src/ticket-store.ts";
+import { runningPid, ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 
 const DONE = ["simulated_deploy", "deployed", "aborted"];
@@ -83,7 +83,9 @@ export async function status(c: Ctx) {
   const ids = c.positionals[0] ? [c.positionals[0]] : ticketIds(c.home);
   for (const id of ids) {
     const { ticket: t, pending } = await c.load(id);
-    const waiting = pending ? `  <- waiting (${pending.type})` : "";
+    // Not finished, not waiting for an answer, and no live process: the run died (closed session, crash).
+    const dead = !pending && !DONE.includes(t.status) && runningPid(c.home, id) === null;
+    const waiting = pending ? `  <- waiting (${pending.type})` : dead ? `  <- no process running: orch continue ${id}` : "";
     console.log(`${id.padEnd(12)} ${t.status.padEnd(16)} ${t.priority.padEnd(4)} ${t.title}${waiting}${t.docs_warnings.length ? "  docs!" : ""}`);
     if (c.positionals[0]) {
       console.log(report(t));
