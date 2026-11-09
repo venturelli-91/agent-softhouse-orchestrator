@@ -1,9 +1,10 @@
 name: ci
 on:
+  workflow_dispatch:
   push:
-    paths: ["orchestrator/**", ".github/workflows/ci.yml"]
+    paths: ["orchestrator/**", ".claude/**", ".github/workflows/ci.yml"]
   pull_request:
-    paths: ["orchestrator/**", ".github/workflows/ci.yml"]
+    paths: ["orchestrator/**", ".claude/**", ".github/workflows/ci.yml"]
 permissions:
   contents: read
 defaults:
