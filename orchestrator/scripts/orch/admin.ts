@@ -80,6 +80,7 @@ export async function team(c: Ctx) {
   const repo = resolve(c.values.repo ?? c.host);
   const p = await proposeTeam(repo, need);
   console.log(`team: ${p.specialties.join(", ")}\nstack (${p.existing_stack ? "existing" : "recommended"}): ${p.stack}\ntest: ${p.test}\nwhy: ${p.rationale}`);
+  for (const a of p.proposed_agents) console.log(`proposed agent (needs your approval, not created): ${a.name}: ${a.responsibility} (${a.why})`);
   const ok = c.values.yes || (await createInterface({ input: stdin, output: stdout }).question("write this to .orchestrator.json? [y/N] ")).trim().toLowerCase() === "y";
   if (!ok) return console.log("nothing written");
   console.log(`wrote ${applyTeam(repo, p)}: commit it (it is read from the base commit)`);

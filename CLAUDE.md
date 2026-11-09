@@ -78,6 +78,11 @@ the team in another project is in `TEAM.md`.
 | Quality of prompts, agents and workflows | `evals-engineer` |
 | Visual/UX review and Nielsen's heuristics | `dev-frontend` (build) + `qa-automation` (independent audit) |
 
+The roster above is a starting point, not a ceiling. If a demand needs a role or subagent
+the team does not have, or more agents than expected, any agent may **propose** it
+(name, responsibility, why — `orch team` records it as `proposed_agents`). Creating or
+running a new agent still needs CEO approval.
+
 ## Skills and plugins
 
 Agent prompts (`orchestrator/agents/<role>.md`) are headless and do not list skills or
@@ -108,7 +113,8 @@ implement, run tests, open a PR, create documentation, generate reports, analyze
 authorized logs.
 
 **Must ask for approval first**: merge, deploy, schema change, new paid dependency,
-public API change, permissions, external integration, sending external communication,
+public API change, permissions, external integration, creating a new agent or subagent,
+sending external communication,
 a change with a relevant cost impact.
 
 **Never execute without explicit instruction**: direct production, data deletion,

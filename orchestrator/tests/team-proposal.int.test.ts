@@ -8,7 +8,9 @@ import { createWorktree } from "../src/graph.ts";
 import { registerExecutor, type Req } from "../src/run-agent.ts";
 import { applyTeam, configJson, proposeTeam } from "../src/team.ts";
 
-const proposal = { specialties: ["frontend", "backend"], stack: "Next.js + Postgres", existing_stack: true, test: "npm test", rationale: "already there" };
+const agent = { name: "accessibility-auditor", responsibility: "audits WCAG on every UI ticket", why: "the roster has no a11y role" };
+const proposal = { specialties: ["frontend", "backend"], stack: "Next.js + Postgres", existing_stack: true, test: "npm test", rationale: "already there",
+  proposed_agents: [agent] };
 const usage = { tokens_in: 1, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 };
 let seen = "";
 let sawUntracked = true;
@@ -45,8 +47,9 @@ test("the agents propose a team and stack; applying keeps what the config alread
     assert.equal(sawTracked, true);
     applyTeam(d, p);
     assert.deepEqual(JSON.parse(readFileSync(join(d, ".orchestrator.json"), "utf8")), {
-      merge: "local", test: "node -e 0", specialties: ["frontend", "backend"], stack: "Next.js + Postgres",
+      merge: "local", test: "node -e 0", specialties: ["frontend", "backend"], stack: "Next.js + Postgres", proposed_agents: [agent],
     });
+    assert.match(seen, /proposed_agents/);
     git(d, "commit", "-qam", "team");
     const wt = createWorktree(d, "T-1", join(d, "..", `${d.split(/[\\/]/).pop()}-wt`));
     assert.deepEqual(wt.specialties, ["frontend", "backend"]);
