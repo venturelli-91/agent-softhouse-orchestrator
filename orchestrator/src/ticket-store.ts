@@ -29,6 +29,17 @@ function alive(pid: number): boolean {
   }
 }
 
+// The pid of a live `orch` command working on this ticket, or null (no lock, or the lock belongs to a dead process).
+export function runningPid(home: string, id: string): number | null {
+  checkId(id);
+  try {
+    const pid = Number(readFileSync(join(dir(home), `${id}.lock`), "utf8"));
+    return alive(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
 export function lockTicket(home: string, id: string, pid = process.pid): () => void {
   checkId(id);
   mkdirSync(dir(home), { recursive: true });

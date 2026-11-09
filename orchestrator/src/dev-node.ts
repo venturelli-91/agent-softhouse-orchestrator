@@ -4,7 +4,7 @@ import { context, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.t
 import { runAgent } from "./run-agent.ts";
 import { Brief, cap, DEV_FILE, summary, type T } from "./ticket.ts";
 
-const DevOutput = z.object({ summary, brief: Brief });
+const DevOutput = z.object({ summary, brief: Brief, no_change: z.string().optional() });
 
 export const devRules = (test = "npm test", turns?: number) =>
   `Implement in the current worktree, run ${test} and commit (git add/git commit). Do not push. ` +
@@ -16,6 +16,8 @@ export const devRules = (test = "npm test", turns?: number) =>
     ? `You have at most ${turns} turns and uncommitted work is lost value: ` +
       `get a first version passing ${test} and commit it early, then refine and commit again. `
     : "") +
+  `If the request needs no code change (a check or review that finds nothing to fix), commit nothing and set \`no_change\` to what you verified and why: the CEO decides. ` +
+  `Run the build and the tests exactly as the repo's scripts define them: never set NODE_ENV yourself, CI does not. ` +
   `Shell: one simple command per call (git add, git commit, git status, git diff, git log, ${test}); ` +
   `no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.`;
 export const DEV_RULES = devRules();
@@ -28,6 +30,21 @@ export const partialWork = (porcelain: string) =>
           `Review it, make it pass and commit.\n${porcelain.split("\n").slice(0, 40).join("\n")}`,
       ]
     : [];
+
+// Commits already in the worktree (a resumed run or a revision): the dev sees them and must describe the whole ticket, not just this pass.
+const DIFF_CHARS = 20_000;
+export const committedWork = (t: Pick<T, "worktree" | "base" | "tasks">) => {
+  const commits = t.tasks.length ? "" : sh(t.worktree, "log", "--format=%h %s", `${t.base}..HEAD`);
+  if (!commits) return [];
+  const diff = sh(t.worktree, "diff", "--no-ext-diff", "--no-textconv", t.base, "HEAD");
+  return [
+    `Commits already in this worktree (a previous attempt or revision):\n${commits}\nDiff so far:\n${diff.slice(0, DIFF_CHARS)}\n` +
+      "Build on it, do not redo it. `brief` must describe the whole ticket as it stands now (every commit above), never only this pass, and never claim you made no edits.",
+  ];
+};
+
+const nothingDone = (t: T) =>
+  Number(sh(t.worktree, "rev-list", "--count", `${t.base}..HEAD`)) === 0 && !sh(t.worktree, "status", "--porcelain", "--untracked-files=all");
 
 // With several atomic tasks the dev gets one at a time, fresh context each, and must not start the later ones.
 export const taskBlock = (t: Pick<T, "tasks" | "task_done">) => {
@@ -65,16 +82,26 @@ export const dev = guarded("dev", async (t) => {
       ticketData(t),
       devRules(t.test, Number(process.env.TURNS_DEV ?? process.env.TURNS_DEFAULT) || undefined),
       ...taskBlock(t),
+      ...committedWork(t),
       ...partialWork(sh(t.worktree, "status", "--porcelain", "--untracked-files=all")),
       ...rulesBlock(t),
     ),
     test: t.test,
   });
   const v = verifyEvidence(t.worktree, t.base, t.test, t.install);
+  if (!v.ok && output.no_change && !t.tasks.length && nothingDone(t))
+    return {
+      status: "no_change",
+      explanation: output.no_change.split("\n").slice(0, 6).join("\n"),
+      brief: output.brief,
+      summary: cap(output.summary),
+      history: log(t, "dev", "no change needed", usage),
+    };
   if (!v.ok)
     return {
       status: "dev_failed",
-      explanation: "",
+      explanation: cap(output.summary),
+      brief: output.brief,
       revisions: t.revisions + 1,
       summary: `verification: ${v.reason}`,
       history: log(t, "dev", `verification failed`, usage),

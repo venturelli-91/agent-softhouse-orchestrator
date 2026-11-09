@@ -40,6 +40,10 @@ test("no model name in the code", () => {
   for (const f of readdirSync("src")) assert.doesNotMatch(readFileSync(`src/${f}`, "utf8"), /claude-(opus|sonnet|haiku|fable)|sonnet|haiku|opus/i, f);
 });
 
+test("NODE_ENV never reaches the subprocess, so the build agrees with CI", () => {
+  assert.equal(minimalEnv("dev", { PATH: "/bin", NODE_ENV: "development" }).NODE_ENV, undefined);
+});
+
 test("the subprocess env does not leak credentials and gives git an identity", () => {
   const e = minimalEnv("dev", { PATH: "/bin", ANTHROPIC_API_KEY: "x", ANTHROPIC_AUTH_TOKEN: "x", ANTHROPIC_BASE_URL: "x", GITHUB_TOKEN: "x" });
   assert.deepEqual(Object.keys(e).filter((k) => /ANTHROPIC|TOKEN|API_KEY/.test(k)), []);

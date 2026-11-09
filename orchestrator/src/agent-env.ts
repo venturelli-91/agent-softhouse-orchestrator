@@ -2,6 +2,9 @@
 import { devNull } from "./git-safe.ts";
 
 // On Windows the shell of claude -p is PowerShell; on POSIX, Bash.
+// Not NodeJS.ProcessEnv: a host repo (Next.js) augments it with a required NODE_ENV, which breaks the typecheck of callers that pass a plain object.
+export type Env = Record<string, string | undefined>;
+
 export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
 
 export type Role = "triage" | "planner" | "dev" | "reviewer" | "design" | "qa" | "devops" | "watchdog" | "knowledge" | "docs";
@@ -12,9 +15,10 @@ export const ALLOWED_ENV = [
   "CLAUDE_CODE_GIT_BASH_PATH",
 ];
 
+// NODE_ENV is deliberately absent from the whitelist: the verification and the agent never inherit the operator's value.
 // Whitelist: ANTHROPIC_*, tokens and any other variable stay out of the subprocess.
 // Git gets a per-role identity (it becomes the verifiable author_id) and loses the credential helper.
-export function minimalEnv(role: Role, src: NodeJS.ProcessEnv = process.env): Record<string, string> {
+export function minimalEnv(role: Role, src: Env = process.env): Record<string, string> {
   const env: Record<string, string> = {};
   for (const k of ALLOWED_ENV) if (src[k] !== undefined) env[k] = src[k];
   return {
@@ -39,7 +43,7 @@ export function minimalEnv(role: Role, src: NodeJS.ProcessEnv = process.env): Re
 }
 
 // MODEL, EFFORT, TURNS: <NAME>_<ROLE> overrides <NAME>_DEFAULT. Missing = failure (closed).
-export function readEnv(name: "MODEL" | "EFFORT" | "TURNS", role: Role, src: NodeJS.ProcessEnv = process.env): string {
+export function readEnv(name: "MODEL" | "EFFORT" | "TURNS", role: Role, src: Env = process.env): string {
   const v = src[`${name}_${role.toUpperCase()}`] ?? src[`${name}_DEFAULT`];
   if (!v) throw new Error(`missing env: ${name}_${role.toUpperCase()} or ${name}_DEFAULT`);
   return v;

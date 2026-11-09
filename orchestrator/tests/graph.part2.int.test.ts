@@ -7,7 +7,7 @@ import { MemorySaver } from "@langchain/langgraph";
 import { git } from "../scripts/fixture.ts";
 import { DEV_RULES } from "../src/graph.ts";
 import { alerts, watchdog } from "../src/watchdog.ts";
-import { commit, defaults, start, paused, answer, approved, knobs } from "./helpers/graph-harness.ts";
+import { BRIEF, commit, defaults, start, paused, answer, approved, knobs } from "./helpers/graph-harness.ts";
 
 test("the watchdog reads the state and returns alerts without writing", async () => {
   const g = await start();
@@ -114,3 +114,54 @@ test("merge=local fast-forwards main to the approved commit only after the CEO a
   assert.match(String(paused(esc)?.reason), /uncommitted/);
   assert.equal(git(d.repo, "rev-parse", "main"), base);
 });
+
+const noChange = () => ({ summary: "checked", brief: BRIEF, no_change: "the branch already does what the request asks" });
+
+test("a dev that declares no change needed sends it to the CEO as a no_change question, and approve closes the ticket", async () => {
+  knobs.override.dev = noChange;
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "no_change");
+  assert.match(String(paused(g.r)?.reason), /already does what the request asks/);
+  assert.ok(!knobs.calls.includes("reviewer"));
+  assert.equal((await answer(g, "approve")).status, "closed");
+});
+
+test("any other answer to a no_change question is an instruction to the dev", async () => {
+  knobs.override.dev = noChange;
+  const g = await start();
+  knobs.override.dev = defaults.dev;
+  const r = await answer(g, "add the missing test");
+  assert.equal(paused(r)?.type, "approval");
+  assert.equal(knobs.calls.filter((c) => c === "dev").length, 2);
+});
+
+test("no_change without a verified empty worktree is an ordinary failure", async () => {
+  knobs.override.dev = (req) => (writeFileSync(join(req.cwd, "left.txt"), "x"), noChange());
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+});
+
+test("an escalation carries revisions and the last node, and keeps the dev's brief when verification fails", async () => {
+  knobs.override.dev = () => ({ summary: "tried", brief: BRIEF });
+  const g = await start();
+  const p = paused(g.r);
+  assert.equal(p?.type, "escalation");
+  assert.equal(p?.revisions, 3);
+  assert.match(String(p?.last_node), /^dev: verification failed/);
+  assert.deepEqual(p?.brief, BRIEF);
+  assert.equal(p?.explanation, "tried");
+});
+
+test("a dev that reruns over committed work sees the commits and the diff", async () => {
+  const ctx: string[] = [];
+  knobs.override.dev = (req) => (ctx.push(req.context), defaults.dev!(req));
+  knobs.override.reviewer = reviewerFailsOnceHere();
+  await start();
+  assert.doesNotMatch(ctx[0], /Commits already in this worktree/);
+  assert.match(ctx[1], /Commits already in this worktree[\s\S]*dev\nDiff so far:[\s\S]*Submit order/);
+});
+
+function reviewerFailsOnceHere() {
+  let n = 0;
+  return () => (n++ ? approved() : { verdict: "rejected", comments: "again", summary: "s" });
+}

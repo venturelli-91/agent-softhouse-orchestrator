@@ -2,6 +2,7 @@
 import { join, resolve } from "node:path";
 import { workRoot } from "../../src/daily-cap.ts";
 import { behindBy } from "../../src/git-remote.ts";
+import { isBareApproval } from "../../src/ceo-node.ts";
 import { createWorktree, resume } from "../../src/graph.ts";
 import { safeGit, testFailure } from "../../src/guardrails.ts";
 import { type Ctx, die } from "./ctx.ts";
@@ -39,9 +40,13 @@ export async function resumeRun(c: Ctx) {
 export async function approve(c: Ctx) {
   const id = c.positionals[0] ?? die('usage: orch approve <id> ["answer"]');
   await c.locked(id, async () => {
-    await c.needPending(id);
+    const pending = await c.needPending(id);
+    const answer = c.positionals[1];
+    if (pending.type === "escalation" && isBareApproval(answer))
+      die(`${id} is an escalation, not an approval: "approve" would send the dev back to work with that word as its instruction.
+Answer with retry, abort, or what the dev should do: orch approve ${id} "<answer>"`);
     c.needCap();
-    await c.drive(id, resume(c.positionals[1] ?? "approve"));
+    await c.drive(id, resume(answer ?? "approve"));
   });
 }
 
@@ -49,7 +54,7 @@ export async function reject(c: Ctx) {
   const id = c.positionals[0] ?? die('usage: orch reject <id> "<reason>"');
   await c.locked(id, async () => {
     const pending = await c.needPending(id);
-    const reason = c.positionals[1] ?? (pending.type === "escalation" ? "abort" : die("rejecting an approval needs a reason"));
+    const reason = c.positionals[1] ?? (pending.type !== "approval" ? "abort" : die("rejecting an approval needs a reason"));
     if (reason !== "abort") c.needCap();
     await c.drive(id, resume(reason));
   });

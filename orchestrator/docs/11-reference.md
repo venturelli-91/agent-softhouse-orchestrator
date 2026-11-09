@@ -6,14 +6,14 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 
 | Command | What it does |
 |---|---|
-| `orch setup <repo> [--team <name>] [--no-install] [--yes]` | Drop-in; refuses if `<repo>/orchestrator` already exists. Copies this folder to `<repo>/orchestrator` (never overwriting; leaves out `node_modules`, `.env`, `.state`), creates `.env` from `.env.example`, runs `npm ci`, asks before downloading Chromium for `webcheck` (`--yes` accepts, no terminal skips), then runs `init`. Committing `orchestrator/` and `.orchestrator.json` stays with you, so tickets branch from a base that has them. By hand: copy this folder to the repo root, then `cd orchestrator && npm ci && cp .env.example .env`. |
+| `orch setup <repo> [--team <name>] [--no-install] [--yes]` | Drop-in; refuses if `<repo>/orchestrator` already exists. Copies this folder to `<repo>/orchestrator` (never overwriting; leaves out `node_modules`, `.env`, `.state`), creates `.env` from `.env.example`, runs `npm ci`, asks before downloading Chromium for `webcheck` (`--yes` accepts, no terminal skips), then runs `init` and prints the lines to add to the host's `biome.json` (`"!orchestrator"`, `"!.vscode"`) and `tsconfig.json` (`"exclude": ["orchestrator"]`); it does not edit them, and without them the host's `verify` fails on `orchestrator/`. Committing `orchestrator/` and `.orchestrator.json` stays with you, so tickets branch from a base that has them. By hand: copy this folder to the repo root, then `cd orchestrator && npm ci && cp .env.example .env`. |
 | `orch init [repo] [--team <all\|web\|api\|mobile\|ai>]` | Writes `../.orchestrator.json` (commit it) with that team's specialties and checks for `CLAUDE.md`. Warns when `package.json` has a bare `node --test`. |
 | `orch team "<need>" [--repo <path>] [--yes]` | Agents propose the team and the stack (respecting an existing one); after you confirm, writes them to `.orchestrator.json`. |
 | `orch run "request"` | Runs the graph on a request. Warns when the repo is behind its upstream. |
-| `orch status [id]` | Lists tickets, then incidents; shows token usage and `docs!` warnings. |
-| `orch continue <id>` | Resumes a run that was killed mid-graph. |
-| `orch approve <id> ["answer"]` | CEO approval (for a deploy it shows the environment and the exact commands). |
-| `orch reject <id> [reason]` | CEO rejection; on an escalation with no reason it aborts the ticket. |
+| `orch status [id]` | Lists tickets, then incidents; shows token usage and `docs!` warnings. A ticket that is neither finished nor waiting and has no live process is flagged `no process running: orch continue <id>`. |
+| `orch continue <id>` | Resumes a run that was killed mid-graph. The dev reruns over the commits already in the worktree: it receives their log and diff and must write a `brief` for the whole ticket. |
+| `orch approve <id> ["answer"]` | CEO approval (for a deploy it shows the environment and the exact commands). Answers by pending type: `approval`, `approve` merges; `escalation`, a bare `approve` is refused, answer `retry`, `abort` or an instruction for the dev; `no_change`, `approve` closes the ticket (status `closed`) and any other text is an instruction for the dev. |
+| `orch reject <id> [reason]` | CEO rejection; on an escalation or a `no_change` with no reason it aborts the ticket. |
 | `orch clean <id>\|--all [--force] [--remote]` | Removes worktree, branch and state of finished tickets; `--remote` also deletes `ticket/<id>` on the push remote. Before deleting it appends one line to `ORCH_HOME/metrics.jsonl`: route, tasks, revisions, escalations, time, tokens and cost, total and per node. |
 | `orch watch` | One monitor pass over deployed tickets; incidents and hotfixes in [12-operations.md](12-operations.md). |
 | `orch resolve <incident-id>` | Closes an incident by hand (the service is back, or you handled it elsewhere). |
@@ -70,7 +70,9 @@ Target repo rules: the dev receives the repo's `CLAUDE.md` (from the base commit
 ## Graph
 
 Generated from `src/graph.ts`; regenerate with `buildGraph().getGraphAsync()` then `.drawMermaid()` (needs `TOKEN_BUDGET_TICKET` set).
-`ceo_approval` is the only human gate: every merge, deploy and escalation passes through it.
+`ceo_approval` is the only human gate: every merge, deploy, escalation and "no change needed" passes through it.
+The pending payload (`orch status <id>`) carries `revisions` and `last_node`, plus the dev's `explanation` and `brief` even when verification failed.
+A request that needs no code (a check or review) ends with the dev committing nothing and setting `no_change`; with a clean worktree and no commit the ticket asks the CEO instead of failing.
 
 ```mermaid
 %%{init: {'flowchart': {'curve': 'linear'}}}%%

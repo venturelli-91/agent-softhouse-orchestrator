@@ -13,7 +13,7 @@ export const die = (msg: string): never => {
   process.exit(1);
 };
 
-type Pending = { type: "approval" | "escalation"; reason: string | null; title: string; summary: string; evidence: string[] };
+type Pending = { type: "approval" | "escalation" | "no_change"; reason: string | null; title: string; summary: string; evidence: string[] };
 
 export function makeCtx(argv: string[], host: string) {
   const [cmd, ...rest] = argv;
@@ -49,10 +49,14 @@ export function makeCtx(argv: string[], host: string) {
     console.log(report(ticket));
     if (pending) {
       console.log(JSON.stringify(pending, null, 1));
-      const next = pending.type === "approval" ? `orch approve ${id}  |  orch reject ${id} "<reason>"` : `orch approve ${id} "<answer>"  |  orch reject ${id}`;
+      const next = {
+        approval: `orch approve ${id}  |  orch reject ${id} "<reason>"`,
+        no_change: `orch approve ${id} (close the ticket)  |  orch approve ${id} "<what the dev should do instead>"  |  orch reject ${id}`,
+        escalation: `orch approve ${id} "<answer>"  |  orch reject ${id}`,
+      }[pending.type];
       await notify(`${id} waiting for you (${pending.type}): ${pending.title}\n${pending.reason ?? pending.summary}\n${next}`);
     } else {
-      const done = ticket.status === "simulated_deploy" || ticket.status === "aborted";
+      const done = ["simulated_deploy", "aborted", "closed"].includes(ticket.status);
       console.log(`${id}: ${ticket.status}${done ? "" : ` - ${ticket.summary}`}`);
     }
   }
