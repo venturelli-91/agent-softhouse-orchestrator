@@ -3,6 +3,9 @@ import { MAX_REVISIONS, safeGit, verifyEvidence } from "./guardrails.ts";
 import { log } from "./graph-kit.ts";
 import type { T } from "./ticket.ts";
 
+// On an escalation these words are not an answer: they would reach the dev as its instruction.
+export const isBareApproval = (answer?: string) => answer === undefined || /^(approve|approved|ok|yes|lgtm)$/i.test(answer.trim());
+
 // The only merge/deploy and escalation point. Approval only counts if the evidence still holds.
 export const ceoApproval = async (t: T): Promise<Partial<T>> => {
   const v = t.status === "approval" && t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test, t.install) : null;
