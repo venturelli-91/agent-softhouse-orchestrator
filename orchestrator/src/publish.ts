@@ -93,7 +93,7 @@ export const registerPublisher = (name: string, p: Publisher) => void (publisher
 export function effectivePublisher(ticket: string, env: string | undefined): string {
   if (!env) throw new NodeFailure("missing env: PUBLISHER");
   if (!ticket || ticket === env || ticket === "none") return ticket || env;
-  throw new NodeFailure(`publisher ${ticket} not allowed by PUBLISHER=${env}`);
+  throw new NodeFailure(`publisher ${ticket} not allowed by PUBLISHER=${env}: raise the env ceiling, or set "publisher": "none" in the repo config for a dry run`);
 }
 
 export async function mergePr(m: Merge, publisher?: string): Promise<string> {

@@ -121,6 +121,16 @@ test("snapshot shows contents up to the cap and lists the rest in the index only
   assert.match(s.index, /a\/two\.md.*Two/);
 });
 
+test("snapshot leaves out a file directly under docs, which writeDocs would reject", () => {
+  const repo = tmp();
+  mkdirSync(join(docsDir(repo), "a"), { recursive: true });
+  writeFileSync(join(docsDir(repo), "09-backlog.md"), "# Flat\n");
+  writeFileSync(join(docsDir(repo), "a", "one.md"), "# One\n");
+  const s = snapshot(repo);
+  assert.deepEqual(Object.keys(s.shown), ["a/one.md"]);
+  assert.doesNotMatch(s.index, /09-backlog/);
+});
+
 const gitRepo = (files: Record<string, string> = {}) => {
   const d = tmp();
   const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd: d, encoding: "utf8" }).trim();

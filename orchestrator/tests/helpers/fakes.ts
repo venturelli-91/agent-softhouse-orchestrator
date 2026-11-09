@@ -22,6 +22,7 @@ export const defaults: Behavior = {
   planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), question: "" }),
   dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF }),
   reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
+  design: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   watchdog: () => ({ alerts: ["T-1 stalled"], summary: "ok" }),
   docs: () => ({ files: [], not_applicable: [], notes: "" }),

@@ -1,6 +1,7 @@
 // Commands that set up and tidy the orchestrator itself: init, status, clean.
-import { existsSync, unlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, cpSync, existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { applyTeam, configJson, proposeTeam } from "../../src/team.ts";
@@ -14,10 +15,10 @@ import { listIncidents } from "../../src/incidents.ts";
 import { recordMetrics } from "../../src/metrics.ts";
 import { bareNodeTest } from "../../src/repo-config.ts";
 import { TEAMS } from "../../src/specialties.ts";
-import { ticketFile, ticketIds } from "../../src/ticket-store.ts";
+import { runningPid, ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 
-const DONE = ["simulated_deploy", "deployed", "aborted"];
+const DONE = ["simulated_deploy", "deployed", "aborted", "closed"];
 
 export function init(c: Ctx) {
   const repo = resolve(c.positionals[0] ?? c.host);
@@ -42,6 +43,37 @@ export function init(c: Ctx) {
   console.log(ensureLocalOnly(repo) ?? `${join(repo, ".claude", "docs")} ready and ignored by git: the graph writes the project docs there`);
 }
 
+// Copies this folder into another repo and prepares it. Never overwrites: an existing orchestrator/ there stops the command.
+const NOT_COPIED = new Set(["node_modules", ".env", ".state", ".git", ".github"]);
+// Fixed arguments only; on Windows npm and npx are .cmd shims, which need a shell and a single command line.
+const run = (bin: string, args: string[], cwd: string) =>
+  process.platform === "win32" ? execFileSync(`${bin} ${args.join(" ")}`, { cwd, stdio: "inherit", shell: true }) : execFileSync(bin, args, { cwd, stdio: "inherit" });
+
+// The host's linter and typechecker would otherwise scan orchestrator/ (own style, stricter @types/node) and break the host's `verify`. Printed, never applied.
+const HOST_EXCLUDES = `add these by hand if the repo uses Biome or tsc, or its verify will fail on orchestrator/:
+  biome.json     "files": { "includes": [..., "!orchestrator", "!.vscode"] }
+  tsconfig.json  "exclude": [..., "orchestrator"]`;
+
+export async function setup(c: Ctx) {
+  const target = resolve(c.positionals[0] ?? die("usage: orch setup <repo> [--team <name>] [--no-install] [--yes]"));
+  if (!existsSync(join(target, ".git"))) die(`${target} is not the root of a git repo`);
+  const dest = join(target, "orchestrator");
+  if (existsSync(dest)) die(`${dest} already exists: nothing copied`);
+  cpSync(resolve(import.meta.dirname, "../.."), dest, { recursive: true, filter: (src) => !NOT_COPIED.has(basename(src)) });
+  copyFileSync(join(dest, ".env.example"), join(dest, ".env"));
+  console.log(`copied to ${dest} (.env created from .env.example: set PUBLISHER and the models there)`);
+  if (!c.values["no-install"]) {
+    run("npm", ["ci"], dest);
+    // The browser is a ~150 MB download used only by the webcheck node: ask, and skip when there is nobody to ask.
+    const browser = c.values.yes || (stdin.isTTY && (await createInterface({ input: stdin, output: stdout }).question("download Chromium for the webcheck node? [y/N] ")).trim().toLowerCase() === "y");
+    if (browser) run("npx", ["playwright", "install", "chromium"], dest);
+    else console.log("Chromium skipped: run `npx playwright install chromium` in orchestrator/ before using webcheck");
+  }
+  init({ ...c, positionals: [target] });
+  console.log(HOST_EXCLUDES);
+  console.log(`next: commit orchestrator/ and .orchestrator.json in ${target}; webcheck, if wanted, is configured by hand in ORCH_HOME/config.json`);
+}
+
 export async function team(c: Ctx) {
   const need = c.positionals[0] ?? die('usage: orch team "<need>" [--repo <path>] [--yes]');
   c.needCap();
@@ -58,7 +90,9 @@ export async function status(c: Ctx) {
   const ids = c.positionals[0] ? [c.positionals[0]] : ticketIds(c.home);
   for (const id of ids) {
     const { ticket: t, pending } = await c.load(id);
-    const waiting = pending ? `  <- waiting (${pending.type})` : "";
+    // Not finished, not waiting for an answer, and no live process: the run died (closed session, crash).
+    const dead = !pending && !DONE.includes(t.status) && runningPid(c.home, id) === null;
+    const waiting = pending ? `  <- waiting (${pending.type})` : dead ? `  <- no process running: orch continue ${id}` : "";
     console.log(`${id.padEnd(12)} ${t.status.padEnd(16)} ${t.priority.padEnd(4)} ${t.title}${waiting}${t.docs_warnings.length ? "  docs!" : ""}`);
     if (c.positionals[0]) {
       console.log(report(t));

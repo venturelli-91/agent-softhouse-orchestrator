@@ -5,6 +5,7 @@ import { dailyCapReached, orchHome } from "../../src/daily-cap.ts";
 import { FileSaver } from "../../src/file-saver.ts";
 import { buildGraph, config, report, Ticket } from "../../src/graph.ts";
 import { notify } from "../../src/notify.ts";
+import { loadPrompt } from "../../src/run-agent.ts";
 import { lockTicket, ticketFile } from "../../src/ticket-store.ts";
 
 export const die = (msg: string): never => {
@@ -12,7 +13,7 @@ export const die = (msg: string): never => {
   process.exit(1);
 };
 
-type Pending = { type: "approval" | "escalation"; reason: string | null; title: string; summary: string; evidence: string[] };
+type Pending = { type: "approval" | "escalation" | "no_change"; reason: string | null; title: string; summary: string; evidence: string[] };
 
 export function makeCtx(argv: string[], host: string) {
   const [cmd, ...rest] = argv;
@@ -20,7 +21,7 @@ export function makeCtx(argv: string[], host: string) {
     args: rest, allowPositionals: true,
     options: {
       repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" },
-      remote: { type: "boolean" }, clear: { type: "boolean" }, "config-reviewed": { type: "boolean" }, team: { type: "string" }, yes: { type: "boolean" },
+      remote: { type: "boolean" }, clear: { type: "boolean" }, "config-reviewed": { type: "boolean" }, team: { type: "string" }, yes: { type: "boolean" }, "no-install": { type: "boolean" },
     },
   });
 
@@ -48,10 +49,14 @@ export function makeCtx(argv: string[], host: string) {
     console.log(report(ticket));
     if (pending) {
       console.log(JSON.stringify(pending, null, 1));
-      const next = pending.type === "approval" ? `orch approve ${id}  |  orch reject ${id} "<reason>"` : `orch approve ${id} "<answer>"  |  orch reject ${id}`;
+      const next = {
+        approval: `orch approve ${id}  |  orch reject ${id} "<reason>"`,
+        no_change: `orch approve ${id} (close the ticket)  |  orch approve ${id} "<what the dev should do instead>"  |  orch reject ${id}`,
+        escalation: `orch approve ${id} "<answer>"  |  orch reject ${id}`,
+      }[pending.type];
       await notify(`${id} waiting for you (${pending.type}): ${pending.title}\n${pending.reason ?? pending.summary}\n${next}`);
     } else {
-      const done = ticket.status === "simulated_deploy" || ticket.status === "aborted";
+      const done = ["simulated_deploy", "aborted", "closed"].includes(ticket.status);
       console.log(`${id}: ${ticket.status}${done ? "" : ` - ${ticket.summary}`}`);
     }
   }
@@ -59,6 +64,14 @@ export function makeCtx(argv: string[], host: string) {
   const needCap = () => {
     const capped = dailyCapReached();
     if (capped) die(capped);
+  };
+  // Every graph run starts at triage: fail before any worktree or branch exists if AGENTS_DIR is unusable.
+  const needPrompts = () => {
+    try {
+      loadPrompt(["triage"]);
+    } catch (e) {
+      die((e as Error).message);
+    }
   };
   const needPending = async (id: string) => (await load(id)).pending ?? die(`${id} is not waiting for an answer`);
 
@@ -77,7 +90,7 @@ export function makeCtx(argv: string[], host: string) {
     }
   }
 
-  return { cmd, values, positionals, host, home, load, drive, needCap, needPending, locked };
+  return { cmd, values, positionals, host, home, load, drive, needCap, needPrompts, needPending, locked };
 }
 
 export type Ctx = ReturnType<typeof makeCtx>;

@@ -1,9 +1,7 @@
 # Orchestrator (LangGraph.js) — overview
 
 A thin orchestration layer over the software house. It lives in `orchestrator/` and
-**does not change** `.claude/agents`, `.claude/commands` or `CLAUDE.md`: the graph only
-reads those files. Deleting `orchestrator/` returns
-the system to its previous state; `/request`, `/ticket` and `/demand` keep working.
+**owns the role prompts** (`orchestrator/agents/`, the single source; `.claude/agents` are pointer stubs to them) and reads the target repo's `CLAUDE.md` for its conventions (it does not read `.claude/commands`; those serve interactive Claude Code sessions). Removing `orchestrator/` means restoring the full prompts in `.claude/agents`; `/request`, `/ticket` and `/demand` read the same prompts.
 
 Thesis: **flow control in code, not in prompts.** The agent prompt is the weakest layer;
 the real barriers are code, CLI permissions, an isolated worktree and a minimal env.
@@ -20,7 +18,10 @@ the real barriers are code, CLI permissions, an isolated worktree and a minimal 
 | [06-phase-3-and-final-report.md](06-phase-3-and-final-report.md) | publishing, live regression, final report |
 | [07-metrics.md](07-metrics.md) | consolidated metrics for consumption, tests, code and process |
 | [08-real-repo-validation.md](08-real-repo-validation.md) | runs on a real GitHub repo, ambiguous route, persistent approval, model-cost experiment |
-| [09-hardening.md](09-hardening.md) | retry, verified evidence, dev shell rules, rule-based watchdog, what was left out and why |
+| [09-hardening.md](09-hardening.md) | retry, verified evidence, dev shell rules, rule-based watchdog, what was left out and why, defenses and limits |
+| [10-project-docs.md](10-project-docs.md) | `.claude/docs` project spec written by the `docs_*` nodes |
+| [11-reference.md](11-reference.md) | all commands, env vars, per-repo config keys, current graph |
+| [12-operations.md](12-operations.md) | deploy, watch, probe, chaos, webcheck |
 
 ## Decisions and findings (task 1)
 

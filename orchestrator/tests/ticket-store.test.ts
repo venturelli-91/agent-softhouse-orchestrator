@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { lockTicket, ticketFile, ticketIds } from "../src/ticket-store.ts";
+import { lockTicket, runningPid, ticketFile, ticketIds } from "../src/ticket-store.ts";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "tstore-"));
 
@@ -47,4 +47,16 @@ test("ticketIds lists created files", () => {
   writeFileSync(ticketFile(home, "T-1"), "{}");
   lockTicket(home, "T-1");
   assert.deepEqual(ticketIds(home), ["T-1", "T-2"]);
+});
+
+test("runningPid sees a live lock and ignores a released one or one left by a dead process", () => {
+  const home = tmp();
+  assert.equal(runningPid(home, "T-1"), null);
+  const unlock = lockTicket(home, "T-1");
+  assert.equal(runningPid(home, "T-1"), process.pid);
+  unlock();
+  assert.equal(runningPid(home, "T-1"), null);
+  const dead = spawnSync(process.execPath, ["-e", ""]);
+  lockTicket(home, "T-2", dead.pid);
+  assert.equal(runningPid(home, "T-2"), null);
 });

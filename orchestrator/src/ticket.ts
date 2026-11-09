@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DeployConfig } from "./repo-config.ts";
+import { DeployConfig, WebcheckConfig } from "./repo-config.ts";
 import type { Usage } from "./run-agent.ts";
 import { SPECIALTIES } from "./specialties.ts";
 
@@ -69,8 +69,10 @@ export const Ticket = z.object({
   incident: z.string().default(""),
   deploy_target: z.string().default("simulated"),
   deploy_cfg: DeployConfig.nullable().default(null),
+  webcheck_cfg: WebcheckConfig.nullable().default(null),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
+  design_id: z.string().nullable().default(null),
   qa_id: z.string().nullable().default(null),
   revisions: z.number().default(0),
   evidence: z.array(z.string()).default([]),

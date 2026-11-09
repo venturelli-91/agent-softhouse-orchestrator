@@ -8,7 +8,7 @@
 - `scripts/check-secrets.sh`: keys/tokens and machine paths in the tree and the history;
   personal terms come from `PERSONAL_TERMS`, never from the public code. `LICENSE` MIT,
   `README.md` with the LangGraph diagram.
-- Publishing: whole repo at `venturelli-91/venturelli-house` (public). Before that,
+- Publishing: whole repo at `venturelli-91/agent-softhouse-orchestrator` (public; named `venturelli-house` until 2026-11-08). Before that,
   `d:\...\skills` became `$SKILLS_DIR` across the whole history (`git filter-branch`).
   CI moved to `.github/workflows/ci.yml` (root), green.
 
@@ -30,7 +30,7 @@ exercised with a real model/remote at this point; Phase 4 did it
 
 ## What I reused
 
-`.claude/agents/*.md` and `CLAUDE.md` as the source of roles and rules (the guardrail
+`orchestrator/agents/*.md` (since T3 the single prompt source, `.claude/agents` are stubs) and `CLAUDE.md` as the source of roles and rules (the guardrail
 values mirror `CLAUDE.md`); the Claude Code login (no key); the LangGraph Mermaid;
 `node:test` and Node 24 type stripping (no vitest/tsx); active-ticket state in git's own
 worktrees (no database).
@@ -44,8 +44,8 @@ manager as a node.
 ## What did not need to be done
 
 A database or ticket repository; executor abstraction beyond the registry; module mocks
-(fake node through the executor); changing `.claude/agents`, `.claude/commands` or
-`CLAUDE.md` for the graph to work.
+(fake node through the executor); changing `.claude/commands` or `CLAUDE.md` for the graph to
+work. (`.claude/agents` was later reduced to pointer stubs; the prompts live in `orchestrator/agents`.)
 
 ## Known limits
 

@@ -19,6 +19,12 @@ test("every specialty has a dev prompt, and every role the graph loads has a pro
   assert.deepEqual(missing, [], `missing in orchestrator/agents: ${missing.join(", ")}`);
 });
 
+test("the framework agents (.claude/agents, a valid AGENTS_DIR) also cover every role the graph loads", () => {
+  const dir = resolve(AGENTS, "..", "..", ".claude", "agents");
+  const missing = [...Object.values(DEV_FILE), ...GRAPH_ROLES].filter((r) => !existsSync(join(dir, `${r}.md`)));
+  assert.deepEqual(missing, [], `missing in .claude/agents: ${missing.join(", ")}`);
+});
+
 test("each prompt's front matter name matches its file name", () => {
   for (const role of [...Object.values(DEV_FILE), ...GRAPH_ROLES]) {
     const name = readFileSync(prompt(role), "utf8").match(/^name:\s*(\S+)/m)?.[1];

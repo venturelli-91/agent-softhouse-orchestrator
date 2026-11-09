@@ -56,7 +56,11 @@ export async function withRetry<T>(fn: () => Promise<T>,
 export function loadPrompt(files: string[], dir = process.env.AGENTS_DIR): string {
   if (!dir) throw new NodeFailure("missing env: AGENTS_DIR");
   return files
-    .map((a) => readFileSync(join(dir, `${a}.md`), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim())
+    .map((a) => {
+      const body = readFileSync(join(dir, `${a}.md`), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
+      if (/^Leia .* e siga\.$/.test(body)) throw new NodeFailure(`AGENTS_DIR=${dir} holds pointer stubs, point it at orchestrator/agents`);
+      return body;
+    })
     .join("\n\n---\n\n");
 }
 

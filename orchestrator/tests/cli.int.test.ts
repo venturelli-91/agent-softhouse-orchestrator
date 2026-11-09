@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -35,6 +35,22 @@ test("orch run refuses a red base before any agent runs and leaves no worktree b
     assert.equal(run.code, 1, run.out);
     assert.match(run.out, /base is red/);
     assert.equal(git(sb.repo, "worktree", "list").split("\n").length, 1);
+    assert.equal(git(sb.repo, "branch", "--list", "ticket/*"), "");
+  } finally {
+    sb.done();
+  }
+});
+
+test("orch run fails on AGENTS_DIR pointing at stubs before creating a worktree or branch", () => {
+  const sb = sandbox();
+  try {
+    const stubs = join(ROOT, "..", ".claude", "agents");
+    const r = spawnSync(process.execPath, ["--import", PRELOAD, "scripts/orch.ts", "run", "x", "--repo", sb.repo, "--id", "T-1"],
+      { cwd: ROOT, env: { ...process.env, AGENTS_DIR: stubs, EXECUTOR: "fake-cli", ORCH_HOME: join(sb.repo, "..", "home"), ORCH_WORK: join(sb.repo, "..", "work"), TOKEN_CAP_DAILY: "" }, encoding: "utf8" });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /^AGENTS_DIR=.* holds pointer stubs/);
+    assert.doesNotMatch(r.stderr.trim(), /\n/);
+    assert.equal(git(sb.repo, "worktree", "list").split(/\n/).length, 1);
     assert.equal(git(sb.repo, "branch", "--list", "ticket/*"), "");
   } finally {
     sb.done();
@@ -89,6 +105,31 @@ test("orch init --team writes that team's specialties, refuses an unknown team a
     const again = sb.orch("init", sb.repo, "--team", "api");
     assert.match(again.out, /already exists: set "specialties" there by hand/);
     assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).specialties, ["frontend", "fullstack"]);
+  } finally {
+    sb.done();
+  }
+});
+
+test("orch setup copies the folder into a git repo without secrets or state, runs init, and never overwrites", () => {
+  const sb = sandbox();
+  try {
+    const bare = join(sb.repo, "..", "not-a-repo");
+    mkdirSync(bare);
+    const nogit = sb.orch("setup", bare, "--no-install");
+    assert.equal(nogit.code, 1);
+    assert.match(nogit.out, /is not the root of a git repo/);
+
+    const ok = sb.orch("setup", sb.repo, "--no-install", "--team", "web");
+    assert.equal(ok.code, 0, ok.out);
+    const dest = join(sb.repo, "orchestrator");
+    assert.ok(existsSync(join(dest, "agents", "design-reviewer.md")));
+    assert.ok(existsSync(join(dest, ".env")));
+    assert.ok(!existsSync(join(dest, "node_modules")) && !existsSync(join(dest, ".state")));
+    assert.deepEqual(JSON.parse(readFileSync(join(sb.repo, ".orchestrator.json"), "utf8")).specialties, ["frontend", "fullstack"]);
+
+    const again = sb.orch("setup", sb.repo, "--no-install");
+    assert.equal(again.code, 1);
+    assert.match(again.out, /already exists: nothing copied/);
   } finally {
     sb.done();
   }

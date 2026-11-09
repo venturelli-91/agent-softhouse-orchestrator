@@ -17,6 +17,7 @@ export async function watchDeployed(c: Ctx) {
     notify,
     makeHotfix: async ({ incident, repo }) => {
       c.needCap();
+      c.needPrompts();
       const id = `H-${incident.id.slice(4)}`;
       await c.locked(id, async () => {
         const wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), c.home);

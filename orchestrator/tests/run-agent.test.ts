@@ -40,6 +40,10 @@ test("no model name in the code", () => {
   for (const f of readdirSync("src")) assert.doesNotMatch(readFileSync(`src/${f}`, "utf8"), /claude-(opus|sonnet|haiku|fable)|sonnet|haiku|opus/i, f);
 });
 
+test("NODE_ENV never reaches the subprocess, so the build agrees with CI", () => {
+  assert.equal(minimalEnv("dev", { PATH: "/bin", NODE_ENV: "development" }).NODE_ENV, undefined);
+});
+
 test("the subprocess env does not leak credentials and gives git an identity", () => {
   const e = minimalEnv("dev", { PATH: "/bin", ANTHROPIC_API_KEY: "x", ANTHROPIC_AUTH_TOKEN: "x", ANTHROPIC_BASE_URL: "x", GITHUB_TOKEN: "x" });
   assert.deepEqual(Object.keys(e).filter((k) => /ANTHROPIC|TOKEN|API_KEY/.test(k)), []);
@@ -59,6 +63,36 @@ test("loadPrompt strips the frontmatter and concatenates", () => {
   assert.match(p, /^You are A\./);
   assert.doesNotMatch(p, /^name:/m);
   assert.match(p, /You are B\./);
+});
+
+test("loadPrompt rejects pointer stubs but loads real prompts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ag-"));
+  writeFileSync(join(dir, "dev.md"), "---\nname: dev\n---\nLeia orchestrator/agents/dev.md e siga.\n");
+  writeFileSync(join(dir, "real.md"), "You are real.\n");
+  assert.throws(() => loadPrompt(["dev"], dir), (e) => e instanceof NodeFailure && e.message.startsWith("AGENTS_DIR=") && e.message.includes(dir));
+  assert.equal(loadPrompt(["real"], dir), "You are real.");
+});
+
+test("needPrompts dies with the one-line stub message before any side effect", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ag-"));
+  writeFileSync(join(dir, "triage.md"), "Leia orchestrator/agents/triage.md e siga.\n");
+  process.env.AGENTS_DIR = dir;
+  process.env.ORCH_HOME = join(dir, "home");
+  const { makeCtx } = await import("../scripts/orch/ctx.ts");
+  const { exit, error } = { exit: process.exit, error: console.error };
+  const seen: string[] = [];
+  console.error = (m: string) => void seen.push(m);
+  process.exit = ((code: number) => { throw new Error(`exit ${code}`); }) as never;
+  try {
+    assert.throws(() => makeCtx([], dir).needPrompts(), /exit 1/);
+  } finally {
+    process.exit = exit;
+    console.error = error;
+    delete process.env.AGENTS_DIR;
+    delete process.env.ORCH_HOME;
+  }
+  assert.equal(seen.length, 1);
+  assert.match(seen[0], /^AGENTS_DIR=.* holds pointer stubs/);
 });
 
 const ok = { is_error: false, subtype: "success", structured_output: { ok: true }, num_turns: 2, total_cost_usd: 0.01, usage: { input_tokens: 1,

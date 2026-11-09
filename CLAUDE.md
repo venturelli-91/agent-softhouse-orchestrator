@@ -1,6 +1,6 @@
 # AI Agent Software House — Framework
 
-This repository is the software house's **reusable skeleton**: roles (`.claude/agents/`),
+This repository is the software house's **reusable skeleton**: roles (stubs in `.claude/agents/` pointing to `orchestrator/agents/`),
 flows (`.claude/commands/`) and rules (this file). It has no product code.
 
 **How to use it in a real project**: copy `.claude/` and this `CLAUDE.md` to the root of
@@ -36,7 +36,7 @@ matrix" (section below) may be taken without them.
 CEO request → Triage
             → [clear]     → Specialized dev → Code Review → QA Automation
             → [ambiguous] → Demand Analyst → Product Manager → Tech Lead
-                            → Prompt Engineer → Evals Engineer
+                            → Evals Engineer
                             → Specialized dev → Code Review → QA Automation
         → Security / Performance / AI (when applicable)
         → CEO approval → DevOps / Deploy → Watchdog → Knowledge Manager
@@ -75,7 +75,6 @@ the team in another project is in `TEAM.md`.
 | Pipeline, deploy, logs and incident | `devops-sre` |
 | Tests and final validation | `qa-automation` |
 | Every PR | `code-reviewer` |
-| Internal prompts and playbooks | `prompt-engineer` |
 | Quality of prompts, agents and workflows | `evals-engineer` |
 | Visual/UX review and Nielsen's heuristics | `dev-frontend` (build) + `qa-automation` (independent audit) |
 
@@ -86,16 +85,16 @@ running a new agent still needs CEO approval.
 
 ## Skills and plugins
 
-Each agent lists, in its own file (`.claude/agents/<role>.md`), the skills and plugins
-specific to its work. Two sources are available to all:
+Agent prompts (`orchestrator/agents/<role>.md`) are headless and do not list skills or
+plugins. Two sources are available to the interactive session:
 
 - **Skills already registered in this Claude Code instance** (invocable with the `Skill`
   tool, by name) — e.g. `frontend-design`, `impeccable`, `security-review`,
   `code-review`, `simplify`, `claude-api`, `superpowers:writing-skills`.
 - **Personal skill library in `$SKILLS_DIR`** — reference `SKILL.md` files that are NOT
   registered as skills in this session (the `Skill` tool does not invoke them by name).
-  Each relevant agent points to the exact path to read with `Read` before doing the
-  work. If that folder is moved, update the paths cited in the agents.
+  Read the relevant `SKILL.md` with `Read` before doing the work (e.g. `backend/api-design`,
+  `security/agentic-actions-auditor`).
 
 **Plugins/MCP used by the software house**:
 - **Playwright MCP** (`mcp__plugin_playwright_playwright__*`) — open the locally running

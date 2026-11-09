@@ -1,11 +1,8 @@
 # The team
 
-One roster, two surfaces. Every role exists as:
+One roster, one prompt source. The prompt of every role lives in `orchestrator/agents/<role>.md`, which is what `orch` feeds to `claude -p` (one node of the graph per role). `.claude/agents/<role>.md` is a stub (frontmatter plus a one-line pointer) so the interactive flow (`/request`, `/ticket`, `/demand`) reads the same prompt. `design-reviewer` and `docs` exist only in `orchestrator/agents/`.
 
-- **Subagent** (`.claude/agents/<role>.md`): full instructions and tools, used by the interactive flow (`/request`, `/ticket`, `/demand`).
-- **Orchestrator prompt** (`orchestrator/agents/<role>.md`): short prompt that `orch` feeds to `claude -p`, one node of the graph per role.
-
-The two are different on purpose (interactive vs headless), not copies that drifted. `orchestrator/tests/team.test.ts` fails if the graph asks for a role whose prompt is missing.
+`orchestrator/tests/conventions.int.test.ts` fails if a stub body drifts from the pointer line or points to a missing prompt; `orchestrator/tests/team.test.ts` fails if the graph asks for a role whose prompt is missing.
 
 ## Roster
 
@@ -13,7 +10,6 @@ The two are different on purpose (interactive vs headless), not copies that drif
 |---|---|---|
 | Intake | `triage` | every request: area, priority, flags, clear or ambiguous |
 | Intake | `demand-analyst`, `product-manager`, `tech-lead` | only when triage says the request is ambiguous (planner node) |
-| Intake | `prompt-engineer` | interactive flow only: turns tickets into prompts and playbooks |
 | Build | `dev-frontend`, `dev-backend`, `dev-fullstack`, `dev-mobile`, `dev-integrations`, `ai-engineer`, `data-engineer` | one per ticket, chosen by triage `specialty` |
 | Quality | `code-reviewer` | every ticket |
 | Quality | `qa-automation` | every ticket, after the reviewer |
@@ -27,7 +23,7 @@ Nobody approves their own delivery: the reviewer and QA cannot be the commit aut
 
 ## Using the team in another project
 
-- **Interactive flow:** copy `.claude/` and `CLAUDE.md` to the project root.
+- **Interactive flow:** copy `.claude/`, `CLAUDE.md` and `orchestrator/agents/` to the project root (the stubs in `.claude/agents/` point to it).
 - **Orchestrator:** copy `orchestrator/` to the project root, then `cd orchestrator && npm ci && cp .env.example .env`. The graph uses `orchestrator/agents/` by default; point `AGENTS_DIR` elsewhere to use your own prompts.
 - **Per project:** the project's own `CLAUDE.md` (conventions) and `.orchestrator.json` (test command, merge mode, deploy) shape the team's behavior without editing any prompt.
 - **Which devs a project has:** `specialties` in `.orchestrator.json` limits what triage may route to (default: all seven). `orch init --team <all|web|api|mobile|ai>` writes a ready-made list; edit it by hand for anything else. Triage is told the list and an answer outside it escalates to the CEO. The review gates (`security`, `performance`, `evals-engineer`) stay driven by the ticket's flags, so they need no per-project setting.

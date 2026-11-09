@@ -2,6 +2,9 @@
 export const SPECIALTIES = ["frontend", "backend", "fullstack", "mobile", "integrations", "ai", "data"] as const;
 export type Specialty = (typeof SPECIALTIES)[number];
 
+// Tickets with a screen: they get the design review (and the webcheck). A Set<Specialty> turns a typo into a type error.
+export const UI_SPECIALTIES = new Set<Specialty>(["frontend", "fullstack"]);
+
 export const DEV_FILE: Record<Specialty, string> = {
   frontend: "dev-frontend",
   backend: "dev-backend",

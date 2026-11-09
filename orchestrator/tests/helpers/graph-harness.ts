@@ -24,7 +24,12 @@ export const knobs = {
   publications: [] as string[],
   merges: [] as string[],
   mergeError: null as string | null,
+  realTest: false,
 };
+
+// The fixture's own test file run directly: same red-then-green behaviour as `npm test`, minus the npm/cmd/node --test process chain.
+// Tests that exercise the default `npm test` path set knobs.realTest.
+export const FAST_TEST = "node test/checkout.test.js";
 
 export const roots: string[] = [];
 
@@ -65,6 +70,7 @@ beforeEach(() => {
   knobs.docsContexts = [];
   knobs.afterFixture = null;
   knobs.tokensPerCall = 10;
+  knobs.realTest = false;
 });
 
 afterEach(() => roots.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
@@ -74,8 +80,8 @@ export async function start(id = "T-1", saver: MemorySaver = new MemorySaver(), 
   roots.push(root);
   const repo = createFixture(root);
   knobs.afterFixture?.(repo);
-  if ("deploy_cfg" in extra) writeFileSync(join(process.env.ORCH_HOME!, "config.json"),
-    JSON.stringify({ repos: { [resolve(repo)]: { deploy: extra.deploy_cfg } } }));
+  const entry = { ...(knobs.realTest ? {} : { test: FAST_TEST }), deploy: extra.deploy_cfg, webcheck: extra.webcheck_cfg };
+  writeFileSync(join(process.env.ORCH_HOME!, "config.json"), JSON.stringify({ repos: { [resolve(repo)]: entry } }));
   const graph = buildGraph(saver);
   const cfg = config(id);
   const r = await graph.invoke({ id, request: "p", ...createWorktree(repo, id, join(root, "wt")), ...extra }, cfg);

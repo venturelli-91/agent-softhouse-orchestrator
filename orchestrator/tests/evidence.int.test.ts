@@ -8,10 +8,16 @@ import { installDeps, testFailure, verifyEvidence } from "../src/guardrails.ts";
 
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
 
+// Fast stand-ins for `npm test`: the verification logic is the same, only the process chain is shorter. The default `npm test` path stays
+// covered by the valid-commit test and the testFailure test below.
+const GREEN = "node -e 0";
+const RED = "node fail.js";
+
 function repo(testScript = "node -e 0") {
   const d = mkdtempSync(join(tmpdir(), "ev-"));
   git(d, "init", "-q", "-b", "main");
   writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: testScript } }));
+  writeFileSync(join(d, "fail.js"), "process.exit(1);");
   git(d, "add", "-A");
   git(d, "commit", "-q", "-m", "base");
   return { d, base: git(d, "rev-parse", "HEAD") };
@@ -59,14 +65,14 @@ test("a diff that touches a forbidden path is refused", () => {
 });
 
 test("a commit without a real passing test is rejected, even if the agent says it passed", () => {
-  const { d, base } = repo('node -e "process.exit(1)"');
+  const { d, base } = repo();
   writeFileSync(join(d, "a.txt"), "x");
   git(d, "add", "-A");
   git(d, "commit", "-qm", "a");
-  const r = verifyEvidence(d, base);
+  const r = verifyEvidence(d, base, RED);
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
-  assert.match((r as { reason: string }).reason, /npm test failed/);
+  assert.match((r as { reason: string }).reason, new RegExp(`${RED} failed`));
 });
 
 test("testFailure flags a red base and passes a green one", () => {
@@ -88,6 +94,7 @@ test("a worktree with an uncommitted change is rejected", () => {
   const r = verifyEvidence(d, base);
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /uncommitted changes/);
 });
 
 test("renaming a forbidden file does not hide the old path", () => {
@@ -104,15 +111,26 @@ test("renaming a forbidden file does not hide the old path", () => {
   assert.match((r as { reason: string }).reason, /forbidden/);
 });
 
-test("an npm test that moves HEAD voids the verification", () => {
-  const { d, base } = repo("git commit --allow-empty -qm moved");
+test("a test command that moves HEAD voids the verification", () => {
+  const { d, base } = repo();
   writeFileSync(join(d, "a.txt"), "x");
   git(d, "add", "-A");
   git(d, "commit", "-qm", "add a");
-  const r = verifyEvidence(d, base);
+  const r = verifyEvidence(d, base, "git commit --allow-empty -qm moved");
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
   assert.match((r as { reason: string }).reason, /HEAD changed/);
+});
+
+test("a test command that dirties the worktree voids the verification", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "dirty.js"), "require('fs').writeFileSync('dirt.txt', 'x');");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "add dirty script");
+  const r = verifyEvidence(d, base, "node dirty.js");
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /worktree changed during verification/);
 });
 
 function withCommit(lock = false) {
@@ -197,7 +215,7 @@ test("touched source files over the modularity limits are refused; untouched or 
     writeFileSync(join(d, f), body);
     git(d, "add", "-A");
     git(d, "commit", "-qm", "x");
-    const r = verifyEvidence(d, base);
+    const r = verifyEvidence(d, base, GREEN);
     rmSync(d, { recursive: true, force: true });
     assert.equal(r.ok, ok, f);
     if (!ok) assert.match((r as { reason: string }).reason, /modularity/, f);
@@ -215,7 +233,7 @@ test("modularity check reads the committed blob: a dangling symlink and a delete
   git(d, "update-index", "--add", "--cacheinfo", `120000,${blob},link.ts`);
   git(d, "commit", "-qm", "delete big, add dangling symlink");
   git(d, "reset", "-q", "--hard");
-  const r = verifyEvidence(d, base);
+  const r = verifyEvidence(d, base, GREEN);
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, true);
 });
