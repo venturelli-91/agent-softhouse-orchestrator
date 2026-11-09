@@ -83,6 +83,10 @@ port that already answers escalates to you; no `webcheck` configured, or Playwri
 warning in the docs record. INP needs real interaction, so there is no INP budget. Ads, Analytics and GTM are checked
 only through the browser: no account APIs or credentials.
 
+## Merge permission outside the orchestrator
+
+With `merge: pr` the orchestrator publishes the PR and stops; the merge is yours. When the flow is driven from Claude Code, its permission classifier can deny `gh pr merge` ("Merge Without Review") until the user explicitly asks for that merge or adds a permission rule. `merge: auto` runs `gh` from the orchestrator process and is not affected. A ticket merged by hand stays unfinished in the state: answer its approval or `orch clean --force <id>`, and `orch clean --all` removes finished worktrees.
+
 ## See also
 
 - Project docs written by the `docs_*` nodes: [10-project-docs.md](10-project-docs.md).
