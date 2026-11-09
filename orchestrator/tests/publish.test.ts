@@ -54,7 +54,7 @@ test("effectivePublisher only lets a ticket narrow the env", () => {
   assert.throws(() => effectivePublisher("github", undefined), /missing env: PUBLISHER/);
   assert.equal(effectivePublisher("none", "github"), "none");
   assert.equal(effectivePublisher("github", "github"), "github");
-  assert.throws(() => effectivePublisher("github", "none"), /publisher github not allowed by PUBLISHER=none/);
+  assert.throws(() => effectivePublisher("github", "none"), /publisher github not allowed by PUBLISHER=none: raise the env ceiling, or set "publisher": "none"/);
   assert.equal(effectivePublisher("", "github"), "github");
 });
 
