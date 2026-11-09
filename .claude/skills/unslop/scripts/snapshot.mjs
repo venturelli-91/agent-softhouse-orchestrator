@@ -153,6 +153,13 @@ try {
       if (selected) node.setAttribute("src", selected);
     });
     copy.querySelectorAll("script, noscript, link[rel='stylesheet'], link[rel='preload'], link[rel='modulepreload'], style").forEach((node) => node.remove());
+    // The saved file is opened in a browser later: drop active content that the page may carry.
+    copy.querySelectorAll("iframe, object, embed, base").forEach((node) => node.remove());
+    for (const node of copy.querySelectorAll("*")) {
+      for (const attr of [...node.attributes]) {
+        if (/^on/i.test(attr.name) || (/^(href|src|xlink:href|action|formaction)$/i.test(attr.name) && /^\s*javascript:/i.test(attr.value))) node.removeAttribute(attr.name);
+      }
+    }
     copy.querySelectorAll("[srcset]").forEach((node) => node.removeAttribute("srcset"));
     copy.querySelectorAll("source").forEach((node) => node.remove());
     copy.querySelectorAll("[loading]").forEach((node) => node.removeAttribute("loading"));
@@ -177,7 +184,7 @@ try {
       meta.content = scheme;
       copy.querySelector("head").prepend(meta);
     }
-    style.textContent = text;
+    style.textContent = text.replace(/<\/style/gi, "\\3C /style");
     copy.querySelector("head").appendChild(style);
     if (label) {
       const meta = document.createElement("meta");
