@@ -16,6 +16,7 @@ export const devRules = (test = "npm test", turns?: number) =>
     ? `You have at most ${turns} turns and uncommitted work is lost value: ` +
       `get a first version passing ${test} and commit it early, then refine and commit again. `
     : "") +
+  `Run the build and the tests exactly as the repo's scripts define them: never set NODE_ENV yourself, CI does not. ` +
   `Shell: one simple command per call (git add, git commit, git status, git diff, git log, ${test}); ` +
   `no ';', '&&' or pipes, they are denied, so on a denial retry with a single command.`;
 export const DEV_RULES = devRules();
