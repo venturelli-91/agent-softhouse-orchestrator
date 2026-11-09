@@ -1,5 +1,5 @@
 import { orchHome } from "./daily-cap.ts";
-import { coverage, docsMode, DocsOutput, ensureLocalOnly, snapshot, writeDocs } from "./docs.ts";
+import { coverage, docsMode, DocsOutput, ensureLocalOnly, PATH_RULE, snapshot, writeDocs } from "./docs.ts";
 import { repoOf } from "./guardrails.ts";
 import { log, sh, ticketData } from "./graph-kit.ts";
 import { runAgent, type Usage } from "./run-agent.ts";
@@ -49,6 +49,7 @@ export const docsNode =
             end: "Phase: end. The delivery is ready: record what was done, what worked and what failed, from the facts below.",
           }[phase],
           `Mode: ${mode}`,
+          PATH_RULE,
           `CEO request: ${t.request}`,
           ...facts,
           `Existing docs (path | title | lines):\n${snap.index || "(none)"}`,

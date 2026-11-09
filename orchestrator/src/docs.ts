@@ -18,6 +18,8 @@ export const DocsOutput = z.object({
 });
 export type DocsOutput = z.infer<typeof DocsOutput>;
 
+export const PATH_RULE = `Paths are relative to docs and must be \`<topic>/<name>.md\` (a topic directory, at most ${MAX_DEPTH} levels). A file directly under docs is rejected.`;
+
 export const docsDir = (repo: string) => join(repo, ".claude", "docs");
 const NA_FILE = ".nao-se-aplica.json";
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -65,7 +67,8 @@ export function snapshot(repo: string, cap = 60_000): { index: string; seen: Rec
   const seen: Record<string, string> = {};
   const shown: Record<string, string> = {};
   let used = 0;
-  const index = listMd(dir).map((p) => {
+  // Only files inside a topic directory are writable (badPath), so a flat file is not shown: the agent would edit it and be rejected.
+  const index = listMd(dir).filter((p) => p.includes("/")).map((p) => {
     const text = readFileSync(join(dir, p), "utf8");
     if (used + text.length <= cap) {
       used += text.length;
