@@ -18,7 +18,7 @@ import { TEAMS } from "../../src/specialties.ts";
 import { runningPid, ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 
-const DONE = ["simulated_deploy", "deployed", "aborted"];
+const DONE = ["simulated_deploy", "deployed", "aborted", "closed"];
 
 export function init(c: Ctx) {
   const repo = resolve(c.positionals[0] ?? c.host);
@@ -49,6 +49,11 @@ const NOT_COPIED = new Set(["node_modules", ".env", ".state", ".git", ".github"]
 const run = (bin: string, args: string[], cwd: string) =>
   process.platform === "win32" ? execFileSync(`${bin} ${args.join(" ")}`, { cwd, stdio: "inherit", shell: true }) : execFileSync(bin, args, { cwd, stdio: "inherit" });
 
+// The host's linter and typechecker would otherwise scan orchestrator/ (own style, stricter @types/node) and break the host's `verify`. Printed, never applied.
+const HOST_EXCLUDES = `add these by hand if the repo uses Biome or tsc, or its verify will fail on orchestrator/:
+  biome.json     "files": { "includes": [..., "!orchestrator", "!.vscode"] }
+  tsconfig.json  "exclude": [..., "orchestrator"]`;
+
 export async function setup(c: Ctx) {
   const target = resolve(c.positionals[0] ?? die("usage: orch setup <repo> [--team <name>] [--no-install] [--yes]"));
   if (!existsSync(join(target, ".git"))) die(`${target} is not the root of a git repo`);
@@ -65,6 +70,7 @@ export async function setup(c: Ctx) {
     else console.log("Chromium skipped: run `npx playwright install chromium` in orchestrator/ before using webcheck");
   }
   init({ ...c, positionals: [target] });
+  console.log(HOST_EXCLUDES);
   console.log(`next: commit orchestrator/ and .orchestrator.json in ${target}; webcheck, if wanted, is configured by hand in ORCH_HOME/config.json`);
 }
 

@@ -54,7 +54,7 @@ export async function reject(c: Ctx) {
   const id = c.positionals[0] ?? die('usage: orch reject <id> "<reason>"');
   await c.locked(id, async () => {
     const pending = await c.needPending(id);
-    const reason = c.positionals[1] ?? (pending.type === "escalation" ? "abort" : die("rejecting an approval needs a reason"));
+    const reason = c.positionals[1] ?? (pending.type !== "approval" ? "abort" : die("rejecting an approval needs a reason"));
     if (reason !== "abort") c.needCap();
     await c.drive(id, resume(reason));
   });

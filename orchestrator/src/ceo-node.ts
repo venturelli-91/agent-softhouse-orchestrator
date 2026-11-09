@@ -18,12 +18,17 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
         : `invalid evidence: ${v ? v.reason : "no evidence"}`
       : t.status === "dev_failed"
         ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}`
-        : `${t.status}: ${t.summary}`;
+        : t.status === "no_change"
+          ? `the dev found nothing to change: ${t.explanation}`
+          : `${t.status}: ${t.summary}`;
+  const last = t.history.filter((h) => h.node !== "docs").at(-1);
   const r = interrupt({
-    type: reason ? "escalation" : "approval",
+    type: t.status === "no_change" ? "no_change" : reason ? "escalation" : "approval",
     reason,
     ticket: t.id,
     title: t.title,
+    revisions: t.revisions,
+    last_node: last ? `${last.node}: ${last.result}` : "",
     summary: t.summary,
     explanation: t.explanation,
     brief: t.brief,
@@ -44,6 +49,8 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
     return { status: "dev_failed", revisions: t.revisions + 1, summary, rejections: [...t.rejections, summary], history: h("rejected") };
   }
   if (r === "abort") return { status: "aborted", history: h("aborted") };
+  // No change needed: approve closes the ticket; any other text is an instruction for the dev (below).
+  if (t.status === "no_change" && r === "approve") return { status: "closed", history: h("closed: no change needed") };
   // Missing information: the CEO's answer supplements the request and the planner tries again.
   if (t.status === "ambiguous") return { status: "replan", request: `${t.request}\n\nCEO clarification: ${r}`, history: h("clarified") };
   // A failed merge (CI red, PR moved): "retry" runs it again, anything else is an instruction for the dev.
