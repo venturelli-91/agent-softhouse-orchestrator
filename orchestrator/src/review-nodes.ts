@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { selfApproval, verifyEvidence } from "./guardrails.ts";
 import { context, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
+import { pathFlags } from "./path-flags.ts";
 import { NodeFailure, runAgent } from "./run-agent.ts";
 import { UI_SPECIALTIES } from "./specialties.ts";
 import { cap, summary, type T } from "./ticket.ts";
@@ -61,12 +62,15 @@ function reviewStep(name: "reviewer" | "design" | "qa", files: (t: T) => string[
 }
 export const reviewer = reviewStep(
   "reviewer",
-  (t) => [
-    "code-reviewer",
-    ...(t.flags.touches_security ? ["security"] : []),
-    ...(t.flags.touches_performance ? ["performance"] : []),
-    ...(t.flags.touches_ai ? ["evals-engineer"] : []),
-  ],
+  (t) => {
+    const seen = pathFlags(sh(t.worktree, "diff", "--name-only", t.base, "HEAD").split("\n").filter(Boolean));
+    return [
+      "code-reviewer",
+      ...(t.flags.touches_security || seen.security ? ["security"] : []),
+      ...(t.flags.touches_performance ? ["performance"] : []),
+      ...(t.flags.touches_ai || seen.ai ? ["evals-engineer"] : []),
+    ];
+  },
   (t) => (UI_SPECIALTIES.has(t.specialty) ? "design" : "qa"),
 );
 export const design = reviewStep("design", () => ["design-reviewer"], "qa");
