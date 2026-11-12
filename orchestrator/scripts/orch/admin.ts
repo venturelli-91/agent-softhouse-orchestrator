@@ -10,6 +10,8 @@ import { forgetDeploy } from "../../src/deploy.ts";
 import { ensureLocalOnly } from "../../src/docs.ts";
 import { deleteRemoteBranch } from "../../src/git-remote.ts";
 import { report } from "../../src/graph.ts";
+import { log } from "../../src/graph-kit.ts";
+import { landedOn } from "../../src/local-merge.ts";
 import { assertGitConfigUnchanged, repoOf, safeGit } from "../../src/guardrails.ts";
 import { listIncidents } from "../../src/incidents.ts";
 import { recordMetrics } from "../../src/metrics.ts";
@@ -18,7 +20,7 @@ import { TEAMS } from "../../src/specialties.ts";
 import { runningPid, ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 
-const DONE = ["simulated_deploy", "deployed", "aborted", "closed"];
+const DONE = ["simulated_deploy", "deployed", "aborted", "closed", "merged"];
 
 export function init(c: Ctx) {
   const repo = resolve(c.positionals[0] ?? c.host);
@@ -89,7 +91,12 @@ export async function team(c: Ctx) {
 export async function status(c: Ctx) {
   const ids = c.positionals[0] ? [c.positionals[0]] : ticketIds(c.home);
   for (const id of ids) {
-    const { ticket: t, pending } = await c.load(id);
+    let { ticket: t, pending } = await c.load(id);
+    // An aborted ticket whose commits reached the base branch by another path (a hand cherry-pick) is merged, not lost.
+    if (t.status === "aborted" && t.base_branch && landedOn(t.repo || c.host, t.base_branch, id, t.base)) {
+      await c.mark(id, { status: "merged", history: log(t, "status", `merged: every commit is already on ${t.base_branch}`) });
+      ({ ticket: t, pending } = await c.load(id));
+    }
     // Not finished, not waiting for an answer, and no live process: the run died (closed session, crash).
     const dead = !pending && !DONE.includes(t.status) && runningPid(c.home, id) === null;
     const waiting = pending ? `  <- waiting (${pending.type})` : dead ? `  <- no process running: orch continue ${id}` : "";

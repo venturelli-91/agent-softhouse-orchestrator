@@ -60,7 +60,10 @@ export type RepoConfig = z.infer<typeof RepoConfig>;
 
 function check(source: string, raw: unknown): Record<string, unknown> {
   const parsed = RepoConfig.safeParse(raw);
-  if (!parsed.success) throw new Error(`${source}: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    throw new Error(`${source}: ${issues} (accepted keys: ${Object.keys(RepoConfig.shape).join(", ")}; \`orch init\` writes a valid file)`);
+  }
   return raw as Record<string, unknown>;
 }
 

@@ -17,7 +17,7 @@ export async function run(c: Ctx) {
     const behind = behindBy(repo);
     if (behind) console.warn(`warning: ${repo} is ${behind} commit(s) behind its upstream; the ticket will branch from a stale base`);
     const wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), c.home);
-    const red = testFailure(wt.worktree, wt.test);
+    const red = testFailure(wt.worktree, wt.test, true);
     if (red) {
       safeGit(repo, "worktree", "remove", "--force", wt.worktree);
       safeGit(repo, "branch", "-D", `ticket/${id}`);
@@ -50,12 +50,25 @@ Answer with retry, abort, or what the dev should do: orch approve ${id} "<answer
   });
 }
 
+// Closes the ticket, whatever it was waiting for; the reason only goes into its history.
 export async function reject(c: Ctx) {
-  const id = c.positionals[0] ?? die('usage: orch reject <id> "<reason>"');
+  const id = c.positionals[0] ?? die('usage: orch reject <id> ["reason"]');
   await c.locked(id, async () => {
-    const pending = await c.needPending(id);
-    const reason = c.positionals[1] ?? (pending.type !== "approval" ? "abort" : die("rejecting an approval needs a reason"));
-    if (reason !== "abort") c.needCap();
+    await c.needPending(id);
+    const reason = c.positionals[1]?.trim();
+    await c.drive(id, resume(reason ? `abort: ${reason}` : "abort"));
+  });
+}
+
+// Sends the ticket back to the dev with the reason as its instruction.
+export async function requestChanges(c: Ctx) {
+  const usage = 'usage: orch request-changes <id> "<what the dev should change>"';
+  const id = c.positionals[0] ?? die(usage);
+  const reason = c.positionals[1]?.trim() || die(usage);
+  if (/^abort(:|$)/i.test(reason)) die(`to close ${id} use orch reject ${id}`);
+  await c.locked(id, async () => {
+    await c.needPending(id);
+    c.needCap();
     await c.drive(id, resume(reason));
   });
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { MAX_FILE_LINES, MAX_LINE_COLS, verifyEvidence } from "./guardrails.ts";
-import { context, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
+import { context, escalate, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
 import { runAgent } from "./run-agent.ts";
 import { Brief, cap, DEV_FILE, summary, type T } from "./ticket.ts";
 
@@ -97,15 +97,22 @@ export const dev = guarded("dev", async (t) => {
       summary: cap(output.summary),
       history: log(t, "dev", "no change needed", usage),
     };
-  if (!v.ok)
+  if (!v.ok) {
+    const result = `verification failed: ${v.reason.slice(0, 300)}`;
+    // Only structural causes (no commit, forbidden path, dirt): a red suite's output tail looks alike even when another test fails.
+    // ponytail: numbers (durations, counts) are ignored when comparing; compare failing test names if suites need it too.
+    const same = (r?: string) => r?.replace(/\d+/g, "#") === result.replace(/\d+/g, "#");
+    if (!v.reason.startsWith(`${t.test} failed`) && same(t.history.filter((h) => h.node === "dev").at(-1)?.result))
+      return { ...escalate(t, "dev", `the same verification failure twice in a row: ${v.reason}`, usage), brief: output.brief };
     return {
       status: "dev_failed",
       explanation: cap(output.summary),
       brief: output.brief,
       revisions: t.revisions + 1,
       summary: `verification: ${v.reason}`,
-      history: log(t, "dev", `verification failed`, usage),
+      history: log(t, "dev", result, usage),
     };
+  }
   if (t.tasks.length && v.sha === before)
     return {
       status: "dev_failed",

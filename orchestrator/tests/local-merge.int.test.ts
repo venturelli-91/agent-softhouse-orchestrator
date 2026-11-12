@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { repoOf } from "../src/guardrails.ts";
-import { mergeLocal } from "../src/local-merge.ts";
+import { landedOn, mergeLocal } from "../src/local-merge.ts";
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
@@ -75,4 +75,22 @@ test("refuses to overwrite an ignored file in the main checkout", () => {
   assert.throws(() => mergeLocal(repo, "main", git(wt, "rev-parse", "HEAD")));
   assert.equal(git(repo, "rev-parse", "main"), base);
   assert.equal(readFileSync(join(repo, "local.env"), "utf8"), "precious\n");
+});
+
+test("landedOn: true only when every ticket commit reached main (cherry-pick or merge)", () => {
+  const { repo, sha } = setup();
+  const base = git(repo, "rev-parse", "main");
+  assert.equal(landedOn(repo, "main", "T-1", base), false);
+  git(repo, "branch", "ticket/T-2", base);
+  assert.equal(landedOn(repo, "main", "T-2", base), false, "a ticket with no commits has not landed");
+  assert.equal(landedOn(repo, "main", "missing", base), false);
+  writeFileSync(join(repo, "other.txt"), "y\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "main moved");
+  const moved = git(repo, "rev-parse", "main");
+  git(repo, "cherry-pick", sha);
+  assert.equal(landedOn(repo, "main", "T-1", base), true, "cherry-picked");
+  git(repo, "reset", "-q", "--hard", moved);
+  git(repo, "merge", "-q", "--no-ff", "--no-edit", "ticket/T-1");
+  assert.equal(landedOn(repo, "main", "T-1", base), true, "merged by hand");
 });

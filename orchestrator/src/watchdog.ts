@@ -19,7 +19,7 @@ export async function watchdog(tickets: z.infer<typeof Ticket>[], cwd: string) {
   return { ...output, usage };
 }
 
-const DONE = new Set(["simulated_deploy", "aborted", "closed"]);
+const DONE = new Set(["simulated_deploy", "deployed", "aborted", "closed", "merged"]);
 const used = (t: z.infer<typeof Ticket>) => t.history.reduce((a, h) => a + (h.usage ? tokens(h.usage) : 0), 0);
 
 // Rule-based sweep, no model and no tokens. STALE_HOURS (default 24; P0 waits 1h) for a ticket that stopped moving.

@@ -10,11 +10,12 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 | `orch init [repo] [--team <all\|web\|api\|mobile\|ai>]` | Writes `../.orchestrator.json` (commit it) with that team's specialties and checks for `CLAUDE.md`. Warns when `package.json` has a bare `node --test`. |
 | `orch team "<need>" [--repo <path>] [--yes]` | Agents propose the team and the stack (respecting an existing one); after you confirm, writes them to `.orchestrator.json`. |
 | `orch run "request"` | Runs the graph on a request. Warns when the repo is behind its upstream. |
-| `orch status [id]` | Lists tickets, then incidents; shows token usage and `docs!` warnings. A ticket that is neither finished nor waiting and has no live process is flagged `no process running: orch continue <id>`. |
+| `orch status [id]` | Lists tickets, then incidents; shows token usage and `docs!` warnings. A ticket that is neither finished nor waiting and has no live process is flagged `no process running: orch continue <id>`. An `aborted` ticket whose every commit is already on the base branch (a hand cherry-pick, detected by patch-id) becomes `merged`. |
 | `orch continue <id>` | Resumes a run that was killed mid-graph. The dev reruns over the commits already in the worktree: it receives their log and diff and must write a `brief` for the whole ticket. |
 | `orch approve <id> ["answer"]` | CEO approval (for a deploy it shows the environment and the exact commands). Answers by pending type: `approval`, `approve` merges; `escalation`, a bare `approve` is refused, answer `retry`, `abort` or an instruction for the dev; `no_change`, `approve` closes the ticket (status `closed`) and any other text is an instruction for the dev. |
-| `orch reject <id> [reason]` | CEO rejection; on an escalation or a `no_change` with no reason it aborts the ticket. |
-| `orch clean <id>\|--all [--force] [--remote]` | Removes worktree, branch and state of finished tickets; `--remote` also deletes `ticket/<id>` on the push remote. Before deleting it appends one line to `ORCH_HOME/metrics.jsonl`: route, tasks, revisions, escalations, time, tokens and cost, total and per node. |
+| `orch reject <id> [reason]` | Closes the ticket (`aborted`), whatever it is waiting for; the reason goes into its history. |
+| `orch request-changes <id> "<reason>"` | Sends the ticket back to the dev with the reason as its instruction (counts as a revision on an approval). |
+| `orch clean <id>\|--all [--force] [--remote]` | Removes worktree, branch and state of finished tickets (with `merge: local` or `auto` the worktree and branch already go away right after the deploy, so they stop counting toward the 5 active tickets); `--remote` also deletes `ticket/<id>` on the push remote. Before deleting it appends one line to `ORCH_HOME/metrics.jsonl`: route, tasks, revisions, escalations, time, tokens and cost, total and per node. |
 | `orch watch` | One monitor pass over deployed tickets; incidents and hotfixes in [12-operations.md](12-operations.md). |
 | `orch resolve <incident-id>` | Closes an incident by hand (the service is back, or you handled it elsewhere). |
 | `orch rollback <incident-id> [--config-reviewed]` | Your approval of the proposed rollback; `--config-reviewed` accepts a changed `.git/config` after review. |
@@ -50,7 +51,7 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 | Key | Meaning |
 |---|---|
 | `test` | Plain test command, no glob (default `npm test`; e.g. `pytest -q`). A bare `node --test` also runs `orchestrator/tests` in every worktree and fails: point it at a scoped npm script (e.g. `npm run test:app`). |
-| `merge` | `pr` (default: the PR is left to you); `auto` (squash-merge after approval, only with green, stable CI on the exact approved commit; never `--admin`; a failed merge escalates, answer `retry` after fixing CI); `local` (solo repos: main fast-forwards to the approved commit; refuses with uncommitted changes, a moved main or another branch checked out). |
+| `merge` | `pr` (default: the PR is left to you); `auto` (squash-merge after approval, only with green, stable CI on the exact approved commit; never `--admin`; a failed merge escalates, answer `retry` after fixing CI); `local` (solo repos: main fast-forwards to the approved commit; refuses with uncommitted changes or another branch checked out. If main moved, the ticket is rebased onto it and the suite runs again: merged without asking when main touched none of the ticket's files, a new approval when it did, back to the dev when the suite breaks, an escalation with the files on a conflict). |
 | `publisher` | `github` or `none`. |
 | `push_remote` | Default `origin`. |
 | `base_repo` | `owner/name` of the upstream the PR targets. |

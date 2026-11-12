@@ -23,7 +23,8 @@ const afterMid = (t: T) => (t.status === "publish" ? "publish" : "ceo_approval")
 
 const afterCeo = (t: T) =>
   t.status === "retry" ? t.failed_node : t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END;
-const afterMerge = (t: T) => (t.status === "approved" ? "deploy" : "ceo_approval");
+// A rebase that broke the suite goes back to the dev; a conflict, a new approval or anything else goes to the CEO.
+const afterMerge = (t: T) => (t.status === "approved" ? "deploy" : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval");
 
 export function buildGraph(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
@@ -54,7 +55,7 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("docs_mid", afterMid, ["publish", "ceo_approval"])
     .addEdge("docs_end", "ceo_approval")
     .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "publish", "deploy", "merge_pr", END])
-    .addConditionalEdges("merge_pr", afterMerge, ["deploy", "ceo_approval"])
+    .addConditionalEdges("merge_pr", afterMerge, ["deploy", "dev", "ceo_approval"])
     .addEdge("deploy", END)
     .compile({ checkpointer });
 }

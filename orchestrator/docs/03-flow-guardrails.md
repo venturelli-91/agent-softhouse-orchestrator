@@ -9,6 +9,7 @@ their own delivery.
 | Rule | Implementation | Test |
 |---|---|---|
 | `MAX_REVISIONS=3` | the router sends to `ceo_approval` when `revisions >= 3` | `the cap of 3 revisions escalates to the CEO` |
+| Repeated failure | the dev's verification failing twice in a row with the same structural cause (no commit, forbidden path, dirt; numbers ignored) escalates at once, while a red suite keeps using its revisions; each failure's cause stays in the history | `the same verification failure twice escalates at once` |
 | `MAX_ACTIVE_TICKETS=5` | `activeTickets(repo)` counts git `ticket/*` worktrees (no other database); `createWorktree` refuses the 6th | `limit of 5 active tickets` |
 | Author ≠ reviewer ≠ QA | `selfApproval(author, who)`, checked before spending tokens on reviewer/qa; `author_id` comes from the commit author (identity injected in the env) | `self-approval blocked ...` |
 | Evidence verified by code | `verifyEvidence`: new commit, clean worktree, no ignored executable file, allowed paths, `npm test` passes. Runs at the dev, **again** at the reviewer, at the qa and before honoring the CEO's approval | `evidence declared ... rejected`, `a commit without a real passing test ...`, `a worktree with an uncommitted change ...` |

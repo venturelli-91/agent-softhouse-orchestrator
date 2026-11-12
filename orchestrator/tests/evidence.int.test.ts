@@ -85,6 +85,16 @@ test("testFailure flags a red base and passes a green one", () => {
   assert.equal(r[1], "");
 });
 
+test("on the base only, a pytest suite with no tests yet (exit 5) is not red", () => {
+  const { d } = repo();
+  const cmd = 'node -e "process.exit(5)" pytest';
+  const r = [testFailure(d, cmd, true), testFailure(d, cmd), testFailure(d, 'node -e "process.exit(5)"', true)];
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r[0], "");
+  assert.match(r[1], /failed/);
+  assert.match(r[2], /failed/);
+});
+
 test("a worktree with an uncommitted change is rejected", () => {
   const { d, base } = repo();
   writeFileSync(join(d, "a.txt"), "x");

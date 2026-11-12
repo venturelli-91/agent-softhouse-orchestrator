@@ -10,7 +10,8 @@
 //   orch run "<request>" [--repo <path>] [--id <id>]
 //   orch status [id]            all tickets, or one with its pending question
 //   orch approve <id> [text]    approve; for an escalation, text is the answer (e.g. retry, a clarification)
-//   orch reject <id> [reason]   reject with a reason; on an escalation with no reason, abort
+//   orch reject <id> [reason]   close the ticket, whatever it is waiting for (the reason goes into its history)
+//   orch request-changes <id> "<reason>"   send it back to the dev with the reason as its instruction
 //   orch watch                  one monitor pass over deployed tickets (HTTP health check for command deploys, simulated probe otherwise):
 //                               opens one P0 hotfix ticket per failure and proposes a rollback
 //   orch chaos <id> <scenario>|--clear   inject (or clear) a failure on a ticket deployed to a sandbox target
@@ -22,7 +23,7 @@
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { approve, reject, resumeRun, run } from "./orch/flow.ts";
+import { approve, reject, requestChanges, resumeRun, run } from "./orch/flow.ts";
 import { clean, init, setup, status, team } from "./orch/admin.ts";
 import { type Ctx, die, makeCtx } from "./orch/ctx.ts";
 import { chaos, resolveByHand, rollback, watchDeployed } from "./orch/ops.ts";
@@ -32,10 +33,10 @@ if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
 process.env.AGENTS_DIR = resolve(ROOT, process.env.AGENTS_DIR ?? "agents");
 
 const commands: Record<string, (c: Ctx) => void | Promise<void>> = {
-  init, setup, team, run, status, continue: resumeRun, approve, reject, clean, watch: watchDeployed, resolve: resolveByHand, chaos, rollback,
+  init, setup, team, run, status, continue: resumeRun, approve, reject, "request-changes": requestChanges, clean, watch: watchDeployed, resolve: resolveByHand, chaos, rollback,
 };
 
 const ctx = makeCtx(process.argv.slice(2), resolve(ROOT, ".."));
 const command = ctx.cmd !== undefined && Object.hasOwn(commands, ctx.cmd) ? commands[ctx.cmd] : undefined;
 if (command) await command(ctx);
-else die("usage: orch init | setup | team | run | status | continue | approve | reject | clean | watch | chaos | rollback | resolve");
+else die("usage: orch init | setup | team | run | status | continue | approve | reject | request-changes | clean | watch | chaos | rollback | resolve");
