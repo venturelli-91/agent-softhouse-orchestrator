@@ -78,6 +78,20 @@ export function mergeLocalTicket(t: T): Partial<T> {
   const merged = mergeLocal(repo, t.base_branch, sha);
   return { ...moved, evidence: [...evidence, merged], history: log(t, "merge_pr", `${note}; ${merged}`) };
 }
+
+// The ticket's commits are on `upstream`: merged there by hand, or each one with an equivalent patch (a hand cherry-pick).
+// ponytail: per-commit patch-ids; a hand squash of several commits is not detected.
+export function landedOn(repo: string, upstream: string, id: string, base: string): boolean {
+  try {
+    const tip = safeGit(repo, "rev-parse", `ticket/${id}`);
+    if (tip !== base && isAncestor(repo, tip, upstream)) return true;
+    const lines = safeGit(repo, "cherry", upstream, tip).split("\n").filter(Boolean);
+    return lines.length > 0 && lines.every((l) => l.startsWith("-"));
+  } catch {
+    return false;
+  }
+}
+
 // The CEO resolved a failed rebase by hand: the new HEAD sits on top of main. It is verified against main like any ticket
 // and goes back for approval, since its content is no longer the commit that was approved.
 export function handRebased(t: T): Partial<T> {
