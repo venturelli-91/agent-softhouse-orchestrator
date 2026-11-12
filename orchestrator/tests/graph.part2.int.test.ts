@@ -144,15 +144,22 @@ test("no_change without a verified empty worktree is an ordinary failure", async
   assert.equal(paused(g.r)?.type, "escalation");
 });
 
-test("an escalation carries revisions and the last node, and keeps the dev's brief when verification fails", async () => {
+test("the same verification failure twice escalates at once, with the cause, the revisions and the dev's brief", async () => {
   knobs.override.dev = () => ({ summary: "tried", brief: BRIEF });
   const g = await start();
   const p = paused(g.r);
   assert.equal(p?.type, "escalation");
-  assert.equal(p?.revisions, 3);
-  assert.match(String(p?.last_node), /^dev: verification failed/);
+  assert.equal(p?.revisions, 1, "the remaining revisions are not spent on a repeat");
+  assert.match(String(p?.last_node), /^dev: escalated: the same verification failure twice in a row: no new commit/);
+  assert.match(String(g.r.history.find((h: { node: string }) => h.node === "dev")?.result), /^verification failed: no new commit/);
   assert.deepEqual(p?.brief, BRIEF);
   assert.equal(p?.explanation, "tried");
+});
+
+test("a red suite twice in a row still uses every revision", async () => {
+  knobs.override.dev = (req) => (commit(req.cwd, "agent-dev", "checkout.html", "<button>Nope</button>\n"), { summary: "tried", brief: BRIEF });
+  const g = await start();
+  assert.equal(paused(g.r)?.revisions, 3);
 });
 
 test("a dev that reruns over committed work sees the commits and the diff", async () => {
