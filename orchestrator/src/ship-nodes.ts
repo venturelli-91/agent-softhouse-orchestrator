@@ -5,7 +5,7 @@ import { orchHome, workRoot } from "./daily-cap.ts";
 import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } from "./deploy.ts";
 import { repoOf, safeGit, verifyEvidence } from "./guardrails.ts";
 import { checkConfig, guarded, log } from "./graph-kit.ts";
-import { mergeLocal } from "./local-merge.ts";
+import { handRebased, mergeLocalTicket } from "./local-merge.ts";
 import { mergePr, publish } from "./publish.ts";
 import { loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure } from "./run-agent.ts";
@@ -115,19 +115,21 @@ export const deploy = guarded("deploy", deployTicket);
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
 export const mergeNode = guarded("merge_pr", async (t) => {
   if (t.merge === "pr") return { history: log(t, "merge_pr", "skipped (merge=pr)") };
+  const local = (fn: (t: T) => Partial<T>) => {
+    checkConfig(t);
+    try {
+      return fn(t);
+    } catch (e) {
+      throw new NodeFailure(`merge: ${(e as Error).message}`);
+    }
+  };
+  if (t.merge === "local" && t.approved_sha && safeGit(t.worktree, "rev-parse", "HEAD") !== t.approved_sha) return local(handRebased);
   const v = verifyEvidence(t.worktree, t.base, t.test, t.install);
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   // What the CEO approved is the commit that was published, not whatever HEAD is now.
   if (!t.approved_sha || v.sha !== t.approved_sha) throw new NodeFailure("merge: commit changed since it was published");
+  if (t.merge === "local") return local(mergeLocalTicket);
   checkConfig(t);
-  if (t.merge === "local") {
-    try {
-      const merged = mergeLocal(t.repo || repoOf(t.worktree), t.base_branch, t.approved_sha);
-      return { evidence: [...t.evidence, merged], history: log(t, "merge_pr", merged) };
-    } catch (e) {
-      throw new NodeFailure(`merge: ${(e as Error).message}`);
-    }
-  }
   const pr = t.evidence.find((e) => e.startsWith("pr:"))?.slice(3);
   if (!pr || pr === "none") throw new NodeFailure("merge: no PR to merge");
   const merged = await mergePr({ cwd: t.repo || t.worktree, pr, sha: t.approved_sha, baseRepo: t.base_repo }, t.publisher);
