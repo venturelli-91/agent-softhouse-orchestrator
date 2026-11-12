@@ -51,6 +51,7 @@ test("merge=pr never merges; merge=auto merges the verified commit only after th
   const pr = await start("T-1");
   assert.equal((await answer(pr, "approve")).status, "simulated_deploy");
   assert.deepEqual(knobs.merges, []);
+  assert.match(git(pr.repo, "branch", "--list"), /ticket\/T-1/, "an unmerged ticket keeps its branch");
 
   const auto = await start("T-2", new MemorySaver(), { merge: "auto" });
   assert.equal(paused(auto.r)?.type, "approval");
@@ -105,6 +106,8 @@ test("merge=local fast-forwards main to the approved commit only after the CEO a
   assert.equal(done.status, "simulated_deploy");
   assert.equal(git(g.repo, "rev-parse", "main"), done.approved_sha);
   assert.notEqual(before, done.approved_sha);
+  assert.doesNotMatch(git(g.repo, "worktree", "list"), /ticket\/T-1/, "a merged ticket frees its worktree");
+  assert.doesNotMatch(git(g.repo, "branch", "--list"), /ticket\/T-1/);
 
   const d = await start("T-2", new MemorySaver(), { merge: "local" });
   const base = git(d.repo, "rev-parse", "main");

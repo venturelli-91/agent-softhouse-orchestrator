@@ -110,7 +110,18 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
     history: log(t, "deploy", result),
   };
 }
-export const deploy = guarded("deploy", deployTicket);
+// Once merged, the worktree and branch only hold the active-ticket limit; a failed removal is left to `orch clean`.
+export const deploy = guarded("deploy", async (t) => {
+  const done = await deployTicket(t);
+  if (t.merge !== "pr") {
+    const repo = t.repo || repoOf(t.worktree);
+    try {
+      safeGit(repo, "worktree", "remove", "--force", t.worktree);
+      safeGit(repo, "branch", "-D", `ticket/${t.id}`);
+    } catch {}
+  }
+  return done;
+});
 
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.
 export const mergeNode = guarded("merge_pr", async (t) => {
