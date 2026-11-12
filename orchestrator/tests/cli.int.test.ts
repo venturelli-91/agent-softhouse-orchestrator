@@ -71,14 +71,17 @@ test("orch run stops at the CEO approval, and status shows the ticket waiting", 
   }
 });
 
-test("orch reject sends the ticket back and it returns for approval; approve then finishes it, and a second approve is refused", () => {
+test("orch request-changes sends the ticket back and it returns for approval; approve then finishes it, and a second approve is refused", () => {
   const sb = sandbox();
   try {
     assert.equal(sb.orch("run", "Change the checkout button label to Submit order", "--repo", sb.repo, "--id", "T-1").code, 0);
-    const noReason = sb.orch("reject", "T-1");
+    const noReason = sb.orch("request-changes", "T-1");
     assert.equal(noReason.code, 1);
-    assert.match(noReason.out, /rejecting an approval needs a reason/);
-    const reject = sb.orch("reject", "T-1", "use a different label");
+    assert.match(noReason.out, /usage: orch request-changes/);
+    const closing = sb.orch("request-changes", "T-1", "abort: not needed");
+    assert.equal(closing.code, 1);
+    assert.match(closing.out, /to close T-1 use orch reject T-1/);
+    const reject = sb.orch("request-changes", "T-1", "use a different label");
     assert.equal(reject.code, 0, reject.out);
     assert.match(reject.out, /"type": "approval"/);
     const approve = sb.orch("approve", "T-1");
@@ -87,6 +90,19 @@ test("orch reject sends the ticket back and it returns for approval; approve the
     const again = sb.orch("approve", "T-1");
     assert.equal(again.code, 1);
     assert.match(again.out, /T-1 is not waiting for an answer/);
+  } finally {
+    sb.done();
+  }
+});
+
+test("orch reject closes a ticket waiting for approval", () => {
+  const sb = sandbox();
+  try {
+    assert.equal(sb.orch("run", "Change the checkout button label to Submit order", "--repo", sb.repo, "--id", "T-1").code, 0);
+    const reject = sb.orch("reject", "T-1", "not needed anymore");
+    assert.equal(reject.code, 0, reject.out);
+    assert.match(reject.out, /T-1: aborted/);
+    assert.match(sb.orch("status", "T-1").out, /T-1\s+aborted/);
   } finally {
     sb.done();
   }

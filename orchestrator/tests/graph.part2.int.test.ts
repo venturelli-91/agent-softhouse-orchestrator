@@ -168,3 +168,11 @@ function reviewerFailsOnceHere() {
   let n = 0;
   return () => (n++ ? approved() : { verdict: "rejected", comments: "again", summary: "s" });
 }
+
+test("an abort answer closes an approval and keeps the reason in the history", async () => {
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  const done = await answer(g, "abort: not needed anymore");
+  assert.equal(done.status, "aborted");
+  assert.equal(done.history.at(-1)?.result, "aborted (not needed anymore)");
+});

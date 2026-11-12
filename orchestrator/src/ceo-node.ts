@@ -43,12 +43,12 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
       .map(([k]) => k),
   }) as string;
   const h = (res: string) => log(t, "ceo_approval", res);
+  if (/^abort(:|$)/.test(r)) return { status: "aborted", history: h(r === "abort" ? "aborted" : `aborted (${r.slice(6, 300).trim()})`) };
   if (!reason) {
     if (r === "approve") return { status: "approved", history: h("approved") };
     const summary = `CEO rejected: ${r}`.slice(0, 500);
     return { status: "dev_failed", revisions: t.revisions + 1, summary, rejections: [...t.rejections, summary], history: h("rejected") };
   }
-  if (r === "abort") return { status: "aborted", history: h("aborted") };
   // No change needed: approve closes the ticket; any other text is an instruction for the dev (below).
   if (t.status === "no_change" && r === "approve") return { status: "closed", history: h("closed: no change needed") };
   // Missing information: the CEO's answer supplements the request and the planner tries again.

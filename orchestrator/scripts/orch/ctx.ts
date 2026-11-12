@@ -50,9 +50,9 @@ export function makeCtx(argv: string[], host: string) {
     if (pending) {
       console.log(JSON.stringify(pending, null, 1));
       const next = {
-        approval: `orch approve ${id}  |  orch reject ${id} "<reason>"`,
+        approval: `orch approve ${id}  |  orch request-changes ${id} "<what to change>"  |  orch reject ${id} (close)`,
         no_change: `orch approve ${id} (close the ticket)  |  orch approve ${id} "<what the dev should do instead>"  |  orch reject ${id}`,
-        escalation: `orch approve ${id} "<answer>"  |  orch reject ${id}`,
+        escalation: `orch approve ${id} "<answer>"  |  orch reject ${id} (close)`,
       }[pending.type];
       await notify(`${id} waiting for you (${pending.type}): ${pending.title}\n${pending.reason ?? pending.summary}\n${next}`);
     } else {
