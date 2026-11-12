@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { selfApproval, verifyEvidence } from "./guardrails.ts";
+import { selfApproval, verifyTicket } from "./guardrails.ts";
 import { context, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
 import { pathFlags } from "./path-flags.ts";
 import { NodeFailure, runAgent } from "./run-agent.ts";
@@ -26,7 +26,7 @@ function reviewStep(name: "reviewer" | "design" | "qa", files: (t: T) => string[
     const who = `agent-${name}`;
     const block = selfApproval(t.author_id, who);
     if (block) throw new NodeFailure(block);
-    const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test, t.install) : { ok: false as const, reason: "no evidence" };
+    const v = t.evidence.length ? verifyTicket(t) : { ok: false as const, reason: "no evidence" };
     if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
     const { output, usage } = await runAgent({
       role: name,

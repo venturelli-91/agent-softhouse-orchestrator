@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MAX_FILE_LINES, MAX_LINE_COLS, verifyEvidence } from "./guardrails.ts";
+import { MAX_FILE_LINES, MAX_LINE_COLS, verifyTicket } from "./guardrails.ts";
 import { context, escalate, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
 import { runAgent } from "./run-agent.ts";
 import { Brief, cap, DEV_FILE, summary, type T } from "./ticket.ts";
@@ -73,7 +73,9 @@ export const taskBlock = (t: Pick<T, "tasks" | "task_done">) => {
 
 export const dev = guarded("dev", async (t) => {
   const before = sh(t.worktree, "rev-parse", "HEAD");
-  const { output, usage } = await runAgent({
+  // The CEO approved the host files of this commit: only the verification runs again (host_review sets brief before it pauses).
+  const reverify = t.status === "reverify";
+  const { output, usage } = reverify ? { output: { summary: t.summary, brief: t.brief!, no_change: undefined }, usage: undefined } : await runAgent({
     role: "dev",
     files: [DEV_FILE[t.specialty]],
     cwd: t.worktree,
@@ -88,7 +90,7 @@ export const dev = guarded("dev", async (t) => {
     ),
     test: t.test,
   });
-  const v = verifyEvidence(t.worktree, t.base, t.test, t.install);
+  const v = verifyTicket(t);
   if (!v.ok && output.no_change && !t.tasks.length && nothingDone(t))
     return {
       status: "no_change",
@@ -96,6 +98,14 @@ export const dev = guarded("dev", async (t) => {
       brief: output.brief,
       summary: cap(output.summary),
       history: log(t, "dev", "no change needed", usage),
+    };
+  if (!v.ok && v.host)
+    return {
+      status: "host_review",
+      host_pending: v.host,
+      brief: output.brief,
+      summary: cap(output.summary),
+      history: log(t, "dev", `host files need CEO review: ${v.host.join(", ")}`, usage),
     };
   if (!v.ok) {
     const result = `verification failed: ${v.reason.slice(0, 300)}`;
@@ -113,7 +123,7 @@ export const dev = guarded("dev", async (t) => {
       history: log(t, "dev", result, usage),
     };
   }
-  if (t.tasks.length && v.sha === before)
+  if (t.tasks.length && v.sha === before && !reverify)
     return {
       status: "dev_failed",
       explanation: "",

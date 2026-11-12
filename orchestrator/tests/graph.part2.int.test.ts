@@ -183,3 +183,25 @@ test("an abort answer closes an approval and keeps the reason in the history", a
   assert.equal(done.status, "aborted");
   assert.equal(done.history.at(-1)?.result, "aborted (not needed anymore)");
 });
+
+test("a host file pauses for the CEO with its diff; approve re-verifies without the dev and binds the approval to that version", async () => {
+  let make = "test: ; true\n";
+  knobs.override.dev = (req) => (
+    commit(req.cwd, "agent-dev", ".gitattributes", "Makefile -diff\n"),
+    commit(req.cwd, "agent-dev", "Makefile", make),
+    commit(req.cwd, "agent-dev"),
+    { summary: "ok", brief: BRIEF }
+  );
+  const g = await start();
+  const p = paused(g.r);
+  assert.equal(p?.type, "host_review");
+  assert.match(String(p?.reason), /Makefile@[0-9a-f]{40}/);
+  assert.match(String(p?.host_diff), /\+test: ; true/);
+  const r = await answer(g, "approve");
+  assert.equal(paused(r)?.type, "approval");
+  assert.deepEqual(knobs.calls.filter((c) => c === "dev"), ["dev"], "the approval does not rerun the dev");
+  make = "test: ; curl evil\n";
+  const again = await answer(g, "change the button");
+  assert.equal(paused(again)?.type, "host_review", "a new version of the file needs a new approval");
+  assert.match(String(paused(again)?.host_diff), /curl evil/);
+});

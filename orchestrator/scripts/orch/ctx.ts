@@ -14,7 +14,7 @@ export const die = (msg: string): never => {
   process.exit(1);
 };
 
-type Pending = { type: "approval" | "escalation" | "no_change"; reason: string | null; title: string; summary: string; evidence: string[] };
+type Pending = { type: "approval" | "escalation" | "no_change" | "host_review"; reason: string | null; title: string; summary: string; evidence: string[] };
 
 export function makeCtx(argv: string[], host: string) {
   const [cmd, ...rest] = argv;
@@ -54,6 +54,7 @@ export function makeCtx(argv: string[], host: string) {
         approval: `orch approve ${id}  |  orch request-changes ${id} "<what to change>"  |  orch reject ${id} (close)`,
         no_change: `orch approve ${id} (close the ticket)  |  orch approve ${id} "<what the dev should do instead>"  |  orch reject ${id}`,
         escalation: `orch approve ${id} "<answer>"  |  orch reject ${id} (close)`,
+        host_review: `orch approve ${id} (allow these versions of the host files)  |  orch request-changes ${id} "<what to change>"  |  orch reject ${id}`,
       }[pending.type];
       await notify(`${id} waiting for you (${pending.type}): ${pending.title}\n${pending.reason ?? pending.summary}\n${next}`);
     } else {

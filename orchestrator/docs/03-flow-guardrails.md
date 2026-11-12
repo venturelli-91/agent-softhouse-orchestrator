@@ -13,7 +13,7 @@ their own delivery.
 | `MAX_ACTIVE_TICKETS=5` | `activeTickets(repo)` counts git `ticket/*` worktrees (no other database); `createWorktree` refuses the 6th | `limit of 5 active tickets` |
 | Author ≠ reviewer ≠ QA | `selfApproval(author, who)`, checked before spending tokens on reviewer/qa; `author_id` comes from the commit author (identity injected in the env) | `self-approval blocked ...` |
 | Evidence verified by code | `verifyEvidence`: new commit, clean worktree, no ignored executable file, allowed paths, `npm test` passes. Runs at the dev, **again** at the reviewer, at the qa and before honoring the CEO's approval | `evidence declared ... rejected`, `a commit without a real passing test ...`, `a worktree with an uncommitted change ...` |
-| Forbidden paths | `FORBIDDEN`: `.env*`, `.github/`, `orchestrator/`, keys/credentials; `package.json`/`.npmrc` require the CEO (they execute code on the host). Regex with `/i` and `-z` (NTFS filesystem and exotic names) | `a diff that touches a forbidden path ...`, `a diff that touches package.json ...` |
+| Forbidden paths | `FORBIDDEN`: `.env*`, `.github/`, `orchestrator/`, keys/credentials; `package.json`, `Makefile`, `conftest.py` and the other `RUNS_ON_HOST` files pause in `host_review` with their diff: `approve` stores `path@blob` in `host_approved` and only that content passes, so a later edit asks again. Regex with `/i` and `-z` (NTFS filesystem and exotic names) | `a diff that touches a forbidden path ...`, `a diff that touches package.json ...` |
 | Merge/deploy only with the CEO | `simulated_deploy` is only produced by `ceo_approval` after `interrupt()`; the node revalidates the evidence and the payload carries the active flags | `deploy only happens after CEO approval ...`, `an approval flag reaches the CEO ...` |
 | Escalation to the CEO | ambiguity, node failure (error, timeout, invalid output, turns), revision cap, budget and invalid evidence become `interrupt({type:"escalation", reason})` | `ambiguous request`, `invalid node output ...`, `budget` |
 | Budget | `budgetExceeded` sums `history` tokens against `TOKEN_BUDGET_TICKET` before each node (missing = error) | `an exceeded token budget interrupts the ticket` |
@@ -46,8 +46,8 @@ GitHub did not run it; moved at publishing.)
 
 ## Security — round 4 (automatic review)
 
-- `npm test` only runs with a clean worktree and without `package.json`/`.npmrc` changed
-  or ignored.
+- `npm test` only runs with a clean worktree and with every changed host file (`package.json`, `Makefile`, `conftest.py`...) approved by the CEO in that exact version (`path@blob`); approving re-runs only the verification, not the dev;
+  an ignored host file always blocks.
 - Path matching is case-insensitive and uses `-z`/`core.quotePath=false`.
 - `git diff --no-renames`: renaming/moving a forbidden file also exposes the old path.
 

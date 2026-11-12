@@ -1,4 +1,4 @@
-import { devNull, repoOf, safeGit, verifyEvidence } from "./guardrails.ts";
+import { devNull, repoOf, safeGit, verifyTicket } from "./guardrails.ts";
 import { log } from "./graph-kit.ts";
 import type { T } from "./ticket.ts";
 
@@ -62,7 +62,9 @@ export function mergeLocalTicket(t: T): Partial<T> {
   const sha = safeGit(t.worktree, "rev-parse", "HEAD");
   const note = `rebased onto ${main.slice(0, 7)} as ${sha.slice(0, 7)}`;
   if (sha === main) return { base: main, approved_sha: sha, history: log(t, "merge_pr", `${note}: the ticket is already in ${t.base_branch}`) };
-  const v = verifyEvidence(t.worktree, main, t.test, t.install);
+  const v = verifyTicket(t, main);
+  if (!v.ok && v.host)
+    return { base: main, status: "host_review", host_pending: v.host, history: log(t, "merge_pr", `${note}; the rebase changed host files: approve again`) };
   if (!v.ok)
     return {
       base: main, status: "dev_failed", revisions: t.revisions + 1,
@@ -99,7 +101,7 @@ export function handRebased(t: T): Partial<T> {
   const main = safeGit(repo, "rev-parse", t.base_branch);
   const head = safeGit(t.worktree, "rev-parse", "HEAD");
   if (head === main || !isAncestor(repo, main, head)) throw new Error("commit changed since it was published");
-  const v = verifyEvidence(t.worktree, main, t.test, t.install);
+  const v = verifyTicket(t, main);
   if (!v.ok) throw new Error(`invalid evidence: ${v.reason}`);
   return {
     status: "approval", base: main, approved_sha: v.sha,

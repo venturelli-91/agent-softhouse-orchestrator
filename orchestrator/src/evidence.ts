@@ -5,6 +5,7 @@ import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
 import { safeGit } from "./git-safe.ts";
 import { MAX_FILE_LINES, MAX_LINE_COLS, modularityViolations } from "./modularity.ts";
 import { DEFAULT_TEST } from "./permissions.ts";
+import type { T } from "./ticket.ts";
 
 // Paths no agent may change: secrets, CI and the orchestrator itself.
 const FORBIDDEN = new RegExp(
@@ -13,11 +14,12 @@ const FORBIDDEN = new RegExp(
 );
 
 // Files npm runs on the host: if the agent changed them, the ticket goes to the CEO instead of running.
+// The CEO approves one content (path@blob at HEAD), so any later edit to the file asks again.
 const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc|conftest\.py|setup\.py|setup\.cfg|pyproject\.toml|pytest\.ini|tox\.ini|Makefile)$/i;
 
-type Verdict = { ok: true; author: string; sha: string; evidence: string[] } | { ok: false; reason: string };
+type Verdict = { ok: true; author: string; sha: string; evidence: string[] } | { ok: false; reason: string; host?: string[] };
 
-export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, install = false): Verdict {
+export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, install = false, hostApproved: string[] = []): Verdict {
   const git = (...a: string[]) => safeGit(wt, ...a);
   const sha = git("rev-parse", "HEAD");
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, reason: "no new commit in the worktree" };
@@ -36,8 +38,11 @@ export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, in
   const files = diffFiles();
   const forbidden = files.filter((f) => FORBIDDEN.test(f));
   if (forbidden.length) return { ok: false, reason: `diff touches forbidden path (${forbidden.join(", ")})` };
-  const risky = files.filter((f) => RUNS_ON_HOST.test(f) || (install && /(^|\/)(package-lock|npm-shrinkwrap)\.json$/i.test(f)));
-  if (risky.length) return { ok: false, reason: `diff touches a file that runs code on the host (${risky.join(", ")}): requires CEO review` };
+  const host = files
+    .filter((f) => RUNS_ON_HOST.test(f) || (install && /(^|\/)(package-lock|npm-shrinkwrap)\.json$/i.test(f)))
+    .map((f) => `${f}@${blobAt(wt, f)}`)
+    .filter((k) => !hostApproved.includes(k));
+  if (host.length) return { ok: false, reason: `diff touches a file that runs code on the host (${host.join(", ")}): requires CEO review`, host };
   const oversized = modularityViolations(wt, diffFiles("--diff-filter=d"));
   if (oversized.length) {
     const limit = `${MAX_FILE_LINES} lines, ${MAX_LINE_COLS} cols`;
@@ -52,6 +57,18 @@ export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, in
   const evidence = [`commit:${git("rev-parse", "--short", sha)}`, `tests:${test} ok`];
   return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence };
 }
+
+// Agent-chosen names: literal pathspecs and an exact path match, or the gate fails closed.
+function blobAt(wt: string, f: string): string {
+  const out = safeGit(wt, "--literal-pathspecs", "ls-tree", "-z", "HEAD", "--", f);
+  if (!out) return "deleted";
+  const [meta, path] = out.split("\0")[0].split("\t");
+  if (path !== f) throw new Error(`ls-tree resolved ${f} to ${path}`);
+  return meta.split(" ")[2];
+}
+
+export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved">, base = t.base) =>
+  verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved);
 
 // execSync (shell) because npm is npm.cmd on Windows. `test` comes from .orchestrator.json at the base commit
 // (a ticket cannot edit it) and RepoConfig only accepts a plain command with no shell operators.

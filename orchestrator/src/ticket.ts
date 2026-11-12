@@ -49,6 +49,8 @@ export const Ticket = z.object({
   disclosure: z.boolean().default(true),
   base_branch: z.string().default(""),
   approved_sha: z.string().default(""),
+  host_pending: z.array(z.string()).default([]),
+  host_approved: z.array(z.string()).default([]),
   rules: z.string().default(""),
   title: z.string().default(""),
   priority: z.enum(["P0", "P1", "P2", "Bug"]).default("P2"),

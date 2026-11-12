@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import { orchHome, workRoot } from "./daily-cap.ts";
 import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } from "./deploy.ts";
-import { repoOf, safeGit, verifyEvidence } from "./guardrails.ts";
+import { repoOf, safeGit, verifyTicket } from "./guardrails.ts";
 import { checkConfig, guarded, log } from "./graph-kit.ts";
 import { handRebased, mergeLocalTicket } from "./local-merge.ts";
 import { mergePr, publish } from "./publish.ts";
@@ -13,7 +13,7 @@ import { briefMarkdown, type T } from "./ticket.ts";
 
 // Branch push and (draft) PR done by code, not by the agent; only while the evidence still holds.
 export const publishNode = guarded("publish", async (t) => {
-  const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test, t.install) : { ok: false as const, reason: "no evidence" };
+  const v = t.evidence.length ? verifyTicket(t) : { ok: false as const, reason: "no evidence" };
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   checkConfig(t);
   const body = [
@@ -135,7 +135,7 @@ export const mergeNode = guarded("merge_pr", async (t) => {
     }
   };
   if (t.merge === "local" && t.approved_sha && safeGit(t.worktree, "rev-parse", "HEAD") !== t.approved_sha) return local(handRebased);
-  const v = verifyEvidence(t.worktree, t.base, t.test, t.install);
+  const v = verifyTicket(t);
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   // What the CEO approved is the commit that was published, not whatever HEAD is now.
   if (!t.approved_sha || v.sha !== t.approved_sha) throw new NodeFailure("merge: commit changed since it was published");

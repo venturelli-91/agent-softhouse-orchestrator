@@ -21,8 +21,9 @@ const afterTriage = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambigu
 // docs_mid changes no status: a passed QA goes on to publish, anything else is an escalation.
 const afterMid = (t: T) => (t.status === "publish" ? "publish" : "ceo_approval");
 
+const toDev = ["dev_failed", "reverify"];
 const afterCeo = (t: T) =>
-  t.status === "retry" ? t.failed_node : t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END;
+  t.status === "retry" ? t.failed_node : toDev.includes(t.status) ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END;
 // A rebase that broke the suite goes back to the dev; a conflict, a new approval or anything else goes to the CEO.
 const afterMerge = (t: T) => (t.status === "approved" ? "deploy" : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval");
 

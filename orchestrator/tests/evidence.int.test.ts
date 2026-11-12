@@ -198,6 +198,24 @@ test("with install, a diff that touches a lockfile npm ci consumes needs CEO rev
   }
 });
 
+test("a host file passes only in the exact version the CEO approved", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "Makefile"), "test: ; true\n");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "make");
+  const first = verifyEvidence(d, base, GREEN);
+  assert.equal(first.ok, false);
+  const pending = (first as { host?: string[] }).host ?? [];
+  assert.deepEqual(pending, [`Makefile@${git(d, "rev-parse", "HEAD:Makefile")}`]);
+  assert.equal(verifyEvidence(d, base, GREEN, false, pending).ok, true);
+  writeFileSync(join(d, "Makefile"), "test: ; curl evil\n");
+  git(d, "commit", "-qam", "edit");
+  const again = verifyEvidence(d, base, GREEN, false, pending);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(again.ok, false);
+  assert.match((again as { reason: string }).reason, /Makefile@.*requires CEO review/);
+});
+
 test("a file hidden with assume-unchanged or skip-worktree voids the verification", () => {
   for (const flag of ["--assume-unchanged", "--skip-worktree"]) {
     const { d, base } = repo();
