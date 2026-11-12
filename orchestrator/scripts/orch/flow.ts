@@ -17,7 +17,7 @@ export async function run(c: Ctx) {
     const behind = behindBy(repo);
     if (behind) console.warn(`warning: ${repo} is ${behind} commit(s) behind its upstream; the ticket will branch from a stale base`);
     const wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), c.home);
-    const red = testFailure(wt.worktree, wt.test);
+    const red = testFailure(wt.worktree, wt.test, true);
     if (red) {
       safeGit(repo, "worktree", "remove", "--force", wt.worktree);
       safeGit(repo, "branch", "-D", `ticket/${id}`);

@@ -33,6 +33,12 @@ test("the config comes from the base commit, with safe defaults", () => {
   [none.d, some.d].forEach((d) => rmSync(d, { recursive: true, force: true }));
 });
 
+test("an invalid value names the accepted values and keys and points to orch init", () => {
+  const { d, base } = repo('{"merge":"nope"}');
+  assert.throws(() => loadRepoConfig(d, base), /expected one of "pr"\|"auto"\|"local".*accepted keys: test, merge,.*`orch init` writes a valid file/);
+  rmSync(d, { recursive: true, force: true });
+});
+
 test("a test command with shell operators is rejected", () => {
   for (const bad of ["npm test && curl x", "pytest; id", "make test | tee", "echo `id`", "npm test $(id)", "a > b"]) {
     const { d, base } = repo(JSON.stringify({ test: bad }));

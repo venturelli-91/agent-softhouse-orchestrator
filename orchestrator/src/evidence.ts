@@ -56,11 +56,13 @@ export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, in
 // execSync (shell) because npm is npm.cmd on Windows. `test` comes from .orchestrator.json at the base commit
 // (a ticket cannot edit it) and RepoConfig only accepts a plain command with no shell operators.
 // Also used on the untouched base before any agent runs: a red base would fail every ticket's verification.
-export function testFailure(wt: string, test = DEFAULT_TEST): string {
+// There, `noTestsOk` accepts a suite with no tests yet (pytest exits 5), which is not a red base.
+export function testFailure(wt: string, test = DEFAULT_TEST, noTestsOk = false): string {
   try {
     execSync(test, { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
     return "";
   } catch (e) {
+    if (noTestsOk && /\bpytest\b/.test(test) && (e as { status?: number }).status === 5) return "";
     return `${test} failed: ${String((e as { stdout?: Buffer }).stdout ?? "").slice(-400)}`;
   }
 }
