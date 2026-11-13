@@ -9,6 +9,7 @@ import { FileSaver } from "../src/file-saver.ts";
 import { createWorktree, buildGraph, resume } from "../src/graph.ts";
 import { registerPublisher } from "../src/publish.ts";
 import { type Req } from "../src/run-agent.ts";
+import { readBacklog } from "../src/backlog.ts";
 import { alerts } from "../src/watchdog.ts";
 import { roots, BRIEF, FLAGS, commit, defaults, start, paused, answer, ambiguous, approved, knobs } from "./helpers/graph-harness.ts";
 
@@ -193,4 +194,15 @@ test("more skipped tests than the base is a warning in the evidence, the approva
   assert.deepEqual(p?.test_alerts, ["1 tests skipped, the base had 0"]);
   assert.ok((p?.evidence as string[]).some((e) => /^tests:.* ok \(pass 1, skip 1, fail 0\)$/.test(e)));
   assert.ok(alerts([g.r as never]).includes("T-1 1 tests skipped, the base had 0"));
+});
+
+test("caveats of an approving reviewer become backlog items with the ticket, once per revision loop", async () => {
+  knobs.override.reviewer = (req) => ({ ...(defaults.reviewer!(req) as object), caveats: ["name the magic number", " ", "name the magic number"] });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.ok(g.r.history.some((h: { node: string; result: string }) => h.node === "reviewer" && h.result === "approved (1 caveats to backlog)"));
+  await answer(g, "did not like it");
+  assert.deepEqual(readBacklog().map(({ ticket, from, caveat, status }) => ({ ticket, from, caveat, status })), [
+    { ticket: "T-1", from: "reviewer", caveat: "name the magic number", status: "open" },
+  ]);
 });

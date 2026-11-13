@@ -40,7 +40,7 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 | `RETRY_DELAYS_MS` | Waits between retries of a busy API, default `5000,20000`; a usage limit is never retried; empty disables retries. |
 | `STALE_HOURS` | Watchdog: hours without movement before a ticket is flagged (default 24; a P0 waits 1h). |
 | `MERGE_WAIT_MS` | How long `merge: auto` waits for CI (default 600000); no checks at all means no automatic merge. |
-| `ORCH_HOME` | State and external config (default `orchestrator/.state`): `tickets/<id>.json`, plus `tickets/<id>.lock` while a command runs (a second command refuses with "already running"; a lock from a dead process is replaced). |
+| `ORCH_HOME` | State and external config (default `orchestrator/.state`): `tickets/<id>.json`, plus `tickets/<id>.lock` while a command runs (a second command refuses with "already running"; a lock from a dead process is replaced); `backlog.jsonl`, one line per caveat an approving reviewer, design or QA left, with the origin ticket. |
 | `ORCH_WORK` | Ticket worktrees and deploy checkouts (default `~/.orchestrator/work`), outside the repo so the agent cannot reach its `.env` with `../`. |
 
 ## Per-repo config
