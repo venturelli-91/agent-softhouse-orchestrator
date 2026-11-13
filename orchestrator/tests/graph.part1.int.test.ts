@@ -194,6 +194,7 @@ test("more skipped tests than the base is a warning in the evidence, the approva
   assert.deepEqual(p?.test_alerts, ["1 tests skipped, the base had 0"]);
   assert.ok((p?.evidence as string[]).some((e) => /^tests:.* ok \(pass 1, skip 1, fail 0\)$/.test(e)));
   assert.ok(alerts([g.r as never]).includes("T-1 1 tests skipped, the base had 0"));
+  assert.deepEqual((g.r as { test_last?: unknown }).test_last, { pass: 1, skip: 1, fail: 0 });
 });
 
 test("caveats of an approving reviewer become backlog items with the ticket, once per revision loop", async () => {

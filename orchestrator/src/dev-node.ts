@@ -161,6 +161,7 @@ export const dev = guarded("dev", async (t) => {
     author_id: v.author,
     evidence: v.evidence,
     test_alerts: skipAlerts(t.test_base, v.counts),
+    test_last: v.counts,
     adopt_tree: "",
     history: log(t, "dev", t.adopt_tree ? "adopted changes committed and verified" : "commit verified", usage),
   };
