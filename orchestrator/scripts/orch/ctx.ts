@@ -24,6 +24,7 @@ export function makeCtx(argv: string[], host: string) {
       repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" },
       remote: { type: "boolean" }, title: { type: "string" }, clear: { type: "boolean" },
       "config-reviewed": { type: "boolean" }, team: { type: "string" }, yes: { type: "boolean" }, "no-install": { type: "boolean" },
+      command: { type: "string" }, criteria: { type: "string", multiple: true }, expect: { type: "string" }, exit: { type: "string" },
     },
   });
 

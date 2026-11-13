@@ -189,3 +189,34 @@ test("orch adopt refuses secrets and a clean checkout before creating anything",
     sb.done();
   }
 });
+
+test("orch manual creates a ticket no agent runs; orch evidence rejects bad evidence, closes on good, and status lists it", () => {
+  const sb = sandbox();
+  try {
+    const usage = sb.orch("manual", "Export customers");
+    assert.equal(usage.code, 1);
+    assert.match(usage.out, /usage: orch manual/);
+    const made = sb.orch("manual", "Export customers", "--command", "psql -f export.sql > out.json", "--criteria", "one row per customer",
+      "--expect", "out.json", "--id", "M-1");
+    assert.equal(made.code, 0, made.out);
+    assert.match(made.out, /psql -f export\.sql > out\.json[\s\S]*one row per customer[\s\S]*orch evidence M-1 out\.json --exit/);
+    assert.match(sb.orch("status").out, /M-1\s+open\s+manual Export customers\s+<- waiting: orch evidence M-1/);
+    const out = join(sb.repo, "out.json");
+    writeFileSync(out, "secret-row");
+    const bad = sb.orch("evidence", "M-1", out, "--exit", "0");
+    assert.equal(bad.code, 1);
+    assert.match(bad.out, /out\.json: not valid JSON/);
+    assert.doesNotMatch(bad.out, /secret-row/);
+    assert.match(sb.orch("evidence", "M-1", out).out, /usage: orch evidence/);
+    assert.match(sb.orch("evidence", "M-9", out, "--exit", "0").out, /no manual ticket M-9/);
+    writeFileSync(out, '[{"id":1}]');
+    const good = sb.orch("evidence", "M-1", out, "--exit", "0");
+    assert.equal(good.code, 0, good.out);
+    assert.match(good.out, /M-1: closed - evidence: exit 0; out\.json 10 B sha256:/);
+    const one = sb.orch("status", "M-1");
+    assert.match(one.out, /M-1\s+closed[\s\S]*evidence rejected \(out\.json: not valid JSON\)[\s\S]*evidence: exit 0/);
+    assert.equal(git(sb.repo, "worktree", "list").split("\n").length, 1);
+  } finally {
+    sb.done();
+  }
+});
