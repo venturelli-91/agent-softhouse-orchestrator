@@ -70,7 +70,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties, stack, webcheck } = loadRepoConfig(repo, base, home);
+  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties, stack, webcheck, project_docs } = loadRepoConfig(repo, base, home);
   if (install) installDeps(dir);
   return {
     worktree: dir,
@@ -89,6 +89,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
     deploy_cfg: deploy,
     webcheck_cfg: webcheck,
     specialties,
+    project_docs,
     ...(deploy ? { deploy_target: "command" } : {}),
   };
 }

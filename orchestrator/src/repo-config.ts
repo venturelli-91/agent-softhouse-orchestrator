@@ -56,6 +56,11 @@ export const RepoConfig = z.object({
   specialties: z.array(z.enum(SPECIALTIES)).min(1).default([...SPECIALTIES]),
   // The stack the team decided (`orch team`); goes into every dev's context next to the repo conventions.
   stack: z.string().max(400).default(""),
+  // Tracked docs of the repo (README, CHANGELOG...) the docs node may update on the ticket's branch, before review; exact relative .md paths.
+  project_docs: z
+    .array(z.string().regex(/^(?!.*(^|\/)\.\.?(\/|$))[\w.-]+(\/[\w.-]+)*\.md$/, "project_docs entries must be relative .md paths"))
+    .max(10)
+    .default([]),
 });
 export type RepoConfig = z.infer<typeof RepoConfig>;
 
