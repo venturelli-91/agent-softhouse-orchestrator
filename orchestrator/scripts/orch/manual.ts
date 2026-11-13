@@ -2,20 +2,23 @@
 import { resolve } from "node:path";
 import { createManual, isManual, recordEvidence } from "../../src/manual.ts";
 import { type Ctx, die } from "./ctx.ts";
+import { attach, demandOf } from "./demand.ts";
 
-export function manual(c: Ctx) {
-  const usage = 'usage: orch manual "<title>" --command "<cmd>" --criteria "<text>" [--criteria ...] [--expect a.json,b.csv] [--id <id>]';
+export async function manual(c: Ctx) {
+  const usage = 'usage: orch manual "<title>" --command "<cmd>" --criteria "<text>" [--criteria ...] [--expect a.json,b.csv] [--id <id>] [--demand <id>]';
   const title = c.positionals[0]?.trim() || die(usage);
   const command = c.values.command?.trim() || die(usage);
   const criteria = (c.values.criteria ?? []).map((s) => s.trim()).filter(Boolean);
   if (!criteria.length) die(usage);
   const expect = (c.values.expect ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const id = c.values.id ?? `M-${Date.now().toString(36)}`;
+  const demand = demandOf(c);
   try {
     createManual(c.home, { id, title, command, criteria, expect });
   } catch (e) {
     die((e as Error).message);
   }
+  await attach(c, demand, id);
   console.log(`${id}: run it yourself (the orchestrator never does), then attach the output:
   ${command}
 acceptance criteria:

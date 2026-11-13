@@ -6,16 +6,22 @@ import { isBareApproval } from "../../src/ceo-node.ts";
 import { createWorktree, resume } from "../../src/graph.ts";
 import { adoptKeys, runTests, safeGit, secretPaths } from "../../src/guardrails.ts";
 import { type Ctx, die } from "./ctx.ts";
+import { attach, demandOf } from "./demand.ts";
 
 export async function run(c: Ctx) {
-  const request = c.positionals[0] ?? die('usage: orch run "<request>" [--repo <path>] [--id <id>]');
+  const request = c.positionals[0] ?? die('usage: orch run "<request>" [--repo <path>] [--id <id>] [--demand <id>]');
   c.needCap();
   c.needPrompts();
   const id = c.values.id ?? `T-${Date.now().toString(36)}`;
   const repo = resolve(c.values.repo ?? c.host);
+  const demand = demandOf(c);
   if (safeGit(repo, "status", "--porcelain"))
     console.warn(`warning: ${repo} has uncommitted changes the ticket will not see; to ship them through a ticket: orch adopt --title "<what they do>"`);
-  await c.locked(id, async () => c.drive(id, { id, request, ...prepare(c, repo, id) }));
+  await c.locked(id, async () => {
+    const wt = prepare(c, repo, id);
+    await attach(c, demand, id);
+    await c.drive(id, { id, request, ...wt });
+  });
 }
 
 // Branches from HEAD and refuses a red base before any agent runs (no tokens spent).
@@ -47,6 +53,7 @@ export async function adopt(c: Ctx) {
   const secrets = secretPaths(changed);
   if (secrets.length) die(`refusing to adopt files that look like secrets (${secrets.join(", ")}): move them out of the working tree first`);
   const title = c.values.title?.trim() || "Adopt the uncommitted changes of the main checkout";
+  const demand = demandOf(c);
   await c.locked(id, async () => {
     safeGit(repo, "stash", "push", "--include-untracked", "-q", "-m", `orch adopt ${id}`);
     const stash = safeGit(repo, "rev-parse", "refs/stash");
@@ -64,6 +71,7 @@ export async function adopt(c: Ctx) {
     if (safeGit(repo, "rev-parse", "stash@{0}") === stash) safeGit(repo, "stash", "drop", "-q");
     const request = `${title}\n\nAlready written by the CEO and left uncommitted in the worktree; the dev only commits it:\n` +
       safeGit(wt.worktree, "diff", "--stat", wt.base, tree);
+    await attach(c, demand, id);
     await c.drive(id, { id, request, ...wt, adopt_tree: tree, host_approved: adoptKeys(wt.worktree, wt.base, tree, wt.install) });
   });
 }

@@ -240,3 +240,38 @@ test("orch backlog lists the open caveats numbered and orch backlog review marks
     sb.done();
   }
 });
+
+test("orch demand groups a code and a manual ticket, shows the waiting decision and closes only when the checklist passes", () => {
+  const sb = sandbox();
+  try {
+    assert.equal(sb.orch("demand", "new", "Customer export", "--repo", sb.repo, "--id", "D-1").code, 0);
+    assert.match(sb.orch("run", "x", "--repo", sb.repo, "--demand", "D-9").out, /no demand D-9/);
+    const run = sb.orch("run", "Change the checkout button label to Submit order", "--repo", sb.repo, "--id", "T-1", "--demand", "D-1");
+    assert.equal(run.code, 0, run.out);
+    const made = sb.orch("manual", "Export", "--command", "psql -f e.sql > out.json", "--criteria", "one row each", "--id", "M-1", "--demand", "D-1");
+    assert.equal(made.code, 0, made.out);
+    assert.match(sb.orch("demand", "ask", "D-1", "Ship T-1 later?", "--owner", "CEO", "--task", "T-1").out, /decision #1 waiting for CEO/);
+    assert.match(sb.orch("status").out, /D-1\s+waiting 0\.0d\s+demand Customer export \(2 tasks\)\s+<- #1 \(CEO\): Ship T-1 later\?/);
+    assert.match(sb.orch("status", "D-1").out, /task T-1 code approval\n {2}task M-1 manual open\n {2}#1 \S+ CEO \[T-1\]: Ship T-1 later\? -> waiting/);
+    const home = join(sb.repo, "..", "home");
+    writeFileSync(join(home, "backlog.jsonl"), `${JSON.stringify({ ticket: "T-1", from: "reviewer", caveat: "name it", time: "", status: "open" })}\n`);
+    writeFileSync(join(sb.repo, "stray.txt"), "x");
+    const refused = sb.orch("demand", "close", "D-1");
+    assert.equal(refused.code, 1, refused.out);
+    for (const p of [/FAIL tasks closed or decided: T-1 approval; M-1 open/, /FAIL decisions answered: #1 \(CEO\)/, /FAIL backlog reviewed.*T-1: name it/,
+      /FAIL tree clean/, /ok {3}evidence present/, /D-1: not closed/])
+      assert.match(refused.out, p);
+    assert.match(sb.orch("demand", "answer", "D-1", "1", "yes, next sprint").out, /decision #1 answered/);
+    writeFileSync(join(sb.repo, "out.json"), "[]");
+    assert.equal(sb.orch("evidence", "M-1", join(sb.repo, "out.json"), "--exit", "0").code, 0);
+    rmSync(join(sb.repo, "stray.txt"));
+    rmSync(join(sb.repo, "out.json"));
+    sb.orch("backlog", "review", "1");
+    const closed = sb.orch("demand", "close", "D-1");
+    assert.equal(closed.code, 0, closed.out);
+    assert.match(closed.out, /ok {3}tasks closed or decided: 2 task\(s\)[\s\S]*D-1: closed/);
+    assert.match(sb.orch("manual", "y", "--command", "y", "--criteria", "y", "--demand", "D-1").out, /demand D-1 is closed/);
+  } finally {
+    sb.done();
+  }
+});

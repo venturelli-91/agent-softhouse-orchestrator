@@ -20,6 +20,8 @@ import { bareNodeTest } from "../../src/repo-config.ts";
 import { TEAMS } from "../../src/specialties.ts";
 import { runningPid, ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
+import { demandLines, showDemand } from "./demand.ts";
+import { isDemand } from "../../src/demand.ts";
 
 const DONE = ["simulated_deploy", "deployed", "aborted", "closed", "merged"];
 
@@ -98,6 +100,7 @@ export async function status(c: Ctx) {
     for (const h of m.history) console.log(`${h.time} ${h.result}`);
     return;
   }
+  if (one && isDemand(c.home, one)) return showDemand(c, one);
   const ids = one ? [one] : ticketIds(c.home);
   for (const id of ids) {
     let { ticket: t, pending } = await c.load(id);
@@ -120,7 +123,9 @@ export async function status(c: Ctx) {
     const waiting = m.status === "open" ? `  <- waiting: orch evidence ${m.id}` : "";
     console.log(`${m.id.padEnd(12)} ${m.status.padEnd(16)} manual ${m.title}${waiting}`);
   }
-  if (!ids.length && !manuals.length) console.log("no tickets");
+  const demands = one ? [] : demandLines(c.home);
+  for (const l of demands) console.log(l);
+  if (!ids.length && !manuals.length && !demands.length) console.log("no tickets");
   if (!one) {
     for (const i of listIncidents(c.home)) {
       console.log(`${i.id.padEnd(16)} ${i.status.padEnd(8)} ${i.ticket} hotfix=${i.hotfix || "-"} rollback=${i.rollback}  ${i.symptom}`);
