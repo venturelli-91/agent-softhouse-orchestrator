@@ -150,3 +150,42 @@ test("orch setup copies the folder into a git repo without secrets or state, run
     sb.done();
   }
 });
+
+test("orch adopt turns the dirty main checkout into a ticket the dev only commits, and leaves main clean", () => {
+  const sb = sandbox();
+  try {
+    writeFileSync(join(sb.repo, "checkout.html"), "<button>Submit order</button>\n");
+    mkdirSync(join(sb.repo, "orchestrator"));
+    writeFileSync(join(sb.repo, "orchestrator", "note.md"), "adopted\n");
+    const warned = sb.orch("run", "x", "--repo", sb.repo, "--id", "T-0");
+    assert.match(warned.out, /uncommitted changes the ticket will not see.*orch adopt/);
+    sb.orch("reject", "T-0");
+    const r = sb.orch("adopt", "--title", "Rename the checkout button", "--repo", sb.repo, "--id", "T-1");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /"type": "approval"/);
+    assert.equal(git(sb.repo, "status", "--porcelain"), "");
+    assert.equal(git(sb.repo, "stash", "list"), "");
+    assert.equal(git(sb.repo, "show", "ticket/T-1:orchestrator/note.md"), "adopted");
+    assert.equal(git(sb.repo, "show", "ticket/T-1:checkout.html"), "<button>Submit order</button>");
+  } finally {
+    sb.done();
+  }
+});
+
+test("orch adopt refuses secrets and a clean checkout before creating anything", () => {
+  const sb = sandbox();
+  try {
+    const clean = sb.orch("adopt", "--repo", sb.repo, "--id", "T-1");
+    assert.equal(clean.code, 1);
+    assert.match(clean.out, /nothing to adopt/);
+    writeFileSync(join(sb.repo, ".env"), "TOKEN=x\n");
+    const secret = sb.orch("adopt", "--repo", sb.repo, "--id", "T-1");
+    assert.equal(secret.code, 1);
+    assert.match(secret.out, /look like secrets \(\.env\)/);
+    assert.equal(git(sb.repo, "worktree", "list").split("\n").length, 1);
+    assert.equal(git(sb.repo, "stash", "list"), "");
+    assert.match(git(sb.repo, "status", "--porcelain"), /\.env/);
+  } finally {
+    sb.done();
+  }
+});

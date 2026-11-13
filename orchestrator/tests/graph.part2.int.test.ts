@@ -7,7 +7,7 @@ import { MemorySaver } from "@langchain/langgraph";
 import { git } from "../scripts/fixture.ts";
 import { DEV_RULES } from "../src/graph.ts";
 import { alerts, watchdog } from "../src/watchdog.ts";
-import { BRIEF, commit, defaults, start, paused, answer, approved, knobs } from "./helpers/graph-harness.ts";
+import { ambiguous, BRIEF, commit, defaults, start, paused, answer, approved, knobs } from "./helpers/graph-harness.ts";
 
 test("the watchdog reads the state and returns alerts without writing", async () => {
   const g = await start();
@@ -204,4 +204,13 @@ test("a host file pauses for the CEO with its diff; approve re-verifies without 
   const again = await answer(g, "change the button");
   assert.equal(paused(again)?.type, "host_review", "a new version of the file needs a new approval");
   assert.match(String(paused(again)?.host_diff), /curl evil/);
+});
+
+test("an adopted ticket skips the planner, and a dev that changes the adopted content escalates instead of reaching review", async () => {
+  knobs.override.triage = ambiguous;
+  const g = await start("T-1", undefined, { adopt_tree: "4b825dc642cb6eb9a060e54bf8d69288fbee4904" });
+  assert.ok(!knobs.calls.includes("planner"));
+  assert.ok(!knobs.calls.includes("reviewer"));
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /changed the adopted content/);
 });

@@ -8,6 +8,8 @@
 //   orch team "<need>" [--repo <path>] [--yes]   agents propose the team and the stack (respecting an existing one); confirm to write
 //                               them to .orchestrator.json
 //   orch run "<request>" [--repo <path>] [--id <id>]
+//   orch adopt [--title "<what they do>"] [--repo <path>] [--id <id>]   the uncommitted changes of the main checkout become a ticket:
+//                               the dev only commits them (unchanged), then review, QA, docs and approval as usual
 //   orch status [id]            all tickets, or one with its pending question
 //   orch approve <id> [text]    approve; for an escalation, text is the answer (e.g. retry, a clarification)
 //   orch reject <id> [reason]   close the ticket, whatever it is waiting for (the reason goes into its history)
@@ -23,7 +25,7 @@
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { approve, reject, requestChanges, resumeRun, run } from "./orch/flow.ts";
+import { adopt, approve, reject, requestChanges, resumeRun, run } from "./orch/flow.ts";
 import { clean, init, setup, status, team } from "./orch/admin.ts";
 import { type Ctx, die, makeCtx } from "./orch/ctx.ts";
 import { chaos, resolveByHand, rollback, watchDeployed } from "./orch/ops.ts";
@@ -33,10 +35,11 @@ if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
 process.env.AGENTS_DIR = resolve(ROOT, process.env.AGENTS_DIR ?? "agents");
 
 const commands: Record<string, (c: Ctx) => void | Promise<void>> = {
-  init, setup, team, run, status, continue: resumeRun, approve, reject, "request-changes": requestChanges, clean, watch: watchDeployed, resolve: resolveByHand, chaos, rollback,
+  init, setup, team, run, adopt, status, continue: resumeRun, approve, reject, "request-changes": requestChanges, clean,
+  watch: watchDeployed, resolve: resolveByHand, chaos, rollback,
 };
 
 const ctx = makeCtx(process.argv.slice(2), resolve(ROOT, ".."));
 const command = ctx.cmd !== undefined && Object.hasOwn(commands, ctx.cmd) ? commands[ctx.cmd] : undefined;
 if (command) await command(ctx);
-else die("usage: orch init | setup | team | run | status | continue | approve | reject | request-changes | clean | watch | chaos | rollback | resolve");
+else die("usage: orch init | setup | team | run | adopt | status | continue | approve | reject | request-changes | clean | watch | chaos | rollback | resolve");

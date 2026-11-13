@@ -54,6 +54,8 @@ export const Ticket = z.object({
   host_approved: z.array(z.string()).default([]),
   test_base: TestCounts.nullable().default(null),
   test_alerts: z.array(z.string()).default([]),
+  // `orch adopt`: the tree of the CEO's own changes; the first dev pass only commits it, unchanged.
+  adopt_tree: z.string().default(""),
   rules: z.string().default(""),
   title: z.string().default(""),
   priority: z.enum(["P0", "P1", "P2", "Bug"]).default("P2"),

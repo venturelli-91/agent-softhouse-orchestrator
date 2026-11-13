@@ -25,6 +25,13 @@ export const devRules = (tests: Test = "npm test", turns?: number) => {
 };
 export const DEV_RULES = devRules();
 
+// `orch adopt`: the code is already written by the CEO; the dev pass only turns it into commits, and code compares the trees.
+const ADOPT_RULES =
+  "The worktree holds changes the CEO already wrote, uncommitted. Do not edit, create, delete, move or format any file: only commit them. " +
+  "Split them into atomic commits, one per logical change, each message following the pattern of this repo's `git log` (type, scope, language). " +
+  "Shell: one simple command per call (git status, git diff, git log, git add <paths>, git commit). When you finish nothing may remain uncommitted, " +
+  "and the committed content must match the working tree byte for byte, or the orchestrator rejects it. Fill `brief` describing the changes as they are.";
+
 // A dev that stopped (turn limit, timeout) leaves uncommitted work in the worktree: tell the next attempt to build on it instead of starting over.
 export const partialWork = (porcelain: string) =>
   porcelain.trim()
@@ -78,21 +85,26 @@ export const dev = guarded("dev", async (t) => {
   const before = sh(t.worktree, "rev-parse", "HEAD");
   // The CEO approved the host files of this commit: only the verification runs again (host_review sets brief before it pauses).
   const reverify = t.status === "reverify";
+  const porcelain = sh(t.worktree, "status", "--porcelain", "--untracked-files=all");
   const { output, usage } = reverify ? { output: { summary: t.summary, brief: t.brief!, no_change: undefined }, usage: undefined } : await runAgent({
     role: "dev",
     files: [DEV_FILE[t.specialty]],
     cwd: t.worktree,
     schema: DevOutput,
-    context: context(
-      ticketData(t),
-      devRules(t.test, Number(process.env.TURNS_DEV ?? process.env.TURNS_DEFAULT) || undefined),
-      ...taskBlock(t),
-      ...committedWork(t),
-      ...partialWork(sh(t.worktree, "status", "--porcelain", "--untracked-files=all")),
-      ...rulesBlock(t),
-    ),
+    context: t.adopt_tree
+      ? context(ticketData(t), ADOPT_RULES, ...committedWork(t), `Uncommitted:\n${porcelain.split("\n").slice(0, 80).join("\n")}`, ...rulesBlock(t))
+      : context(
+          ticketData(t),
+          devRules(t.test, Number(process.env.TURNS_DEV ?? process.env.TURNS_DEFAULT) || undefined),
+          ...taskBlock(t),
+          ...committedWork(t),
+          ...partialWork(porcelain),
+          ...rulesBlock(t),
+        ),
     test: t.test,
   });
+  if (t.adopt_tree && !sh(t.worktree, "status", "--porcelain", "--untracked-files=all") && sh(t.worktree, "rev-parse", "HEAD^{tree}") !== t.adopt_tree)
+    return escalate(t, "dev", "the commits changed the adopted content: compare the ticket branch with what you had in the working tree", usage);
   const v = verifyTicket(t);
   if (!v.ok && output.no_change && !t.tasks.length && nothingDone(t))
     return {
@@ -149,6 +161,7 @@ export const dev = guarded("dev", async (t) => {
     author_id: v.author,
     evidence: v.evidence,
     test_alerts: skipAlerts(t.test_base, v.counts),
-    history: log(t, "dev", "commit verified", usage),
+    adopt_tree: "",
+    history: log(t, "dev", t.adopt_tree ? "adopted changes committed and verified" : "commit verified", usage),
   };
 });

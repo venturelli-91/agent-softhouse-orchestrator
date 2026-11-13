@@ -17,7 +17,8 @@ export { Brief, briefMarkdown, Ticket, DEV_RULES, devRules, partialWork, taskBlo
 const route = (ok: string, node: string) => (t: T) =>
   t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "docs_mid";
 const afterReview = (t: T) => (t.status === "design" ? "design" : route("qa", "qa")(t));
-const afterTriage = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguous" ? "planner" : "docs_mid");
+// Adopted changes are already written: an ambiguous triage has nothing left to plan.
+const afterTriage = (t: T) => (t.status === "dev" || (t.adopt_tree && t.status === "ambiguous") ? "dev" : t.status === "ambiguous" ? "planner" : "docs_mid");
 // docs_mid changes no status: a passed QA goes on to publish, anything else is an escalation.
 const afterMid = (t: T) => (t.status === "publish" ? "publish" : "ceo_approval");
 

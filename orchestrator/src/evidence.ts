@@ -8,11 +8,12 @@ import { DEFAULT_TEST } from "./permissions.ts";
 import { addedSkips, commands, type Counts, runTests, type Test } from "./test-report.ts";
 import type { T } from "./ticket.ts";
 
-// Paths no agent may change: secrets, CI and the orchestrator itself.
-const FORBIDDEN = new RegExp(
-  [String.raw`(^|\/)\.env`, String.raw`^\.github\/`, String.raw`^orchestrator\/`, String.raw`^\.orchestrator\.json$`,
-    String.raw`(^|\/)(\.git-credentials|\.npmrc|id_rsa[^/]*)$`, String.raw`\.(pem|key)$`, "credential", "secret"].join("|"), "i",
+// Paths no agent may change: secrets (never, not even adopted), and CI and the orchestrator itself (only in a version `orch adopt` took
+// from the CEO's own working tree, path@blob like a host file).
+const SECRET = new RegExp(
+  [String.raw`(^|\/)\.env`, String.raw`(^|\/)(\.git-credentials|\.npmrc|id_rsa[^/]*)$`, String.raw`\.(pem|key)$`, "credential", "secret"].join("|"), "i",
 );
+const PROTECTED = /^\.github\/|^orchestrator\/|^\.orchestrator\.json$/i;
 
 // Files npm runs on the host: if the agent changed them, the ticket goes to the CEO instead of running.
 // The CEO approves one content (path@blob at HEAD), so any later edit to the file asks again.
@@ -37,10 +38,10 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   const diffFiles = (...extra: string[]) =>
     git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", ...extra, `${base}..HEAD`).split("\0").filter(Boolean);
   const files = diffFiles();
-  const forbidden = files.filter((f) => FORBIDDEN.test(f));
+  const forbidden = files.filter((f) => SECRET.test(f) || (PROTECTED.test(f) && !hostApproved.includes(`${f}@${blobAt(wt, f)}`)));
   if (forbidden.length) return { ok: false, reason: `diff touches forbidden path (${forbidden.join(", ")})` };
   const host = files
-    .filter((f) => RUNS_ON_HOST.test(f) || (install && /(^|\/)(package-lock|npm-shrinkwrap)\.json$/i.test(f)))
+    .filter((f) => runsOnHost(f, install))
     .map((f) => `${f}@${blobAt(wt, f)}`)
     .filter((k) => !hostApproved.includes(k));
   if (host.length) return { ok: false, reason: `diff touches a file that runs code on the host (${host.join(", ")}): requires CEO review`, host };
@@ -62,9 +63,20 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence, counts };
 }
 
+const runsOnHost = (f: string, install: boolean) => RUNS_ON_HOST.test(f) || (install && /(^|\/)(package-lock|npm-shrinkwrap)\.json$/i.test(f));
+
+export const secretPaths = (files: string[]) => files.filter((f) => SECRET.test(f));
+
+// `orch adopt`: the CEO's own changes (tree) against the base. Protected and host files of exactly this content are approved up front,
+// so a later edit by the dev asks again.
+export function adoptKeys(wt: string, base: string, tree: string, install: boolean): string[] {
+  const files = safeGit(wt, "-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", base, tree).split("\0").filter(Boolean);
+  return files.filter((f) => PROTECTED.test(f) || runsOnHost(f, install)).map((f) => `${f}@${blobAt(wt, f, tree)}`);
+}
+
 // Agent-chosen names: literal pathspecs and an exact path match, or the gate fails closed.
-function blobAt(wt: string, f: string): string {
-  const out = safeGit(wt, "--literal-pathspecs", "ls-tree", "-z", "HEAD", "--", f);
+function blobAt(wt: string, f: string, rev = "HEAD"): string {
+  const out = safeGit(wt, "--literal-pathspecs", "ls-tree", "-z", rev, "--", f);
   if (!out) return "deleted";
   const [meta, path] = out.split("\0")[0].split("\t");
   if (path !== f) throw new Error(`ls-tree resolved ${f} to ${path}`);
