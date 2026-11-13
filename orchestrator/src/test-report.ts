@@ -33,13 +33,22 @@ export function parseCounts(out: string): Counts | null {
 // at the base commit (a ticket cannot edit it) and RepoConfig only accepts a plain command with no shell operators.
 // Also run on the untouched base before any agent runs: a red base would fail every ticket's verification.
 // There, `noTestsOk` accepts a suite with no tests yet (pytest exits 5), which is not a red base.
-export const testFailure = (wt: string, test = DEFAULT_TEST, noTestsOk = false) => runTests(wt, test, noTestsOk).failure;
+export const testFailure = (wt: string, test: Test = DEFAULT_TEST, noTestsOk = false) => runTests(wt, test, noTestsOk).failure;
 
-export function runTests(wt: string, test = DEFAULT_TEST, noTestsOk = false): { failure: string; counts: Counts | null } {
-  const r = spawnSync(test, { cwd: wt, env: minimalEnv("dev"), shell: true, encoding: "utf8", timeout: NODE_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
-  const counts = parseCounts(`${r.stdout ?? ""}\n${r.stderr ?? ""}`);
-  if (r.status === 0 || (noTestsOk && /\bpytest\b/.test(test) && r.status === 5)) return { failure: "", counts };
-  return { failure: `${test} failed: ${r.error ? `${r.error.message} ` : ""}${String(r.stdout || r.stderr || "").slice(-400)}`, counts };
+// `test` is one command or a list that must all pass (a matrix); an older ticket state may still hold a single string.
+export type Test = string | string[];
+export const commands = (test: Test) => [test].flat();
+
+// Commands run in order and stop at the first failure; the counts of the commands that ran add up.
+export function runTests(wt: string, test: Test = DEFAULT_TEST, noTestsOk = false): { failure: string; counts: Counts | null } {
+  let out = "";
+  for (const cmd of commands(test)) {
+    const r = spawnSync(cmd, { cwd: wt, env: minimalEnv("dev"), shell: true, encoding: "utf8", timeout: NODE_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
+    out += `${r.stdout ?? ""}\n${r.stderr ?? ""}\n`;
+    if (r.status === 0 || (noTestsOk && /\bpytest\b/.test(cmd) && r.status === 5)) continue;
+    return { failure: `${cmd} failed: ${r.error ? `${r.error.message} ` : ""}${String(r.stdout || r.stderr || "").slice(-400)}`, counts: parseCounts(out) };
+  }
+  return { failure: "", counts: parseCounts(out) };
 }
 
 const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*|[^/]*_test)\.py$/i;

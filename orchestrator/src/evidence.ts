@@ -5,7 +5,7 @@ import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
 import { safeGit } from "./git-safe.ts";
 import { MAX_FILE_LINES, MAX_LINE_COLS, modularityViolations } from "./modularity.ts";
 import { DEFAULT_TEST } from "./permissions.ts";
-import { addedSkips, type Counts, runTests } from "./test-report.ts";
+import { addedSkips, commands, type Counts, runTests, type Test } from "./test-report.ts";
 import type { T } from "./ticket.ts";
 
 // Paths no agent may change: secrets, CI and the orchestrator itself.
@@ -20,7 +20,7 @@ const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc|conftest\.py|setup\.py|setup\
 
 type Verdict = { ok: true; author: string; sha: string; evidence: string[]; counts: Counts | null } | { ok: false; reason: string; host?: string[] };
 
-export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, install = false, hostApproved: string[] = []): Verdict {
+export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TEST, install = false, hostApproved: string[] = []): Verdict {
   const git = (...a: string[]) => safeGit(wt, ...a);
   const sha = git("rev-parse", "HEAD");
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, reason: "no new commit in the worktree" };
@@ -58,7 +58,7 @@ export function verifyEvidence(wt: string, base: string, test = DEFAULT_TEST, in
   if (git("rev-parse", "HEAD") !== sha) return { ok: false, reason: "HEAD changed during verification" };
   if (git("status", "--porcelain", "--untracked-files=all").length) return { ok: false, reason: "worktree changed during verification" };
   const tally = counts ? ` (pass ${counts.pass}, skip ${counts.skip}, fail ${counts.fail})` : "";
-  const evidence = [`commit:${git("rev-parse", "--short", sha)}`, `tests:${test} ok${tally}`];
+  const evidence = [`commit:${git("rev-parse", "--short", sha)}`, `tests:${commands(test).join(" + ")} ok${tally}`];
   return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence, counts };
 }
 

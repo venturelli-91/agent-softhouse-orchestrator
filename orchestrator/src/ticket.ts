@@ -41,7 +41,7 @@ export const Ticket = z.object({
   base: z.string(),
   repo: z.string().default(""),
   git_config_hash: z.string().default(""),
-  test: z.string().default("npm test"),
+  test: z.union([z.string(), z.array(z.string())]).default("npm test"),
   install: z.boolean().default(false),
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.string().default(""),

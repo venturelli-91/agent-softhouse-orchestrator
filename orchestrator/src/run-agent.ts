@@ -22,7 +22,7 @@ export type Req<T> = {
   context: string;
   schema: z.ZodType<T>;
   cwd: string;
-  test?: string; // the repo's test command, only used to build the dev's allowlist
+  test?: string | string[]; // the repo's test command(s), only used to build the dev's allowlist
 };
 export type Result<T> = { output: T; usage: Usage };
 export interface Executor {

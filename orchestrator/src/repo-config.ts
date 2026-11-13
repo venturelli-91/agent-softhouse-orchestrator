@@ -38,9 +38,10 @@ export type WebcheckConfig = z.infer<typeof WebcheckConfig>;
 
 // Per-repo settings: defaults < `repos[<abs path>]` in ~/.orchestrator/config.json < `.orchestrator.json` at the base
 // commit. The in-repo file is read from the base commit, never from the worktree: a ticket cannot rewrite its own rules.
+const command = z.string().regex(/^[\w ./:=@-]+$/, "test must be a plain command without shell operators");
 export const RepoConfig = z.object({
-  // Plain command (no ;, &&, pipes, quotes or expansions): it runs on the host and goes into the dev's allowlist.
-  test: z.string().regex(/^[\w ./:=@-]+$/, "test must be a plain command without shell operators").default("npm test"),
+  // Plain command (no ;, &&, pipes, quotes or expansions): it runs on the host and goes into the dev's allowlist. A list runs every command.
+  test: z.union([command, z.array(command).min(1)]).default("npm test"),
   // "auto" squash-merges after the CEO approves and the CI checks are green; "pr" leaves the PR to the CEO; "local" merges in the local clone.
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.enum(["github", "none"]).optional(),
