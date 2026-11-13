@@ -11,23 +11,42 @@ test("parseCounts reads node --test, pytest and jest summaries and adds up sever
   assert.equal(parseCounts("all good\n"), null);
 });
 
+const hunk = (...added: string[]) => [`@@ -0,0 +1,${added.length} @@`, ...added.map((l) => `+${l}`)];
+
 test("addedSkips flags unconditional skips added to test files only", () => {
   const diff = [
+    "diff --git a/test/cart.test.js b/test/cart.test.js",
+    "--- a/test/cart.test.js",
     "+++ b/test/cart.test.js",
-    "+test.skip(\"total\", () => {});",
-    "+test(\"tax\", { skip: process.platform === \"win32\" }, () => {});",
-    "+  it.todo(\"later\");",
+    ...hunk('test.skip("total", () => {});', 'test("tax", { skip: process.platform === "win32" }, () => {});', '  it.todo("later");'),
+    "diff --git a/tests/test_cart.py b/tests/test_cart.py",
+    "--- a/tests/test_cart.py",
     "+++ b/tests/test_cart.py",
-    "+@pytest.mark.skip(reason=\"flaky\")",
-    "+@pytest.mark.skipif(sys.platform == \"win32\", reason=\"posix\")",
+    ...hunk('@pytest.mark.skip(reason="flaky")', '@pytest.mark.skipif(sys.platform == "win32", reason="posix")'),
+    "diff --git a/src/cart.js b/src/cart.js",
+    "--- a/src/cart.js",
     "+++ b/src/cart.js",
-    "+const opts = { skip: true };",
+    ...hunk("const opts = { skip: true };"),
   ].join("\n");
   assert.deepEqual(addedSkips(diff), [
-    "test/cart.test.js: test.skip(\"total\", () => {});",
-    "test/cart.test.js: it.todo(\"later\");",
-    "tests/test_cart.py: @pytest.mark.skip(reason=\"flaky\")",
+    'test/cart.test.js: test.skip("total", () => {});',
+    'test/cart.test.js: it.todo("later");',
+    'tests/test_cart.py: @pytest.mark.skip(reason="flaky")',
   ]);
+});
+
+test("an added line that looks like a file header does not hide a skip, and a quoted path is checked as a test file", () => {
+  const fake = [
+    "diff --git a/test/cart.test.js b/test/cart.test.js",
+    "--- a/test/cart.test.js",
+    "+++ b/test/cart.test.js",
+    ...hunk("++ b/README.md", 'test.skip("total", () => {});'),
+    "@@ -3 +4,0 @@",
+    "-test.skip(\"old\", () => {});",
+  ].join("\n");
+  assert.deepEqual(addedSkips(fake), ['test/cart.test.js: test.skip("total", () => {});']);
+  const quoted = ['diff --git "a/x\\ty" "b/x\\ty"', '--- "a/x\\ty"', '+++ "b/x\\ty"', ...hunk('test.skip("total", () => {});')].join("\n");
+  assert.equal(addedSkips(quoted).length, 1);
 });
 
 test("skipAlerts warns only when more tests are skipped than at the base", () => {

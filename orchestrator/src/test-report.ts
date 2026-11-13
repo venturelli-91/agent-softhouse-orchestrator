@@ -59,12 +59,28 @@ const SKIP = new RegExp(
 );
 
 // Lines a ticket's diff (-U0) adds to test files that skip a test: `file: line`.
+// Hunk bodies are consumed by the counts in their `@@` header, so an added line that looks like a `+++ b/x` header cannot move the
+// current file; a quoted (unparseable) path is checked as if it were a test file.
 export function addedSkips(diff: string): string[] {
   let file = "";
+  let quoted = false;
+  let del = 0;
+  let add = 0;
   const out: string[] = [];
   for (const l of diff.split("\n")) {
-    if (l.startsWith("+++ ")) file = l.slice(4).replace(/^b\//, "").replace(/\t$/, "");
-    else if (l.startsWith("+") && TEST_FILE.test(file) && SKIP.test(l)) out.push(`${file}: ${l.slice(1).trim().slice(0, 80)}`);
+    if (del > 0 && l.startsWith("-")) del--;
+    else if (add > 0 && l.startsWith("+")) {
+      add--;
+      if ((quoted || TEST_FILE.test(file)) && SKIP.test(l)) out.push(`${file}: ${l.slice(1).trim().slice(0, 80)}`);
+    } else if ((del === 0 && add === 0) || l.startsWith("@@")) {
+      const h = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(l);
+      if (h) [del, add] = [h[1] === undefined ? 1 : Number(h[1]), h[2] === undefined ? 1 : Number(h[2])];
+      else if (l.startsWith("+++ ")) {
+        file = l.slice(4).replace(/\t$/, "");
+        quoted = file.startsWith('"');
+        file = file.replace(/^b\//, "");
+      }
+    }
   }
   return out;
 }
