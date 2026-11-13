@@ -220,3 +220,23 @@ test("orch manual creates a ticket no agent runs; orch evidence rejects bad evid
     sb.done();
   }
 });
+
+test("orch backlog lists the open caveats numbered and orch backlog review marks them", () => {
+  const sb = sandbox();
+  try {
+    assert.match(sb.orch("backlog").out, /no open backlog items/);
+    const home = join(sb.repo, "..", "home");
+    mkdirSync(home, { recursive: true });
+    const line = (ticket: string, caveat: string) => `${JSON.stringify({ ticket, from: "reviewer", caveat, time: "2026-01-01T00:00:00Z", status: "open" })}\n`;
+    writeFileSync(join(home, "backlog.jsonl"), line("T-1", "name the magic number") + line("T-2", "extract the helper"));
+    assert.match(sb.orch("backlog").out, /^ {2}1 open\s+T-1\s+reviewer\s+name the magic number\n {2}2 open\s+T-2/);
+    assert.match(sb.orch("backlog", "review", "3").out, /no backlog item 3/);
+    assert.match(sb.orch("backlog", "review", "1").out, /reviewed: T-1 \(reviewer\) name the magic number/);
+    const open = sb.orch("backlog").out;
+    assert.doesNotMatch(open, /T-1/);
+    assert.match(open, /^ {2}2 open\s+T-2/);
+    assert.match(sb.orch("backlog", "--all").out, /1 reviewed T-1/);
+  } finally {
+    sb.done();
+  }
+});

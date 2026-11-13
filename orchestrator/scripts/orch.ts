@@ -14,6 +14,7 @@
 //                               (data no agent may see); no agent and no graph
 //   orch evidence <id> <files...> --exit <code>   attach the output of a manual ticket: exit code 0, expected files present, non-empty,
 //                               valid JSON; only metadata (size, sha256) goes into its history, and a pass closes it
+//   orch backlog [--all] | orch backlog review <n...>   the reviewers' caveats: list the open ones (numbered), mark them reviewed
 //   orch status [id]            all tickets, or one with its pending question
 //   orch approve <id> [text]    approve; for an escalation, text is the answer (e.g. retry, a clarification)
 //   orch reject <id> [reason]   close the ticket, whatever it is waiting for (the reason goes into its history)
@@ -32,6 +33,7 @@ import { join, resolve } from "node:path";
 import { adopt, approve, reject, requestChanges, resumeRun, run } from "./orch/flow.ts";
 import { clean, init, setup, status, team } from "./orch/admin.ts";
 import { type Ctx, die, makeCtx } from "./orch/ctx.ts";
+import { backlog } from "./orch/backlog.ts";
 import { evidence, manual } from "./orch/manual.ts";
 import { chaos, resolveByHand, rollback, watchDeployed } from "./orch/ops.ts";
 
@@ -41,7 +43,7 @@ process.env.AGENTS_DIR = resolve(ROOT, process.env.AGENTS_DIR ?? "agents");
 
 const commands: Record<string, (c: Ctx) => void | Promise<void>> = {
   init, setup, team, run, adopt, status, continue: resumeRun, approve, reject, "request-changes": requestChanges, clean,
-  watch: watchDeployed, resolve: resolveByHand, chaos, rollback, manual, evidence,
+  watch: watchDeployed, resolve: resolveByHand, chaos, rollback, manual, evidence, backlog,
 };
 
 const ctx = makeCtx(process.argv.slice(2), resolve(ROOT, ".."));
@@ -49,5 +51,5 @@ const command = ctx.cmd !== undefined && Object.hasOwn(commands, ctx.cmd) ? comm
 if (command) await command(ctx);
 else {
   die("usage: orch init | setup | team | run | adopt | status | continue | approve | reject | request-changes | clean | watch | chaos | rollback"
-    + " | resolve | manual | evidence");
+    + " | resolve | manual | evidence | backlog");
 }
