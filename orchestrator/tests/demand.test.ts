@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BacklogItem } from "../src/backlog.ts";
-import { addTask, answer, ask, closeDemand, closingChecklist, createDemand, readDemand, type TaskState, waitingDays } from "../src/demand.ts";
+import { addTask, answer, ask, closeDemand, closingChecklist, coherence, createDemand, readDemand, type TaskState, waitingDays } from "../src/demand.ts";
 
 const caveat = (ticket: string, status: BacklogItem["status"]): BacklogItem => ({ ticket, from: "reviewer", caveat: "x", time: "", status });
 
@@ -65,4 +65,30 @@ test("closingChecklist blocks on undecided tasks, open questions, open caveats, 
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test("coherence flags a pending item of a delivered task and a test count that is not the last run's", () => {
+  const code = (id: string, status: string, pass: number, skip = 0) => ({ id, kind: "code" as const, status, evidence: true, tests: { pass, skip, fail: 0 } });
+  const tasks: TaskState[] = [code("T-1", "merged", 5), code("T-10", "approval", 1), code("T-2", "merged", 7, 2)];
+  const docs = { "README.md": "- [ ] T-1 export\n* pending: T-10 later\n- [x] T-2 done\nHas 8 tests.\n", "docs/t.md": "9 tests and 2 testes\n" };
+  const bad = coherence(docs, tasks);
+  assert.equal(bad.ok, false);
+  assert.deepEqual(bad.detail.split("; "), [
+    'README.md: "- [ ] T-1 export" is pending but T-1 is delivered',
+    "README.md: says 8 tests, the last run had 9",
+  ]);
+  const good = coherence({ "README.md": "- [ ] T-10 later\n- [x] T-1 export\n9 tests, 7 tests before\n", "n.md": "no counts here" }, tasks);
+  assert.equal(good.ok, true, good.detail);
+  assert.equal(coherence({ "a.md": "- todo-list T-1 shipped\n- [ ] T-10 later" }, tasks).ok, true);
+  assert.equal(coherence({ "a.md": "9 tests" }, [...tasks, code("T-3", "aborted", 1)]).ok, true, "a task that was not delivered is not the last run");
+  assert.equal(coherence({ "a.md": "- [ ] T-1\u001b[2J gone" }, tasks).detail, 'a.md: "- [ ] T-1 [2J gone" is pending but T-1 is delivered');
+  assert.equal(coherence({ "a.md": "3 tests" },[{ id: "M-1", kind: "manual", status: "closed", evidence: true }]).ok, true);
+});
+
+test("coherence reads numbered pending items, an id followed by a period, and a pass count as the claim", () => {
+  const tasks: TaskState[] = [{ id: "T-1", kind: "code", status: "merged", evidence: true, tests: { pass: 140, skip: 10, fail: 0 } }];
+  assert.equal(coherence({ "a.md": "1. [ ] finish T-1." }, tasks).ok, false);
+  assert.equal(coherence({ "a.md": "- [ ] T-1.2 later" }, tasks).ok, true);
+  assert.equal(coherence({ "a.md": "140 tests pass, 10 skipped" }, tasks).ok, true);
+  assert.equal(coherence({ "a.md": "139 tests" }, tasks).ok, false);
 });

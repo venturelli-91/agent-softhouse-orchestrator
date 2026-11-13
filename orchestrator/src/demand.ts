@@ -3,7 +3,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BacklogItem } from "./backlog.ts";
-import { checkId } from "./ticket-store.ts";
+import type { Counts } from "./test-report.ts";
+import { checkId, stripControl } from "./ticket-store.ts";
 
 export type Decision = { question: string; owner: string; task?: string; asked: string; answer?: string; answered?: string };
 export type Demand = {
@@ -16,7 +17,7 @@ export type Demand = {
   history: { time: string; result: string }[];
 };
 // What the checklist needs from a task, gathered by the caller from the ticket stores; null = the ticket no longer exists.
-export type TaskState = { id: string; kind: "code" | "manual"; status: string; evidence: boolean } | { id: string; kind: null };
+export type TaskState = { id: string; kind: "code" | "manual"; status: string; evidence: boolean; tests?: Counts | null } | { id: string; kind: null };
 
 const dir = (home: string) => join(home, "demands");
 
@@ -84,20 +85,42 @@ const DELIVERED = { code: ["simulated_deploy", "deployed", "merged"], manual: ["
 
 export type Check = { item: string; ok: boolean; detail: string };
 
-export function closingChecklist(d: Demand, tasks: TaskState[], backlog: BacklogItem[], dirty: string): Check[] {
+const delivered = (t: TaskState) => t.kind !== null && DELIVERED[t.kind].includes(t.status);
+const check = (item: string, failures: string[], ok = ""): Check => ({ item, ok: !failures.length, detail: failures.length ? failures.join("; ") : ok });
+const PENDING = /^\s*([-*]|\d+\.)\s+(\[ \]|(pending|todo)\b(?!-))/i;
+const mentions = (line: string, id: string) => new RegExp(`(?<![\\w.-])${id.replaceAll(".", "\\.")}(?![\\w-]|\\.\\w)`).test(line);
+
+// The repo's project docs against what the demand delivered: a pending item whose task is delivered, and test counts none of which is the
+// total of the last run (the last code task with counts, in the order the tasks were attached). Docs with no count claim are not judged.
+export function coherence(docs: Record<string, string>, tasks: TaskState[]): Check {
+  const done = tasks.filter(delivered).map((t) => t.id);
+  const last = tasks.filter(delivered).flatMap((t) => (t.kind && t.tests ? [t.tests] : [])).at(-1);
+  const total = last && last.pass + last.skip + last.fail;
+  const problems = Object.entries(docs).flatMap(([file, text]) => {
+    const pending = text.split(/\r?\n/).filter((l) => PENDING.test(l));
+    const stale = pending.flatMap((l) =>
+      done.filter((id) => mentions(l, id)).map((id) => `${file}: "${stripControl(l).slice(0, 60)}" is pending but ${id} is delivered`));
+    const claimed = [...text.matchAll(/\b(\d+)\s+(?:tests?|testes)\b/gi)].map((m) => Number(m[1]));
+    const off = total !== undefined && claimed.length && !claimed.some((n) => n === total || n === last?.pass);
+    const wrong = off ? [`${file}: says ${claimed.join("/")} tests, the last run had ${total}`] : [];
+    return [...stale, ...wrong];
+  });
+  return check("project docs match the delivery", problems, `${Object.keys(docs).length} doc(s)`);
+}
+
+export function closingChecklist(d: Demand, tasks: TaskState[], backlog: BacklogItem[], dirty: string, docs: Record<string, string> = {}): Check[] {
   const decided = new Set(d.decisions.filter((q) => q.answered && q.task).map((q) => q.task));
-  const delivered = (t: TaskState) => t.kind !== null && DELIVERED[t.kind].includes(t.status);
   const undecided = tasks.filter((t) => !delivered(t) && !decided.has(t.id)).map((t) => `${t.id} ${t.kind ? t.status : "missing"}`);
   const open = pending(d).map((q) => `#${q.n} (${q.owner})`);
   const caveats = backlog.filter((i) => i.status === "open" && d.tasks.includes(i.ticket)).map((i) => `${i.ticket}: ${i.caveat}`);
   const noEvidence = tasks.filter((t) => delivered(t) && !decided.has(t.id) && !(t.kind && t.evidence)).map((t) => t.id);
-  const check = (item: string, failures: string[], ok = "") => ({ item, ok: !failures.length, detail: failures.length ? failures.join("; ") : ok });
   return [
     check("tasks closed or decided", tasks.length ? undecided : ["the demand has no tasks"], `${tasks.length} task(s)`),
     check("decisions answered", open),
     check("backlog reviewed (orch backlog)", caveats),
     check("tree clean", dirty ? [`${d.repo} has uncommitted changes`] : []),
     check("evidence present", noEvidence),
+    ...(Object.keys(docs).length ? [coherence(docs, tasks)] : []),
   ];
 }
 
