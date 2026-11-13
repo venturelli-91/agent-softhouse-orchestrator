@@ -9,6 +9,7 @@ import { FileSaver } from "../src/file-saver.ts";
 import { createWorktree, buildGraph, resume } from "../src/graph.ts";
 import { registerPublisher } from "../src/publish.ts";
 import { type Req } from "../src/run-agent.ts";
+import { alerts } from "../src/watchdog.ts";
 import { roots, BRIEF, FLAGS, commit, defaults, start, paused, answer, ambiguous, approved, knobs } from "./helpers/graph-harness.ts";
 
 test("deploy only happens after CEO approval; rejection goes back to the dev", async () => {
@@ -161,4 +162,35 @@ test("a failing publisher escalates to the CEO", async () => {
   const g = await start();
   assert.equal(paused(g.r)?.type, "escalation");
   assert.match(String(paused(g.r)?.reason), /push refused/);
+});
+
+const withTest = (extra: string) => [
+  'import { test } from "node:test";', 'import assert from "node:assert";', 'import { readFileSync } from "node:fs";',
+  'test("checkout button", () => assert.match(readFileSync("checkout.html", "utf8"), />Submit order</));', extra, "",
+].join("\n");
+
+test("a ticket that skips a test fails verification and goes back to the dev", async () => {
+  knobs.override.dev = (req) => (
+    commit(req.cwd, "agent-dev", "test/checkout.test.js", withTest('test.skip("total", () => {});')),
+    commit(req.cwd, "agent-dev"),
+    { summary: "ok", brief: BRIEF }
+  );
+  const g = await start();
+  const p = paused(g.r);
+  assert.equal(p?.type, "escalation");
+  assert.match(String(p?.last_node), /same verification failure twice.*skips tests.*test\/checkout\.test\.js: test\.skip/);
+});
+
+test("more skipped tests than the base is a warning in the evidence, the approval and the watchdog", async () => {
+  knobs.override.dev = (req) => (
+    commit(req.cwd, "agent-dev", "test/checkout.test.js", withTest('test("tax", { skip: process.env.NEVER === undefined }, () => {});')),
+    commit(req.cwd, "agent-dev"),
+    { summary: "ok", brief: BRIEF }
+  );
+  const g = await start("T-1", undefined, { test_base: { pass: 1, skip: 0, fail: 0 } });
+  const p = paused(g.r);
+  assert.equal(p?.type, "approval");
+  assert.deepEqual(p?.test_alerts, ["1 tests skipped, the base had 0"]);
+  assert.ok((p?.evidence as string[]).some((e) => /^tests:.* ok \(pass 1, skip 1, fail 0\)$/.test(e)));
+  assert.ok(alerts([g.r as never]).includes("T-1 1 tests skipped, the base had 0"));
 });

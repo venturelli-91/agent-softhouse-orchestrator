@@ -110,6 +110,7 @@ export function report(t: T): string {
   return [
     ...lines,
     ...t.docs_warnings.map((w) => `docs warning: ${w}`),
+    ...t.test_alerts.map((w) => `test warning: ${w}`),
     `TOTAL ${t.id} status=${t.status} revisions=${t.revisions} tokens=${total.tok} ${(total.ms / 1000).toFixed(1)}s US$${total.usd.toFixed(3)}`,
   ].join("\n");
 }

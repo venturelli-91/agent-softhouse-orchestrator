@@ -39,6 +39,7 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
     brief: t.brief,
     evidence: t.evidence,
     ...(t.status === "host_review" ? { host_diff: hostDiff(t) } : {}),
+    ...(t.test_alerts.length ? { test_alerts: t.test_alerts } : {}),
     deploy: {
       target: t.deploy_target,
       environment: t.deploy_cfg?.environment ?? "simulated",

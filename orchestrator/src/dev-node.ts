@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_FILE_LINES, MAX_LINE_COLS, verifyTicket } from "./guardrails.ts";
+import { skipAlerts } from "./test-report.ts";
 import { context, escalate, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
 import { runAgent } from "./run-agent.ts";
 import { Brief, cap, DEV_FILE, summary, type T } from "./ticket.ts";
@@ -145,6 +146,7 @@ export const dev = guarded("dev", async (t) => {
     summary: cap(output.summary),
     author_id: v.author,
     evidence: v.evidence,
+    test_alerts: skipAlerts(t.test_base, v.counts),
     history: log(t, "dev", "commit verified", usage),
   };
 });

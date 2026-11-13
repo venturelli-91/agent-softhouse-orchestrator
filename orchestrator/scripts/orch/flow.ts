@@ -4,7 +4,7 @@ import { workRoot } from "../../src/daily-cap.ts";
 import { behindBy } from "../../src/git-remote.ts";
 import { isBareApproval } from "../../src/ceo-node.ts";
 import { createWorktree, resume } from "../../src/graph.ts";
-import { safeGit, testFailure } from "../../src/guardrails.ts";
+import { runTests, safeGit } from "../../src/guardrails.ts";
 import { type Ctx, die } from "./ctx.ts";
 
 export async function run(c: Ctx) {
@@ -17,13 +17,13 @@ export async function run(c: Ctx) {
     const behind = behindBy(repo);
     if (behind) console.warn(`warning: ${repo} is ${behind} commit(s) behind its upstream; the ticket will branch from a stale base`);
     const wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), c.home);
-    const red = testFailure(wt.worktree, wt.test, true);
+    const { failure: red, counts: test_base } = runTests(wt.worktree, wt.test, true);
     if (red) {
       safeGit(repo, "worktree", "remove", "--force", wt.worktree);
       safeGit(repo, "branch", "-D", `ticket/${id}`);
       die(`base is red before any agent ran (no tokens spent); fix it first: ${red}`);
     }
-    await c.drive(id, { id, request, ...wt });
+    await c.drive(id, { id, request, ...wt, test_base });
   });
 }
 

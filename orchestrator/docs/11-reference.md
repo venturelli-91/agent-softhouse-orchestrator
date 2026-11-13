@@ -50,7 +50,7 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 
 | Key | Meaning |
 |---|---|
-| `test` | Plain test command, no glob (default `npm test`; e.g. `pytest -q`). A bare `node --test` also runs `orchestrator/tests` in every worktree and fails: point it at a scoped npm script (e.g. `npm run test:app`). |
+| `test` | Plain test command, no glob (default `npm test`; e.g. `pytest -q`). A bare `node --test` also runs `orchestrator/tests` in every worktree and fails: point it at a scoped npm script (e.g. `npm run test:app`). Its summary (node --test, pytest or jest) becomes the pass/skip/fail counts in the `tests:` evidence. |
 | `merge` | `pr` (default: the PR is left to you); `auto` (squash-merge after approval, only with green, stable CI on the exact approved commit; never `--admin`; a failed merge escalates, answer `retry` after fixing CI); `local` (solo repos: main fast-forwards to the approved commit; refuses with uncommitted changes or another branch checked out. If main moved, the ticket is rebased onto it and the suite runs again: merged without asking when main touched none of the ticket's files, a new approval when it did, back to the dev when the suite breaks, an escalation with the files on a conflict). |
 | `publisher` | `github` or `none`. |
 | `push_remote` | Default `origin`. |
