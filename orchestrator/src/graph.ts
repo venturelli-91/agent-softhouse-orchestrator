@@ -4,6 +4,7 @@ import { ceoApproval } from "./ceo-node.ts";
 import { dev, DEV_RULES, devRules, partialWork, taskBlock } from "./dev-node.ts";
 import { docsNode } from "./docs-node.ts";
 import { sh } from "./graph-kit.ts";
+import { projectDocsNode } from "./project-docs.ts";
 import { planner, SPLIT_RULE, triage } from "./plan-nodes.ts";
 import { loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { DIFF_LIMIT, design, evidenceNote, qa, reviewer } from "./review-nodes.ts";
@@ -17,12 +18,14 @@ export { Brief, briefMarkdown, Ticket, DEV_RULES, devRules, partialWork, taskBlo
 const route = (ok: string, node: string) => (t: T) =>
   t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "docs_mid";
 const afterReview = (t: T) => (t.status === "design" ? "design" : route("qa", "qa")(t));
-const afterTriage = (t: T) => (t.status === "dev" ? "dev" : t.status === "ambiguous" ? "planner" : "docs_mid");
+// Adopted changes are already written: an ambiguous triage has nothing left to plan.
+const afterTriage = (t: T) => (t.status === "dev" || (t.adopt_tree && t.status === "ambiguous") ? "dev" : t.status === "ambiguous" ? "planner" : "docs_mid");
 // docs_mid changes no status: a passed QA goes on to publish, anything else is an escalation.
 const afterMid = (t: T) => (t.status === "publish" ? "publish" : "ceo_approval");
 
+const toDev = ["dev_failed", "reverify"];
 const afterCeo = (t: T) =>
-  t.status === "retry" ? t.failed_node : t.status === "dev_failed" ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END;
+  t.status === "retry" ? t.failed_node : toDev.includes(t.status) ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END;
 // A rebase that broke the suite goes back to the dev; a conflict, a new approval or anything else goes to the CEO.
 const afterMerge = (t: T) => (t.status === "approved" ? "deploy" : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval");
 
@@ -42,11 +45,13 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addNode("docs_start", docsNode("start"))
     .addNode("docs_mid", docsNode("mid"))
     .addNode("docs_end", docsNode("end"))
+    .addNode("docs_pre", projectDocsNode)
     .addEdge(START, "docs_start")
     .addEdge("docs_start", "triage")
     .addConditionalEdges("triage", afterTriage, ["dev", "planner", "docs_mid"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "docs_mid"])
-    .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "reviewer")(t)), ["reviewer", "dev", "docs_mid"])
+    .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "docs_pre")(t)), ["docs_pre", "dev", "docs_mid"])
+    .addEdge("docs_pre", "reviewer")
     .addConditionalEdges("reviewer", afterReview, ["design", "qa", "dev", "docs_mid"])
     .addConditionalEdges("design", route("qa", "qa"), ["qa", "dev", "docs_mid"])
     .addConditionalEdges("qa", route("webcheck", "webcheck"), ["webcheck", "dev", "docs_mid"])
@@ -68,7 +73,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties, stack, webcheck } = loadRepoConfig(repo, base, home);
+  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties, stack, webcheck, project_docs } = loadRepoConfig(repo, base, home);
   if (install) installDeps(dir);
   return {
     worktree: dir,
@@ -87,6 +92,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
     deploy_cfg: deploy,
     webcheck_cfg: webcheck,
     specialties,
+    project_docs,
     ...(deploy ? { deploy_target: "command" } : {}),
   };
 }
@@ -109,6 +115,7 @@ export function report(t: T): string {
   return [
     ...lines,
     ...t.docs_warnings.map((w) => `docs warning: ${w}`),
+    ...t.test_alerts.map((w) => `test warning: ${w}`),
     `TOTAL ${t.id} status=${t.status} revisions=${t.revisions} tokens=${total.tok} ${(total.ms / 1000).toFixed(1)}s US$${total.usd.toFixed(3)}`,
   ].join("\n");
 }

@@ -14,11 +14,14 @@ import { log } from "../../src/graph-kit.ts";
 import { landedOn } from "../../src/local-merge.ts";
 import { assertGitConfigUnchanged, repoOf, safeGit } from "../../src/guardrails.ts";
 import { listIncidents } from "../../src/incidents.ts";
+import { isManual, manualIds, readManual } from "../../src/manual.ts";
 import { recordMetrics } from "../../src/metrics.ts";
 import { bareNodeTest } from "../../src/repo-config.ts";
 import { TEAMS } from "../../src/specialties.ts";
 import { runningPid, ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
+import { demandLines, showDemand } from "./demand.ts";
+import { isDemand } from "../../src/demand.ts";
 
 const DONE = ["simulated_deploy", "deployed", "aborted", "closed", "merged"];
 
@@ -89,7 +92,16 @@ export async function team(c: Ctx) {
 }
 
 export async function status(c: Ctx) {
-  const ids = c.positionals[0] ? [c.positionals[0]] : ticketIds(c.home);
+  const one = c.positionals[0];
+  if (one && isManual(c.home, one)) {
+    const m = readManual(c.home, one);
+    console.log(`${m.id.padEnd(12)} ${m.status.padEnd(16)} manual ${m.title}\ncommand: ${m.command}\ncriteria:`);
+    for (const s of m.criteria) console.log(`  - ${s}`);
+    for (const h of m.history) console.log(`${h.time} ${h.result}`);
+    return;
+  }
+  if (one && isDemand(c.home, one)) return showDemand(c, one);
+  const ids = one ? [one] : ticketIds(c.home);
   for (const id of ids) {
     let { ticket: t, pending } = await c.load(id);
     // An aborted ticket whose commits reached the base branch by another path (a hand cherry-pick) is merged, not lost.
@@ -106,8 +118,15 @@ export async function status(c: Ctx) {
       if (pending) console.log(JSON.stringify(pending, null, 1));
     }
   }
-  if (!ids.length) console.log("no tickets");
-  if (!c.positionals[0]) {
+  const manuals = one ? [] : manualIds(c.home).map((id) => readManual(c.home, id));
+  for (const m of manuals) {
+    const waiting = m.status === "open" ? `  <- waiting: orch evidence ${m.id}` : "";
+    console.log(`${m.id.padEnd(12)} ${m.status.padEnd(16)} manual ${m.title}${waiting}`);
+  }
+  const demands = one ? [] : demandLines(c.home);
+  for (const l of demands) console.log(l);
+  if (!ids.length && !manuals.length && !demands.length) console.log("no tickets");
+  if (!one) {
     for (const i of listIncidents(c.home)) {
       console.log(`${i.id.padEnd(16)} ${i.status.padEnd(8)} ${i.ticket} hotfix=${i.hotfix || "-"} rollback=${i.rollback}  ${i.symptom}`);
     }

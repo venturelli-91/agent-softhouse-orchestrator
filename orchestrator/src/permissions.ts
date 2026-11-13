@@ -44,10 +44,11 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
   },
 };
 
-// `test` is the repo's own test command (from .orchestrator.json); the dev may run exactly that.
-export function permissionArgs(role: Role, test = DEFAULT_TEST): string[] {
+// `test` is the repo's own test command or commands (from .orchestrator.json); the dev may run exactly those.
+export function permissionArgs(role: Role, test: string | string[] = DEFAULT_TEST): string[] {
   const p = PERMISSIONS[role];
-  const allow = role === "dev" ? [...p.allow.filter((a) => a !== `${SHELL}(${DEFAULT_TEST}*)`), `${SHELL}(${test}*)`] : p.allow;
+  const own = [test].flat().map((c) => `${SHELL}(${c}*)`);
+  const allow = role === "dev" ? [...p.allow.filter((a) => a !== `${SHELL}(${DEFAULT_TEST}*)`), ...own] : p.allow;
   return [
     "--permission-mode", "dontAsk",
     "--tools", p.tools.join(","),

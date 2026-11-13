@@ -1,5 +1,8 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { interrupt } from "@langchain/langgraph";
-import { MAX_REVISIONS, safeGit, verifyEvidence } from "./guardrails.ts";
+import { orchHome } from "./daily-cap.ts";
+import { MAX_REVISIONS, safeGit, verifyTicket } from "./guardrails.ts";
 import { log } from "./graph-kit.ts";
 import type { T } from "./ticket.ts";
 
@@ -8,7 +11,7 @@ export const isBareApproval = (answer?: string) => answer === undefined || /^(ap
 
 // The only merge/deploy and escalation point. Approval only counts if the evidence still holds.
 export const ceoApproval = async (t: T): Promise<Partial<T>> => {
-  const v = t.status === "approval" && t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test, t.install) : null;
+  const v = t.status === "approval" && t.evidence.length ? verifyTicket(t) : null;
   const reason =
     t.status === "approval"
       ? v?.ok
@@ -20,10 +23,12 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
         ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}`
         : t.status === "no_change"
           ? `the dev found nothing to change: ${t.explanation}`
-          : `${t.status}: ${t.summary}`;
+          : t.status === "host_review"
+            ? `the diff changes files that run code on the host (${t.host_pending.join(", ")}): approve allows exactly these versions`
+            : `${t.status}: ${t.summary}`;
   const last = t.history.filter((h) => h.node !== "docs").at(-1);
   const r = interrupt({
-    type: t.status === "no_change" ? "no_change" : reason ? "escalation" : "approval",
+    type: ["no_change", "host_review"].includes(t.status) ? t.status : reason ? "escalation" : "approval",
     reason,
     ticket: t.id,
     title: t.title,
@@ -33,6 +38,8 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
     explanation: t.explanation,
     brief: t.brief,
     evidence: t.evidence,
+    ...(t.status === "host_review" ? { host_diff: hostDiff(t) } : {}),
+    ...(t.test_alerts.length ? { test_alerts: t.test_alerts } : {}),
     deploy: {
       target: t.deploy_target,
       environment: t.deploy_cfg?.environment ?? "simulated",
@@ -44,6 +51,13 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
   }) as string;
   const h = (res: string) => log(t, "ceo_approval", res);
   if (/^abort(:|$)/.test(r)) return { status: "aborted", history: h(r === "abort" ? "aborted" : `aborted (${r.slice(6, 300).trim()})`) };
+  if (t.status === "host_review" && r === "approve")
+    return {
+      status: "reverify",
+      host_approved: [...t.host_approved, ...t.host_pending],
+      host_pending: [],
+      history: h(`host files approved: ${t.host_pending.join(", ")}`),
+    };
   if (!reason) {
     if (r === "approve") return { status: "approved", history: h("approved") };
     const summary = `CEO rejected: ${r}`.slice(0, 500);
@@ -64,6 +78,18 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
   // Any other escalation: the CEO instructs the dev (only if criteria already exist).
   if (!t.criteria.length) return { status: "aborted", history: h("aborted") };
   return { status: "dev_failed", revisions: 0, summary: `CEO instructed: ${r}`.slice(0, 500), history: h("resumed") };
+};
+
+// What the CEO approves: the diff of each pending host file (path@blob), as text whatever .gitattributes says, never cut silently.
+const HOST_DIFF_CHARS = 20_000;
+const hostDiff = (t: T) => {
+  const paths = t.host_pending.map((k) => k.slice(0, k.lastIndexOf("@")));
+  const diff = safeGit(t.worktree, "--literal-pathspecs", "diff", "--text", "--no-color", "--no-ext-diff", "--no-textconv", t.base, "HEAD", "--", ...paths);
+  if (diff.length <= HOST_DIFF_CHARS) return diff;
+  // The full diff goes to a file of ours, never as a command to paste: a plain git diff would honour the repo's diff drivers.
+  const file = join(orchHome(), `host-diff-${t.id}.diff`);
+  writeFileSync(file, diff);
+  return `${diff.slice(0, HOST_DIFF_CHARS)}\n[TRUNCATED: the full diff is in ${file}]`;
 };
 
 const RETRYABLE = ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "publish", "deploy"];

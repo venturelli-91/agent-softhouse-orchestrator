@@ -23,10 +23,10 @@ function repo(config?: string) {
 test("the config comes from the base commit, with safe defaults", () => {
   const none = repo();
   assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "" });
+    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
   const some = repo('{"test":"pytest -q","merge":"auto"}');
   assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "" });
+    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
   // an uncommitted edit of the file does not count
   writeFileSync(join(some.d, ".orchestrator.json"), '{"test":"rm -rf x"}');
   assert.equal(loadRepoConfig(some.d, some.base).test, "pytest -q");
@@ -59,6 +59,25 @@ test("evidence runs the repo's own test command and reports it", () => {
   rmSync(d, { recursive: true, force: true });
 });
 
+test("a list of test commands must all pass: the first failing one is the reason", () => {
+  const { d, base } = repo(JSON.stringify({ test: ["node -e 0", "node missing.js"] }));
+  const cfg = loadRepoConfig(d, base);
+  assert.deepEqual(cfg.test, ["node -e 0", "node missing.js"]);
+  writeFileSync(join(d, "b.txt"), "b");
+  git(d, "add", "-A");
+  git(d, "commit", "-q", "-m", "change");
+  const bad = verifyEvidence(d, base, cfg.test);
+  assert.ok(!bad.ok && /^node missing.js failed/.test(bad.reason));
+  const ok = verifyEvidence(d, base, ["node -e 0", "node -e 0"]);
+  assert.ok(ok.ok && ok.evidence.includes("tests:node -e 0 + node -e 0 ok"));
+  for (const bad of [[], ["npm test", "pytest; id"]]) {
+    const r = repo(JSON.stringify({ test: bad }));
+    assert.throws(() => loadRepoConfig(r.d, r.base), /test/, JSON.stringify(bad));
+    rmSync(r.d, { recursive: true, force: true });
+  }
+  rmSync(d, { recursive: true, force: true });
+});
+
 test("a diff that touches python test config does not run on the host", () => {
   const { d, base } = repo();
   writeFileSync(join(d, "conftest.py"), "import os\n");
@@ -75,6 +94,8 @@ test("the dev's allowlist gets the repo's test command instead of npm test", () 
   const py = allow(permissionArgs("dev", "pytest -q"));
   assert.ok(py.includes(`${SHELL}(pytest -q*)`) && !py.includes(`${SHELL}(npm test*)`));
   assert.ok(!allow(permissionArgs("qa", "pytest -q")).some((t) => t.includes("pytest")));
+  const both = allow(permissionArgs("dev", ["npm test", "npm run lint"]));
+  assert.ok(both.includes(`${SHELL}(npm test*)`) && both.includes(`${SHELL}(npm run lint*)`));
 });
 
 function home(cfg: string) {
@@ -176,4 +197,15 @@ test("webcheck is validated and only accepted from the external config", () => {
   assert.throws(() => WebcheckConfig.parse({ serve: "npm start", base_url: "http://localhost:3000", gtm: ["nope"] }));
   assert.throws(() => WebcheckConfig.parse({ serve: "npm start", base_url: "http://localhost:3000", paths: ["//evil.com"] }));
   assert.equal(WebcheckConfig.parse({ serve: "npm start", base_url: "http://127.0.0.1:3000" }).paths[0], "/");
+});
+
+test("project_docs accepts relative .md paths only", () => {
+  const ok = repo('{"project_docs":["README.md","docs/CHANGELOG.md"]}');
+  assert.deepEqual(loadRepoConfig(ok.d, ok.base).project_docs, ["README.md", "docs/CHANGELOG.md"]);
+  for (const bad of ["../x.md", "/abs.md", "a/../x.md", "C:\\x.md", "a\\b.md", "x.txt", "./x.md"]) {
+    const r = repo(JSON.stringify({ project_docs: [bad] }));
+    assert.throws(() => loadRepoConfig(r.d, r.base), /project_docs/, bad);
+    rmSync(r.d, { recursive: true, force: true });
+  }
+  rmSync(ok.d, { recursive: true, force: true });
 });

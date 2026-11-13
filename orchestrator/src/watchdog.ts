@@ -34,6 +34,7 @@ export function alerts(tickets: z.infer<typeof Ticket>[], now = Date.now(), env:
     if (t.revisions >= MAX_REVISIONS - 1) out.push(`${t.id} review loop: ${t.revisions}/${MAX_REVISIONS} revisions`);
     if (used(t) >= cap * 0.8) out.push(`${t.id} token budget at ${Math.round((used(t) / cap) * 100)}%`);
     if (t.status === "escalated") out.push(`${t.id} escalated: ${t.summary.split("\n")[0]}`);
+    for (const w of t.test_alerts) out.push(`${t.id} ${w}`);
   }
   return out;
 }

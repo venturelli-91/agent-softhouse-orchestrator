@@ -3,6 +3,9 @@ import { join } from "node:path";
 
 const dir = (home: string) => join(home, "tickets");
 
+// Agent text printed to the CEO's terminal: no escape sequences.
+export const stripControl = (s: string) => s.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").trim();
+
 export function checkId(id: string): void {
   if (!/^[\w.-]+$/.test(id) || id === "." || id === "..") throw new Error(`invalid ticket id: ${id}`);
 }

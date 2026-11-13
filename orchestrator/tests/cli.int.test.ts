@@ -150,3 +150,128 @@ test("orch setup copies the folder into a git repo without secrets or state, run
     sb.done();
   }
 });
+
+test("orch adopt turns the dirty main checkout into a ticket the dev only commits, and leaves main clean", () => {
+  const sb = sandbox();
+  try {
+    writeFileSync(join(sb.repo, "checkout.html"), "<button>Submit order</button>\n");
+    mkdirSync(join(sb.repo, "orchestrator"));
+    writeFileSync(join(sb.repo, "orchestrator", "note.md"), "adopted\n");
+    const warned = sb.orch("run", "x", "--repo", sb.repo, "--id", "T-0");
+    assert.match(warned.out, /uncommitted changes the ticket will not see.*orch adopt/);
+    sb.orch("reject", "T-0");
+    const r = sb.orch("adopt", "--title", "Rename the checkout button", "--repo", sb.repo, "--id", "T-1");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /"type": "approval"/);
+    assert.equal(git(sb.repo, "status", "--porcelain"), "");
+    assert.equal(git(sb.repo, "stash", "list"), "");
+    assert.equal(git(sb.repo, "show", "ticket/T-1:orchestrator/note.md"), "adopted");
+    assert.equal(git(sb.repo, "show", "ticket/T-1:checkout.html"), "<button>Submit order</button>");
+  } finally {
+    sb.done();
+  }
+});
+
+test("orch adopt refuses secrets and a clean checkout before creating anything", () => {
+  const sb = sandbox();
+  try {
+    const clean = sb.orch("adopt", "--repo", sb.repo, "--id", "T-1");
+    assert.equal(clean.code, 1);
+    assert.match(clean.out, /nothing to adopt/);
+    writeFileSync(join(sb.repo, ".env"), "TOKEN=x\n");
+    const secret = sb.orch("adopt", "--repo", sb.repo, "--id", "T-1");
+    assert.equal(secret.code, 1);
+    assert.match(secret.out, /look like secrets \(\.env\)/);
+    assert.equal(git(sb.repo, "worktree", "list").split("\n").length, 1);
+    assert.equal(git(sb.repo, "stash", "list"), "");
+    assert.match(git(sb.repo, "status", "--porcelain"), /\.env/);
+  } finally {
+    sb.done();
+  }
+});
+
+test("orch manual creates a ticket no agent runs; orch evidence rejects bad evidence, closes on good, and status lists it", () => {
+  const sb = sandbox();
+  try {
+    const usage = sb.orch("manual", "Export customers");
+    assert.equal(usage.code, 1);
+    assert.match(usage.out, /usage: orch manual/);
+    const made = sb.orch("manual", "Export customers", "--command", "psql -f export.sql > out.json", "--criteria", "one row per customer",
+      "--expect", "out.json", "--id", "M-1");
+    assert.equal(made.code, 0, made.out);
+    assert.match(made.out, /psql -f export\.sql > out\.json[\s\S]*one row per customer[\s\S]*orch evidence M-1 out\.json --exit/);
+    assert.match(sb.orch("status").out, /M-1\s+open\s+manual Export customers\s+<- waiting: orch evidence M-1/);
+    const out = join(sb.repo, "out.json");
+    writeFileSync(out, "secret-row");
+    const bad = sb.orch("evidence", "M-1", out, "--exit", "0");
+    assert.equal(bad.code, 1);
+    assert.match(bad.out, /out\.json: not valid JSON/);
+    assert.doesNotMatch(bad.out, /secret-row/);
+    assert.match(sb.orch("evidence", "M-1", out).out, /usage: orch evidence/);
+    assert.match(sb.orch("evidence", "M-9", out, "--exit", "0").out, /no manual ticket M-9/);
+    writeFileSync(out, '[{"id":1}]');
+    const good = sb.orch("evidence", "M-1", out, "--exit", "0");
+    assert.equal(good.code, 0, good.out);
+    assert.match(good.out, /M-1: closed - evidence: exit 0; out\.json 10 B sha256:/);
+    const one = sb.orch("status", "M-1");
+    assert.match(one.out, /M-1\s+closed[\s\S]*evidence rejected \(out\.json: not valid JSON\)[\s\S]*evidence: exit 0/);
+    assert.equal(git(sb.repo, "worktree", "list").split("\n").length, 1);
+  } finally {
+    sb.done();
+  }
+});
+
+test("orch backlog lists the open caveats numbered and orch backlog review marks them", () => {
+  const sb = sandbox();
+  try {
+    assert.match(sb.orch("backlog").out, /no open backlog items/);
+    const home = join(sb.repo, "..", "home");
+    mkdirSync(home, { recursive: true });
+    const line = (ticket: string, caveat: string) => `${JSON.stringify({ ticket, from: "reviewer", caveat, time: "2026-01-01T00:00:00Z", status: "open" })}\n`;
+    writeFileSync(join(home, "backlog.jsonl"), line("T-1", "name the magic number") + line("T-2", "extract the helper"));
+    assert.match(sb.orch("backlog").out, /^ {2}1 open\s+T-1\s+reviewer\s+name the magic number\n {2}2 open\s+T-2/);
+    assert.match(sb.orch("backlog", "review", "3").out, /no backlog item 3/);
+    assert.match(sb.orch("backlog", "review", "1").out, /reviewed: T-1 \(reviewer\) name the magic number/);
+    const open = sb.orch("backlog").out;
+    assert.doesNotMatch(open, /T-1/);
+    assert.match(open, /^ {2}2 open\s+T-2/);
+    assert.match(sb.orch("backlog", "--all").out, /1 reviewed T-1/);
+  } finally {
+    sb.done();
+  }
+});
+
+test("orch demand groups a code and a manual ticket, shows the waiting decision and closes only when the checklist passes", () => {
+  const sb = sandbox();
+  try {
+    assert.equal(sb.orch("demand", "new", "Customer export", "--repo", sb.repo, "--id", "D-1").code, 0);
+    assert.match(sb.orch("run", "x", "--repo", sb.repo, "--demand", "D-9").out, /no demand D-9/);
+    const run = sb.orch("run", "Change the checkout button label to Submit order", "--repo", sb.repo, "--id", "T-1", "--demand", "D-1");
+    assert.equal(run.code, 0, run.out);
+    const made = sb.orch("manual", "Export", "--command", "psql -f e.sql > out.json", "--criteria", "one row each", "--id", "M-1", "--demand", "D-1");
+    assert.equal(made.code, 0, made.out);
+    assert.match(sb.orch("demand", "ask", "D-1", "Ship T-1 later?", "--owner", "CEO", "--task", "T-1").out, /decision #1 waiting for CEO/);
+    assert.match(sb.orch("status").out, /D-1\s+waiting 0\.0d\s+demand Customer export \(2 tasks\)\s+<- #1 \(CEO\): Ship T-1 later\?/);
+    assert.match(sb.orch("status", "D-1").out, /task T-1 code approval\n {2}task M-1 manual open\n {2}#1 \S+ CEO \[T-1\]: Ship T-1 later\? -> waiting/);
+    const home = join(sb.repo, "..", "home");
+    writeFileSync(join(home, "backlog.jsonl"), `${JSON.stringify({ ticket: "T-1", from: "reviewer", caveat: "name it", time: "", status: "open" })}\n`);
+    writeFileSync(join(sb.repo, "stray.txt"), "x");
+    const refused = sb.orch("demand", "close", "D-1");
+    assert.equal(refused.code, 1, refused.out);
+    for (const p of [/FAIL tasks closed or decided: T-1 approval; M-1 open/, /FAIL decisions answered: #1 \(CEO\)/, /FAIL backlog reviewed.*T-1: name it/,
+      /FAIL tree clean/, /ok {3}evidence present/, /D-1: not closed/])
+      assert.match(refused.out, p);
+    assert.match(sb.orch("demand", "answer", "D-1", "1", "yes, next sprint").out, /decision #1 answered/);
+    writeFileSync(join(sb.repo, "out.json"), "[]");
+    assert.equal(sb.orch("evidence", "M-1", join(sb.repo, "out.json"), "--exit", "0").code, 0);
+    rmSync(join(sb.repo, "stray.txt"));
+    rmSync(join(sb.repo, "out.json"));
+    sb.orch("backlog", "review", "1");
+    const closed = sb.orch("demand", "close", "D-1");
+    assert.equal(closed.code, 0, closed.out);
+    assert.match(closed.out, /ok {3}tasks closed or decided: 2 task\(s\)[\s\S]*D-1: closed/);
+    assert.match(sb.orch("manual", "y", "--command", "y", "--criteria", "y", "--demand", "D-1").out, /demand D-1 is closed/);
+  } finally {
+    sb.done();
+  }
+});

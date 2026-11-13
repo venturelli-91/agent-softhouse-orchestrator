@@ -2,7 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import { commandEnv } from "./deploy.ts";
 import { checkConfig, guarded, log } from "./graph-kit.ts";
-import { repoOf, verifyEvidence } from "./guardrails.ts";
+import { repoOf, verifyTicket } from "./guardrails.ts";
 import { loadRepoConfig, type WebcheckConfig } from "./repo-config.ts";
 import { NodeFailure } from "./run-agent.ts";
 import { UI_SPECIALTIES } from "./specialties.ts";
@@ -99,7 +99,7 @@ export const webcheck = guarded("webcheck", async (t: T) => {
     return { status: "publish", docs_warnings: [...t.docs_warnings, "webcheck skipped: no webcheck configured for this repo"], history: log(t, "webcheck", "skipped: not configured") };
   // The app is the ticket's own code and runs on the host: same gates as the deploy and the review, before it starts.
   checkConfig(t);
-  const v = t.evidence.length ? verifyEvidence(t.worktree, t.base, t.test, t.install) : { ok: false as const, reason: "no evidence" };
+  const v = t.evidence.length ? verifyTicket(t) : { ok: false as const, reason: "no evidence" };
   if (!v.ok) throw new NodeFailure(`invalid evidence: ${v.reason}`);
   if (!isDeepStrictEqual(loadRepoConfig(t.repo || repoOf(t.worktree), t.base).webcheck, cfg))
     throw new NodeFailure("webcheck settings changed since the ticket started; re-run the ticket");
