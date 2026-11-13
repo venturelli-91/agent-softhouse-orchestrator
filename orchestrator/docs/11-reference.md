@@ -62,6 +62,7 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 | `publisher` | `github` or `none`. |
 | `push_remote` | Default `origin`. |
 | `base_repo` | `owner/name` of the upstream the PR targets. |
+| `project_docs` | List of up to 10 tracked `.md` paths (`README.md`, `docs/CHANGELOG.md`). Before review, the docs node reads them, may rewrite them and commits the change on the ticket branch (`docs: update ...`), so review, QA and the approved sha cover it. Only exact listed paths are written (no symlink, no secret path); a problem is a `pre:` docs warning, never a block. Empty by default: the phase does not run. Read from the base commit like `test`, so a ticket cannot widen its own list; `orchestrator/`, `.github/` and secret paths are always refused. |
 | `disclosure` | Default `true`: the PR body says it came from an automated pipeline. |
 | `install` | `true` runs `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, `tsc` and `next build` can be the test command. Before every verification it wipes what the agent left outside the commit (`git clean -fdX`) and reinstalls, so a planted file in `node_modules` never runs. A diff touching `package-lock.json` (like `package.json`) goes to the CEO as `host_review`. Needs a committed lockfile and network. |
 | `deploy`, `webcheck` | External config only (`ORCH_HOME/config.json`); see [12-operations.md](12-operations.md). |

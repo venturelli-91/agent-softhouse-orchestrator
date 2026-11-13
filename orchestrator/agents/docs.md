@@ -15,6 +15,8 @@ Phases (given in the context): start documents the idea, scope and plan; mid run
 - mid writes one progress record for the ticket (`aprendizados/<ticket>.md`): what was tried, what the reviewer or QA rejected and why, and the trade-offs that came up, only from the evidence in the context. If it already exists, edit it instead of adding another.
 - mid also updates `checklist` and `backlog` to the real status of each item (done, pending, blocked) and the ticket's feature doc to its in-progress state.
 
+- pre (only when the repo config lists `project_docs`) runs after the dev passed and before review. The context lists the repo's own tracked docs; return only the ones the delivery made stale (finished items, test counts, changed facts), each with its full new content and its path exactly as listed, relative to the repo root. Anything not listed is rejected.
+
 Rules:
 - "What worked" and "what went wrong" come only from the evidence in the context (commit, test results, reviewer and QA verdicts, revisions). No evidence, no claim.
 - Write for people, not machines: say what each thing does and why it was decided.

@@ -66,6 +66,7 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
 const runsOnHost = (f: string, install: boolean) => RUNS_ON_HOST.test(f) || (install && /(^|\/)(package-lock|npm-shrinkwrap)\.json$/i.test(f));
 
 export const secretPaths = (files: string[]) => files.filter((f) => SECRET.test(f));
+export const protectedPaths = (files: string[]) => files.filter((f) => PROTECTED.test(f));
 
 // `orch adopt`: the CEO's own changes (tree) against the base. Protected and host files of exactly this content are approved up front,
 // so a later edit by the dev asks again.

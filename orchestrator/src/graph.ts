@@ -4,6 +4,7 @@ import { ceoApproval } from "./ceo-node.ts";
 import { dev, DEV_RULES, devRules, partialWork, taskBlock } from "./dev-node.ts";
 import { docsNode } from "./docs-node.ts";
 import { sh } from "./graph-kit.ts";
+import { projectDocsNode } from "./project-docs.ts";
 import { planner, SPLIT_RULE, triage } from "./plan-nodes.ts";
 import { loadConventions, loadRepoConfig } from "./repo-config.ts";
 import { DIFF_LIMIT, design, evidenceNote, qa, reviewer } from "./review-nodes.ts";
@@ -44,11 +45,13 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addNode("docs_start", docsNode("start"))
     .addNode("docs_mid", docsNode("mid"))
     .addNode("docs_end", docsNode("end"))
+    .addNode("docs_pre", projectDocsNode)
     .addEdge(START, "docs_start")
     .addEdge("docs_start", "triage")
     .addConditionalEdges("triage", afterTriage, ["dev", "planner", "docs_mid"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "docs_mid"])
-    .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "reviewer")(t)), ["reviewer", "dev", "docs_mid"])
+    .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "docs_pre")(t)), ["docs_pre", "dev", "docs_mid"])
+    .addEdge("docs_pre", "reviewer")
     .addConditionalEdges("reviewer", afterReview, ["design", "qa", "dev", "docs_mid"])
     .addConditionalEdges("design", route("qa", "qa"), ["qa", "dev", "docs_mid"])
     .addConditionalEdges("qa", route("webcheck", "webcheck"), ["webcheck", "dev", "docs_mid"])
