@@ -1,7 +1,7 @@
 import { readEnv, type Env, type Role } from "./agent-env.ts";
 import { effectivePublisher } from "./publish.ts";
 import { loadRepoConfig } from "./repo-config.ts";
-import { NodeFailure } from "./run-agent.ts";
+import { NodeFailure } from "./node-failure.ts";
 
 const GRAPH_ROLES: Role[] = ["triage", "planner", "dev", "reviewer", "design", "qa", "docs"];
 
