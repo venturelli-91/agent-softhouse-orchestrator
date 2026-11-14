@@ -31,7 +31,7 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
     tools: [...READ_ONLY, "Write", "Edit", SHELL],
     allow: [
       ...READ_ONLY, "Write(./**)", "Edit(./**)",
-      ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*", `${DEFAULT_TEST}*`, "npm run typecheck*"),
+      ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*"),
     ],
     deny: [
       ...SECRETS, ...GIT_INTERNALS,
@@ -46,8 +46,9 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
 // `test` is the repo's own test command or commands (from .orchestrator.json); the dev may run exactly those.
 export function permissionArgs(role: Role, test: string | string[] = DEFAULT_TEST): string[] {
   const p = PERMISSIONS[role];
-  const own = [test].flat().map((c) => `${SHELL}(${c}*)`);
-  const allow = role === "dev" ? [...p.allow.filter((a) => a !== `${SHELL}(${DEFAULT_TEST}*)`), ...own] : p.allow;
+  const cmds = [test].flat();
+  const own = [...cmds, ...(cmds.some((c) => c.startsWith("npm")) ? ["npm run typecheck"] : [])].map((c) => `${SHELL}(${c}*)`);
+  const allow = role === "dev" ? [...p.allow, ...own] : p.allow;
   return [
     "--permission-mode", "dontAsk",
     "--tools", p.tools.join(","),
