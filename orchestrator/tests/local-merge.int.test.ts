@@ -58,6 +58,13 @@ test("repoOf returns the main checkout from a worktree", () => {
   assert.equal(realpathSync(repoOf(wt)), realpathSync(repo));
 });
 
+test("an untracked file in main does not block the merge", () => {
+  const { repo, sha } = setup();
+  writeFileSync(join(repo, "scratch.txt"), "x");
+  assert.match(mergeLocal(repo, "main", sha), /^merged:local@/);
+  assert.equal(git(repo, "rev-parse", "main"), sha);
+});
+
 test("refuses to overwrite an ignored file in the main checkout", () => {
   const root = mkdtempSync(join(tmpdir(), "lm-"));
   roots.push(root);

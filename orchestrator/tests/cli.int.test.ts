@@ -151,6 +151,18 @@ test("orch setup copies the folder into a git repo without secrets or state, run
   }
 });
 
+test("orch run does not warn about uncommitted changes for untracked files only", () => {
+  const sb = sandbox();
+  try {
+    writeFileSync(join(sb.repo, "untracked.txt"), "x");
+    const r = sb.orch("run", "Change the checkout button label to Submit order", "--repo", sb.repo, "--id", "T-1");
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /uncommitted changes the ticket will not see/);
+  } finally {
+    sb.done();
+  }
+});
+
 test("orch adopt turns the dirty main checkout into a ticket the dev only commits, and leaves main clean", () => {
   const sb = sandbox();
   try {
@@ -267,6 +279,7 @@ test("orch demand groups a code and a manual ticket, shows the waiting decision 
     writeFileSync(join(sb.repo, "checkout.html"), "<button>Submit</button>\n");
     rmSync(join(sb.repo, "out.json"));
     sb.orch("backlog", "review", "1");
+    writeFileSync(join(sb.repo, "untracked.txt"), "x");
     const closed = sb.orch("demand", "close", "D-1");
     assert.equal(closed.code, 0, closed.out);
     assert.match(closed.out, /ok {3}tasks closed or decided: 2 task\(s\)[\s\S]*D-1: closed/);
