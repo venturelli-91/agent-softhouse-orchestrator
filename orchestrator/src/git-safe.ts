@@ -3,8 +3,9 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { devNullPath } from "./platform.ts";
 // On Windows, os.devNull (a \\.\nul path) is not valid for git; use NUL.
-export const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
+export const devNull = devNullPath();
 
 // Host-side git over a repo the agent touched: no fsmonitor, pager, system config or external diff.
 export function safeGit(cwd: string, ...args: string[]): string {

@@ -1,10 +1,10 @@
 // Commands that set up and tidy the orchestrator itself: init, status, clean.
-import { execFileSync } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { DEFAULT_TEST } from "../../src/commands.ts";
+import { runShimmed, samePath } from "../../src/platform.ts";
 import { applyTeam, configJson, proposeTeam } from "../../src/team.ts";
 import { usedToday } from "../../src/daily-cap.ts";
 import { forgetDeploy } from "../../src/deploy.ts";
@@ -52,8 +52,7 @@ export function init(c: Ctx) {
 // Copies this folder into another repo and prepares it. Never overwrites: an existing orchestrator/ there stops the command.
 const NOT_COPIED = new Set(["node_modules", ".env", ".state", ".git", ".github"]);
 // Fixed arguments only; on Windows npm and npx are .cmd shims, which need a shell and a single command line.
-const run = (bin: string, args: string[], cwd: string) =>
-  process.platform === "win32" ? execFileSync(`${bin} ${args.join(" ")}`, { cwd, stdio: "inherit", shell: true }) : execFileSync(bin, args, { cwd, stdio: "inherit" });
+const run = (bin: string, args: string[], cwd: string) => runShimmed(`${bin} ${args.join(" ")}`, bin, args, { cwd, stdio: "inherit", encoding: "utf8" });
 
 // The host's linter and typechecker would otherwise scan orchestrator/ (own style, stricter @types/node) and break the host's `verify`. Printed, never applied.
 const HOST_EXCLUDES = `add these by hand if the repo uses Biome or tsc, or its verify will fail on orchestrator/:
@@ -135,7 +134,6 @@ export async function status(c: Ctx) {
   if (process.env.TOKEN_CAP_DAILY) console.log(`tokens in the last 24h: ${usedToday()} / ${process.env.TOKEN_CAP_DAILY}`);
 }
 
-const sameRepo = (a: string, b: string) => (process.platform === "win32" ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b));
 
 function step(item: string, fn: () => unknown): boolean {
   try {
@@ -160,7 +158,7 @@ export async function clean(c: Ctx) {
     else {
       try {
         const { repo } = (await c.load(id)).ticket;
-        if (repo && sameRepo(repo, scope)) ids.push(id);
+        if (repo && samePath(repo, scope)) ids.push(id);
       } catch (e) {
         step(`${id} read`, () => { throw e; });
       }
@@ -203,7 +201,7 @@ export async function clean(c: Ctx) {
       step(`demand ${id} read`, () => { throw e; });
       continue;
     }
-    if (!sameRepo(d.repo, scope)) continue;
+    if (!samePath(d.repo, scope)) continue;
     if (d.status !== "closed" && !c.values.force) console.log(`skip demand ${id} (open, use --force)`);
     else step(`demand ${id}`, () => forgetDemand(c.home, id));
   }

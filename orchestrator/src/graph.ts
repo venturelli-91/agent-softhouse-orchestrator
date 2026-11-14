@@ -6,6 +6,7 @@ import { ceoApproval } from "./ceo-node.ts";
 import { dev, DEV_RULES, devRules, partialWork, taskBlock } from "./dev-node.ts";
 import { docsNode } from "./docs-node.ts";
 import { sh } from "./graph-kit.ts";
+import { samePath } from "./platform.ts";
 import { projectDocsNode } from "./project-docs.ts";
 import { planner, SPLIT_RULE, triage } from "./plan-nodes.ts";
 import { loadConventions, loadRepoConfig } from "./repo-config.ts";
@@ -86,8 +87,7 @@ export function removeTicketResources(repo: string, worktree: string, id: string
   };
   return [
     attempt("worktree remove", () => {
-      const norm = (p: string) => (process.platform === "win32" ? resolve(p).toLowerCase() : resolve(p));
-      const registered = sh(repo, "worktree", "list", "--porcelain").split("\n").some((l) => l.startsWith("worktree ") && norm(l.slice(9)) === norm(worktree));
+      const registered = sh(repo, "worktree", "list", "--porcelain").split("\n").some((l) => l.startsWith("worktree ") && samePath(l.slice(9), worktree));
       if (registered) sh(repo, "worktree", "remove", "--force", worktree);
     }),
     attempt("remove directory", () => rmSync(worktree, { recursive: true, force: true })),

@@ -1,12 +1,13 @@
 // What a subprocess agent inherits: a whitelisted environment and a per-role git identity.
 import { devNull } from "./git-safe.ts";
 import { NodeFailure } from "./node-failure.ts";
+import { shellName } from "./platform.ts";
 
 // On Windows the shell of claude -p is PowerShell; on POSIX, Bash.
 // Not NodeJS.ProcessEnv: a host repo (Next.js) augments it with a required NODE_ENV, which breaks the typecheck of callers that pass a plain object.
 export type Env = Record<string, string | undefined>;
 
-export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
+export const SHELL = shellName();
 
 export type Role = "triage" | "planner" | "dev" | "reviewer" | "design" | "qa" | "devops" | "watchdog" | "knowledge" | "docs";
 
