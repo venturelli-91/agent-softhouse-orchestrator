@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isSafeCommand } from "./commands.ts";
 import { minimalEnv } from "./guardrails.ts";
 import { checkId } from "./ticket-store.ts";
 
@@ -60,7 +61,7 @@ const shadowExts = (): string[] => [...new Set([...(process.env.PATHEXT ?? "").s
 // Plain argv; on Windows the line goes through cmd.exe, which the regex makes safe. Listed env values are masked in whatever comes back.
 export function commandTarget(cfg: { command: string; rollback: string; env: string[]; timeout_s: number }, cwd: string, previous: string): DeployTarget {
   const run = (line: string, ctx: Ctx): string => {
-    if (!/^[\w ./:=@-]+$/.test(line)) throw new Error("command must be a plain command without shell operators");
+    if (!isSafeCommand(line)) throw new Error("command must be a plain command without shell operators");
     const [bin, ...args] = line.split(" ").filter(Boolean);
     const b = bin.toLowerCase();
     if (process.platform === "win32" && readdirSync(cwd).some((f) => [b, ...shadowExts().map((e) => b

@@ -1,11 +1,12 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { DEFAULT_TEST, safeCommand, TestSpec } from "./commands.ts";
 import { orchHome } from "./daily-cap.ts";
 import { safeGit } from "./guardrails.ts";
 import { SPECIALTIES } from "./specialties.ts";
 
-const plain = z.string().regex(/^[\w ./:=@-]+$/, "must be a plain command without shell operators");
+const plain = safeCommand();
 // Real deploy commands run on the host with credentials, so this block is accepted only from the external config.
 export const DeployConfig = z.object({
   command: plain,
@@ -38,10 +39,9 @@ export type WebcheckConfig = z.infer<typeof WebcheckConfig>;
 
 // Per-repo settings: defaults < `repos[<abs path>]` in ~/.orchestrator/config.json < `.orchestrator.json` at the base
 // commit. The in-repo file is read from the base commit, never from the worktree: a ticket cannot rewrite its own rules.
-const command = z.string().regex(/^[\w ./:=@-]+$/, "test must be a plain command without shell operators");
 export const RepoConfig = z.object({
   // Plain command (no ;, &&, pipes, quotes or expansions): it runs on the host and goes into the dev's allowlist. A list runs every command.
-  test: z.union([command, z.array(command).min(1)]).default("npm test"),
+  test: TestSpec.default(DEFAULT_TEST),
   // "auto" squash-merges after the CEO approves and the CI checks are green; "pr" leaves the PR to the CEO; "local" merges in the local clone.
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.enum(["github", "none"]).optional(),

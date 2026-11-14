@@ -1,9 +1,8 @@
 // Defense inside each node: which tools each role gets, and what is allowed or denied.
 import { type Role, SHELL } from "./agent-env.ts";
+import { DEFAULT_TEST } from "./commands.ts";
 
 const sh = (...patterns: string[]) => patterns.map((p) => `${SHELL}(${p})`);
-
-export const DEFAULT_TEST = "npm test";
 
 const READ_ONLY = ["Read", "Grep", "Glob"];
 const SECRETS = [
@@ -32,7 +31,7 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
     tools: [...READ_ONLY, "Write", "Edit", SHELL],
     allow: [
       ...READ_ONLY, "Write(./**)", "Edit(./**)",
-      ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*", "npm test*", "npm run typecheck*"),
+      ...sh("git add *", "git commit *", "git status*", "git diff*", "git log*", `${DEFAULT_TEST}*`, "npm run typecheck*"),
     ],
     deny: [
       ...SECRETS, ...GIT_INTERNALS,

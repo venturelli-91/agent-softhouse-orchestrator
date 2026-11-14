@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { MAX_FILE_LINES, MAX_LINE_COLS, verifyTicket } from "./guardrails.ts";
-import { commands, skipAlerts, type Test } from "./test-report.ts";
+import { commands, DEFAULT_TEST, type Test } from "./commands.ts";
+import { skipAlerts } from "./test-report.ts";
 import { context, escalate, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
 import { runAgent } from "./run-agent.ts";
 import { Brief, cap, DEV_FILE, summary, type T } from "./ticket.ts";
 
 const DevOutput = z.object({ summary, brief: Brief, no_change: z.string().optional() });
 
-export const devRules = (tests: Test = "npm test", turns?: number) => {
+export const devRules = (tests: Test = DEFAULT_TEST, turns?: number) => {
   const test = commands(tests).join(" and ");
   return `Implement in the current worktree, run ${test} and commit (git add/git commit). Do not push. ` +
   `Also fill \`brief\`: why (the problem or goal this solves), how (approach and key decisions), ` +

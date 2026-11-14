@@ -4,7 +4,7 @@ import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
 import { safeGit } from "./git-safe.ts";
 import { MAX_FILE_LINES, MAX_LINE_COLS, modularityViolations } from "./modularity.ts";
-import { DEFAULT_TEST } from "./permissions.ts";
+import { DEFAULT_INSTALL, DEFAULT_TEST } from "./commands.ts";
 import { addedSkips, commands, type Counts, runTests, type Test } from "./test-report.ts";
 import type { T } from "./ticket.ts";
 
@@ -89,14 +89,14 @@ export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install"
 
 
 // Host-side install for repos that opt in (`install` in the repo config): the lockfile comes from the base commit and no package script runs.
-export function installDeps(wt: string): void {
+export function installDeps(wt: string, install = DEFAULT_INSTALL): void {
   try {
     safeGit(wt, "cat-file", "-e", "HEAD:package-lock.json");
   } catch {
     throw new Error("install: the repo has no committed package-lock.json");
   }
   try {
-    execSync("npm ci --ignore-scripts --no-audit --no-fund", { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
+    execSync(install, { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
   } catch (e) {
     throw new Error(`install failed: ${String((e as { stderr?: Buffer }).stderr ?? "").slice(-400)}`);
   }

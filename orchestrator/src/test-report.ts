@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import { z } from "zod";
 import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
-import { DEFAULT_TEST } from "./permissions.ts";
+import { commands, DEFAULT_TEST, type Test } from "./commands.ts";
+
+export { commands, type Test };
 
 export const TestCounts = z.object({ pass: z.number(), skip: z.number(), fail: z.number() });
 export type Counts = z.infer<typeof TestCounts>;
@@ -34,10 +36,6 @@ export function parseCounts(out: string): Counts | null {
 // Also run on the untouched base before any agent runs: a red base would fail every ticket's verification.
 // There, `noTestsOk` accepts a suite with no tests yet (pytest exits 5), which is not a red base.
 export const testFailure = (wt: string, test: Test = DEFAULT_TEST, noTestsOk = false) => runTests(wt, test, noTestsOk).failure;
-
-// `test` is one command or a list that must all pass (a matrix); an older ticket state may still hold a single string.
-export type Test = string | string[];
-export const commands = (test: Test) => [test].flat();
 
 // Commands run in order and stop at the first failure; the counts of the commands that ran add up.
 export function runTests(wt: string, test: Test = DEFAULT_TEST, noTestsOk = false): { failure: string; counts: Counts | null } {

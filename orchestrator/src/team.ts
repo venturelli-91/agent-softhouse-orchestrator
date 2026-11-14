@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { z } from "zod";
+import { DEFAULT_TEST, safeCommand } from "./commands.ts";
 import { safeGit } from "./guardrails.ts";
 import { runAgent } from "./run-agent.ts";
 import { SPECIALTIES } from "./specialties.ts";
@@ -12,7 +13,7 @@ export const TeamProposal = z.object({
   specialties: z.array(z.enum(SPECIALTIES)).min(1),
   stack: z.string().max(400),
   existing_stack: z.boolean(),
-  test: z.string().regex(/^[\w ./:=@-]+$/).default("npm test"),
+  test: safeCommand("test").default(DEFAULT_TEST),
   rationale: z.string().max(600),
   // Roles or subagents the roster lacks. Only a proposal: a new agent needs a prompt and the CEO's approval, nothing runs it by itself.
   proposed_agents: z.array(z.object({ name: z.string().max(60), responsibility: z.string().max(200), why: z.string().max(200) })).max(5).default([]),
