@@ -1,6 +1,7 @@
 import { rmSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Command, END, MemorySaver, START, StateGraph } from "@langchain/langgraph";
+import { DEFAULT_INSTALL } from "./commands.ts";
 import { activeTickets, gitConfigHash, installDeps, MAX_ACTIVE_TICKETS, MAX_REVISIONS, RECURSION_LIMIT, tokens } from "./guardrails.ts";
 import { ceoApproval } from "./ceo-node.ts";
 import { dev, DEV_RULES, devRules, partialWork, taskBlock } from "./dev-node.ts";
@@ -105,12 +106,14 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   if (activeTickets(repo) >= MAX_ACTIVE_TICKETS) throw new Error(`limit of ${MAX_ACTIVE_TICKETS} active tickets reached`);
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties, stack, webcheck, project_docs } = loadRepoConfig(repo, base, home);
+  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install: alias, setup: extra, env, specialties, stack, webcheck, project_docs } = loadRepoConfig(repo, base, home);
+  const setup = [...new Set([...(alias ? [DEFAULT_INSTALL] : []), ...extra])];
+  const install = setup.includes(DEFAULT_INSTALL);
   const rules = [loadConventions(repo, base), stack && `Stack decided for this repo: ${stack}`, lessons(loadPlaybooks(repo, base))].filter(Boolean).join("\n\n");
   const git_config_hash = gitConfigHash(repo);
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   try {
-    if (install) installDeps(dir);
+    for (const c of setup) installDeps(dir, c, env);
   } catch (e) {
     removeTicketResources(repo, dir, id);
     throw e;

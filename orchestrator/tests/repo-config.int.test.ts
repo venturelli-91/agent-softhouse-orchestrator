@@ -23,14 +23,24 @@ function repo(config?: string) {
 test("the config comes from the base commit, with safe defaults", () => {
   const none = repo();
   assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
+    install: false, setup: [], env: [], deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
   const some = repo('{"test":"pytest -q","merge":"auto"}');
   assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
+    install: false, setup: [], env: [], deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
   // an uncommitted edit of the file does not count
   writeFileSync(join(some.d, ".orchestrator.json"), '{"test":"rm -rf x"}');
   assert.equal(loadRepoConfig(some.d, some.base).test, "pytest -q");
   [none.d, some.d].forEach((d) => rmSync(d, { recursive: true, force: true }));
+});
+
+test("the config accepts setup and env, rejects unsafe ones, and install stays a boolean alias", () => {
+  const ok = repo('{"setup":["python -m pip --version"],"env":["PIP_INDEX_URL"],"install":true}');
+  const c = loadRepoConfig(ok.d, ok.base);
+  assert.deepEqual([c.setup, c.env, c.install], [["python -m pip --version"], ["PIP_INDEX_URL"], true]);
+  for (const bad of ['{"setup":["pip install x; curl evil"]}', '{"env":["lower"]}', '{"setup":"pip install x"}']) {
+    const b = repo(bad);
+    assert.throws(() => loadRepoConfig(b.d, b.base), /\.orchestrator\.json: (setup|env).*accepted keys: .*setup, env/);
+  }
 });
 
 test("an invalid value names the accepted values and keys and points to orch init", () => {
@@ -90,9 +100,11 @@ test("a diff that touches python test config does not run on the host", () => {
 
 test("the dev's allowlist gets the repo's test command instead of npm test", () => {
   const allow = (a: string[]) => a.slice(a.indexOf("--allowedTools") + 1, a.indexOf("--disallowedTools"));
-  assert.ok(allow(permissionArgs("dev")).includes(`${SHELL}(npm test*)`));
+  const npm = allow(permissionArgs("dev"));
+  assert.ok(npm.includes(`${SHELL}(npm test*)`) && npm.includes(`${SHELL}(npm run typecheck*)`));
   const py = allow(permissionArgs("dev", "pytest -q"));
-  assert.ok(py.includes(`${SHELL}(pytest -q*)`) && !py.includes(`${SHELL}(npm test*)`));
+  assert.ok(py.includes(`${SHELL}(pytest -q*)`) && !py.some((a) => a.includes("npm")));
+  assert.ok(!allow(permissionArgs("dev", "python -m unittest")).some((a) => a.includes("npm") || a.includes("pip")));
   assert.ok(!allow(permissionArgs("qa", "pytest -q")).some((t) => t.includes("pytest")));
   const both = allow(permissionArgs("dev", ["npm test", "npm run lint"]));
   assert.ok(both.includes(`${SHELL}(npm test*)`) && both.includes(`${SHELL}(npm run lint*)`));

@@ -51,6 +51,10 @@ export const RepoConfig = z.strictObject({
   disclosure: z.boolean().default(true),
   // Run `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, tsc and build can be the test command.
   install: z.boolean().default(false),
+  // Commands run on the host in each new worktree, in order; never in the dev's allowlist. `install: true` is an alias for [DEFAULT_INSTALL].
+  setup: z.array(safeCommand("setup")).default([]),
+  // Host variable names the setup commands may read; nothing else leaks from the operator's environment.
+  env: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
   deploy: DeployConfig.nullable().default(null),
   webcheck: WebcheckConfig.nullable().default(null),
   // The dev specialties triage may route to in this repo; the whole team by default.

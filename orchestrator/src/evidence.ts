@@ -98,15 +98,19 @@ export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install"
 
 
 // Host-side install for repos that opt in (`install` in the repo config): the lockfile comes from the base commit and no package script runs.
-export function installDeps(wt: string, install = DEFAULT_INSTALL): void {
-  try {
-    safeGit(wt, "cat-file", "-e", "HEAD:package-lock.json");
-  } catch {
-    throw new Error("install: the repo has no committed package-lock.json");
+export function installDeps(wt: string, install = DEFAULT_INSTALL, envNames: string[] = []): void {
+  if (install === DEFAULT_INSTALL) {
+    try {
+      safeGit(wt, "cat-file", "-e", "HEAD:package-lock.json");
+    } catch {
+      throw new Error("install: the repo has no committed package-lock.json");
+    }
   }
+  const env = minimalEnv("dev");
+  for (const k of envNames) if (process.env[k] !== undefined) env[k] = process.env[k];
   try {
-    execSync(install, { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
+    execSync(install, { cwd: wt, env, stdio: "pipe", timeout: NODE_TIMEOUT_MS });
   } catch (e) {
-    throw new Error(`install failed: ${String((e as { stderr?: Buffer }).stderr ?? "").slice(-400)}`);
+    throw new Error(`${install === DEFAULT_INSTALL ? "install" : "setup"} failed (${install}): ${String((e as { stderr?: Buffer }).stderr ?? "").slice(-400)}`);
   }
 }
