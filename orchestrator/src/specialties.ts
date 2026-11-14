@@ -5,6 +5,9 @@ export type Specialty = (typeof SPECIALTIES)[number];
 // Tickets with a screen: they get the design review (and the webcheck). A Set<Specialty> turns a typo into a type error.
 export const UI_SPECIALTIES = new Set<Specialty>(["frontend", "fullstack"]);
 
+// Tickets with a service write path: they get the load and concurrency stage when the repo opted in.
+export const LOAD_SPECIALTIES = new Set<Specialty>(["backend", "fullstack", "integrations", "data"]);
+
 export const DEV_FILE: Record<Specialty, string> = {
   frontend: "dev-frontend",
   backend: "dev-backend",

@@ -17,9 +17,9 @@ export class InfraError extends Error {}
 // The ticket's own app misbehaves (serve dies, never answers, page will not load): that is a finding for the dev, not a skip.
 export class AppFailure extends Error {}
 
-const answers = (url: string) => fetch(url, { signal: AbortSignal.timeout(2000) }).then((r) => r.status < 500, () => false);
+export const answers = (url: string) => fetch(url, { signal: AbortSignal.timeout(2000) }).then((r) => r.status < 500, () => false);
 
-async function waitUp(url: string, deadline: number, exited: () => string | undefined): Promise<void> {
+export async function waitUp(url: string, deadline: number, exited: () => string | undefined): Promise<void> {
   for (;;) {
     const why = exited();
     if (why) throw new AppFailure(`the serve command exited before the app answered${why === "exit" ? "" : `: ${why}`}`);

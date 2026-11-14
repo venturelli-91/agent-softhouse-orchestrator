@@ -80,7 +80,7 @@ export async function start(id = "T-1", saver: MemorySaver = new MemorySaver(), 
   roots.push(root);
   const repo = createFixture(root);
   knobs.afterFixture?.(repo);
-  const entry = { ...(knobs.realTest ? {} : { test: FAST_TEST }), deploy: extra.deploy_cfg, webcheck: extra.webcheck_cfg };
+  const entry = { ...(knobs.realTest ? {} : { test: FAST_TEST }), deploy: extra.deploy_cfg, webcheck: extra.webcheck_cfg, load: extra.load_cfg };
   writeFileSync(join(process.env.ORCH_HOME!, "config.json"), JSON.stringify({ repos: { [resolve(repo)]: entry } }));
   const graph = buildGraph(saver);
   const cfg = config(id);

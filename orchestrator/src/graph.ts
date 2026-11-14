@@ -17,6 +17,7 @@ const lessons = (playbooks: string) =>
   playbooks && `Lessons recorded in this repo's playbooks (past failures and decisions; do not repeat them):\n${playbooks}`;
 import { DIFF_LIMIT, design, evidenceNote, qa, reviewer } from "./review-nodes.ts";
 import { deploy, deployTicket, mergeNode, publishNode } from "./ship-nodes.ts";
+import { load } from "./load.ts";
 import { webcheck } from "./webcheck.ts";
 import { Brief, briefMarkdown, Ticket, type T } from "./ticket.ts";
 
@@ -46,6 +47,7 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addNode("design", design)
     .addNode("qa", qa)
     .addNode("webcheck", webcheck)
+    .addNode("load", load)
     .addNode("publish", publishNode)
     .addNode("ceo_approval", ceoApproval)
     .addNode("merge_pr", mergeNode)
@@ -63,11 +65,12 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("reviewer", afterReview, ["design", "qa", "dev", "docs_mid"])
     .addConditionalEdges("design", route("qa", "qa"), ["qa", "dev", "docs_mid"])
     .addConditionalEdges("qa", route("webcheck", "webcheck"), ["webcheck", "dev", "docs_mid"])
-    .addConditionalEdges("webcheck", route("publish", "docs_mid"), ["docs_mid", "dev"])
+    .addConditionalEdges("webcheck", route("publish", "load"), ["load", "dev", "docs_mid"])
+    .addConditionalEdges("load", route("publish", "docs_mid"), ["docs_mid", "dev"])
     .addConditionalEdges("publish", route("approval", "docs_end"), ["docs_end", "dev", "docs_mid"])
     .addConditionalEdges("docs_mid", afterMid, ["publish", "ceo_approval"])
     .addEdge("docs_end", "ceo_approval")
-    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "publish", "deploy", "merge_pr", END])
+    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["deploy", "dev", "ceo_approval"])
     .addEdge("deploy", END)
     .compile({ checkpointer });
