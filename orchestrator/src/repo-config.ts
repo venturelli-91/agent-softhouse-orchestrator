@@ -32,13 +32,14 @@ const hostName = z.string().refine(
   "env names must be a host, port or version setting (NAME_HOST, NAME_PORT, NAME_VERSION), NO_PROXY, TZ or LC_*",
 );
 
+const localUrl = (u: string) => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol) && ["localhost", "127.0.0.1"].includes(new URL(u).hostname);
+const urlPath = z.string().regex(/^\/(?!\/)[\w./-]*$/);
 const tagId = (prefix: string) => z.array(z.string().regex(new RegExp(`^${prefix}-[A-Z0-9]+$`))).default([]);
 // The app is started on the host from the ticket's worktree, so, like deploy, this block comes only from the external config.
 export const WebcheckConfig = z.object({
   serve: plain,
-  base_url: z.string().refine((u) => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol) && ["localhost", "127.0.0.1"].includes(new URL(u).hostname),
-    "base_url must be an http(s) URL on localhost or 127.0.0.1"),
-  paths: z.array(z.string().regex(/^\/(?!\/)[\w./-]*$/)).min(1).default(["/"]),
+  base_url: z.string().refine(localUrl, "base_url must be an http(s) URL on localhost or 127.0.0.1"),
+  paths: z.array(urlPath).min(1).default(["/"]),
   gtm: tagId("GTM"),
   ga4: tagId("G"),
   ads: tagId("AW"),
@@ -48,6 +49,37 @@ export const WebcheckConfig = z.object({
   env: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
 });
 export type WebcheckConfig = z.infer<typeof WebcheckConfig>;
+
+const Thresholds = z.object({
+  max_error_rate: z.number().min(0).max(1).default(0.01),
+  max_fast_p95_ms: z.number().positive().default(500),
+  max_fast_p95_ratio: z.number().positive().default(5),
+  recover_s: z.number().positive().default(10),
+});
+// Starts the service and a delaying proxy on the host from the ticket worktree: like deploy and webcheck, only from the external config.
+export const LoadConfig = z.object({
+  serve: plain,
+  base_url: z.string().refine(localUrl, "base_url must be an http(s) URL on localhost or 127.0.0.1"),
+  health_path: urlPath.default("/"),
+  writes: z.array(z.object({
+    method: z.enum(["POST", "PUT", "PATCH", "DELETE"]),
+    path: urlPath,
+    body: z.string().refine((b) => { try { JSON.parse(b); return true; } catch { return false; } }, "body must be a JSON string").optional(),
+  })).min(1).max(5),
+  fast_path: urlPath.default("/"),
+  slow_dependency: z.object({
+    env: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
+    target: z.string().regex(/^(localhost|127\.0\.0\.1):\d{1,5}$/, "target must be localhost:port or 127.0.0.1:port").optional(),
+    delay_ms: z.number().positive().max(30000),
+  }).nullable().default(null),
+  concurrency: z.number().int().min(1).max(200).default(20),
+  duration_s: z.number().positive().max(120).default(20),
+  thresholds: Thresholds.default(Thresholds.parse({})),
+  runner: plain.optional(),
+  env: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
+  timeout_s: z.number().positive().max(600).default(300),
+});
+export type LoadConfig = z.infer<typeof LoadConfig>;
 
 // Per-repo settings: defaults < `repos[<abs path>]` in ~/.orchestrator/config.json < `.orchestrator.json` at the base
 // commit. The in-repo file is read from the base commit, never from the worktree: a ticket cannot rewrite its own rules.
@@ -69,6 +101,7 @@ export const RepoConfig = z.strictObject({
   env: z.array(hostName).default([]),
   deploy: DeployConfig.nullable().default(null),
   webcheck: WebcheckConfig.nullable().default(null),
+  load: LoadConfig.nullable().default(null),
   // The dev specialties triage may route to in this repo; the whole team by default.
   specialties: z.array(z.enum(SPECIALTIES)).min(1).default([...SPECIALTIES]),
   // The stack the team decided (`orch team`); goes into every dev's context next to the repo conventions.
@@ -116,7 +149,7 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
   try {
     const text = safeGit(repo, "show", `${ref}:.orchestrator.json`);
     const raw = readJson(".orchestrator.json", text);
-    for (const k of ["deploy", "webcheck", "env", "setup"]) if (raw && typeof raw === "object" && k in raw) throw new Error(`.orchestrator.json: ${k} is only accepted in the external config`);
+    for (const k of ["deploy", "webcheck", "load", "env", "setup"]) if (raw && typeof raw === "object" && k in raw) throw new Error(`.orchestrator.json: ${k} is only accepted in the external config`);
     inRepo = check(".orchestrator.json", raw);
   } catch (e) {
     if ((e as Error).message.startsWith(".orchestrator.json:")) throw e;

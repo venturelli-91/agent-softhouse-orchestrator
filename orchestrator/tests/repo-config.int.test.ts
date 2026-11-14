@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { permissionArgs, SHELL, verifyEvidence } from "../src/guardrails.ts";
-import { loadRepoConfig, WebcheckConfig } from "../src/repo-config.ts";
+import { LoadConfig, loadRepoConfig, WebcheckConfig } from "../src/repo-config.ts";
 
 process.env.ORCH_HOME = mkdtempSync(join(tmpdir(), "rc-home-"));
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
@@ -23,10 +23,10 @@ function repo(config?: string) {
 test("the config comes from the base commit, with safe defaults", () => {
   const none = repo();
   assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, setup: [], env: [], deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
+    install: false, setup: [], env: [], deploy: null, webcheck: null, load: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
   const some = repo('{"test":"pytest -q","merge":"auto"}');
   assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, setup: [], env: [], deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
+    install: false, setup: [], env: [], deploy: null, webcheck: null, load: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
   // an uncommitted edit of the file does not count
   writeFileSync(join(some.d, ".orchestrator.json"), '{"test":"rm -rf x"}');
   assert.equal(loadRepoConfig(some.d, some.base).test, "pytest -q");
@@ -232,6 +232,29 @@ test("webcheck is validated and only accepted from the external config", () => {
   assert.throws(() => WebcheckConfig.parse({ serve: "npm start", base_url: "http://localhost:3000", gtm: ["nope"] }));
   assert.throws(() => WebcheckConfig.parse({ serve: "npm start", base_url: "http://localhost:3000", paths: ["//evil.com"] }));
   assert.equal(WebcheckConfig.parse({ serve: "npm start", base_url: "http://127.0.0.1:3000" }).paths[0], "/");
+});
+
+const LOAD = { serve: "node svc.js", base_url: "http://127.0.0.1:4000", writes: [{ method: "POST", path: "/orders", body: '{"a":1}' }] };
+
+test("load defaults, bounds and localhost-only addresses", () => {
+  const l = LoadConfig.parse(LOAD);
+  assert.deepEqual([l.health_path, l.fast_path, l.concurrency, l.duration_s, l.slow_dependency, l.thresholds],
+    ["/", "/", 20, 20, null, { max_error_rate: 0.01, max_fast_p95_ms: 500, max_fast_p95_ratio: 5, recover_s: 10 }]);
+  const bad: object[] = [{ serve: "node a.js; rm x" }, { base_url: "http://example.com" }, { writes: [] },
+    { writes: Array(6).fill(LOAD.writes[0]) }, { writes: [{ method: "GET", path: "/" }] }, { writes: [{ method: "POST", path: "/x", body: "{nope" }] },
+    { timeout_s: 601 }, { concurrency: 0 }, { slow_dependency: { env: "DEP_URL", target: "db.example.com:5432", delay_ms: 100 } },
+    { slow_dependency: { env: "dep", delay_ms: 100 } }, { fast_path: "//evil.com" }];
+  for (const o of bad) assert.throws(() => LoadConfig.parse({ ...LOAD, ...o }), JSON.stringify(o));
+});
+
+test("load is accepted only from the external config, never from .orchestrator.json", () => {
+  const inRepo = repo(JSON.stringify({ load: LOAD }));
+  assert.throws(() => loadRepoConfig(inRepo.d, inRepo.base), /load is only accepted in the external config/);
+  const ext = repo();
+  const home = mkdtempSync(join(tmpdir(), "rc-home-"));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ repos: { [resolve(ext.d)]: { load: LOAD } } }));
+  assert.equal(loadRepoConfig(ext.d, ext.base, home).load?.serve, "node svc.js");
+  [inRepo.d, ext.d, home].forEach((d) => rmSync(d, { recursive: true, force: true }));
 });
 
 test("project_docs accepts relative .md paths only", () => {

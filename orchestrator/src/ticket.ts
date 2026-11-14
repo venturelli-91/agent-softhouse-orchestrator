@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_TEST, TestSpec } from "./commands.ts";
-import { DeployConfig, WebcheckConfig } from "./repo-config.ts";
+import { DeployConfig, LoadConfig, WebcheckConfig } from "./repo-config.ts";
 import { TestCounts } from "./test-report.ts";
 import type { Usage } from "./run-agent.ts";
 import { SPECIALTIES } from "./specialties.ts";
@@ -82,6 +82,8 @@ export const Ticket = z.object({
   deploy_target: z.string().default("simulated"),
   deploy_cfg: DeployConfig.nullable().default(null),
   webcheck_cfg: WebcheckConfig.nullable().default(null),
+  load_cfg: LoadConfig.nullable().default(null),
+  load_note: z.string().default(""),
   author_id: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
   design_id: z.string().nullable().default(null),

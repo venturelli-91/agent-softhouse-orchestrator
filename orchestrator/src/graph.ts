@@ -107,7 +107,8 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   if (activeTickets(repo) >= MAX_ACTIVE_TICKETS) throw new Error(`limit of ${MAX_ACTIVE_TICKETS} active tickets reached`);
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
   const base = sh(repo, "rev-parse", "HEAD");
-  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install: alias, setup: extra, env, specialties, stack, webcheck, project_docs } = loadRepoConfig(repo, base, home);
+  const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install: alias, setup: extra, env, specialties, stack, webcheck, load, project_docs } =
+    loadRepoConfig(repo, base, home);
   const setup = [...new Set([...(alias ? [DEFAULT_INSTALL] : []), ...extra])];
   const install = setup.includes(DEFAULT_INSTALL);
   const rules = [loadConventions(repo, base), stack && `Stack decided for this repo: ${stack}`, lessons(loadPlaybooks(repo, base))].filter(Boolean).join("\n\n");
@@ -139,6 +140,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
     rules,
     deploy_cfg: deploy,
     webcheck_cfg: webcheck,
+    load_cfg: load,
     specialties,
     project_docs,
     ...(deploy ? { deploy_target: "command" } : {}),
