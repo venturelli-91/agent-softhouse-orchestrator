@@ -1,6 +1,8 @@
 // Evidence verified by code (zero token cost): what the agent claims does not count.
 import { execSync } from "node:child_process";
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
 import { safeGit } from "./git-safe.ts";
@@ -24,7 +26,7 @@ const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc|conftest\.py|setup\.py|setup\
 
 type Verdict = { ok: true; author: string; sha: string; evidence: string[]; counts: Counts | null; none: boolean } | { ok: false; reason: string; host?: string[] };
 
-export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TEST, install = false, hostApproved: string[] = [], baseTests: Counts | null = null): Verdict {
+export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TEST, install = false, hostApproved: string[] = [], baseTests: Counts | null = null, setupIgnored: string[] | null = null): Verdict {
   const git = (...a: string[]) => safeGit(wt, ...a);
   const sha = git("rev-parse", "HEAD");
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, reason: "no new commit in the worktree" };
@@ -37,7 +39,10 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   // npm test runs over the working tree: only what is committed counts, with no dirt and no ignored executable file.
   const dirt = git("status", "--porcelain", "--untracked-files=all", "--ignored").split("\n").filter(Boolean);
   if (dirt.some((l) => !l.startsWith("!!"))) return { ok: false, reason: "worktree has uncommitted changes" };
-  if (dirt.some((l) => RUNS_ON_HOST.test(l.slice(3)))) return { ok: false, reason: "file that runs code on the host is outside the commit (ignored)" };
+  if (setupIgnored) {
+    const fresh = setupSnapshot(wt).filter((k) => !setupIgnored.includes(k));
+    if (fresh.length) return { ok: false, reason: `ignored file that runs code on the host is new or changed since setup (${fresh.slice(0, 5).join(", ")})` };
+  } else if (dirt.some((l) => RUNS_ON_HOST.test(l.slice(3)))) return { ok: false, reason: "file that runs code on the host is outside the commit (ignored)" };
   const diffFiles = (...extra: string[]) =>
     git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", ...extra, `${base}..HEAD`).split("\0").filter(Boolean);
   const files = diffFiles();
@@ -93,8 +98,21 @@ function blobAt(wt: string, f: string, rev = "HEAD"): string {
   return meta.split(" ")[2];
 }
 
-export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved" | "test_base">, base = t.base) =>
-  verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved, t.test_base);
+export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved" | "test_base" | "setup_ignored">, base = t.base) =>
+  verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved, t.test_base, t.setup_ignored);
+
+// What setup left behind: ignored files npm or pip would run, as path@sha1. Verification tolerates exactly these and rejects anything new or edited.
+export function setupSnapshot(wt: string): string[] {
+  return safeGit(wt, "ls-files", "-z", "--others", "--ignored", "--exclude-standard").split("\0")
+    .filter((f) => f && RUNS_ON_HOST.test(f))
+    .map((f) => {
+      let sha = "unreadable";
+      try {
+        sha = createHash("sha1").update(readFileSync(join(wt, f))).digest("hex");
+      } catch {}
+      return `${f}@${sha}`;
+    });
+}
 
 
 // Host-side install for repos that opt in (`install` in the repo config): the lockfile comes from the base commit and no package script runs.
@@ -107,7 +125,7 @@ export function installDeps(wt: string, install = DEFAULT_INSTALL, envNames: str
     }
   }
   const env = minimalEnv("dev");
-  for (const k of envNames) if (process.env[k] !== undefined) env[k] = process.env[k];
+  for (const k of envNames) if (!(k in env) && process.env[k] !== undefined) env[k] = process.env[k];
   try {
     execSync(install, { cwd: wt, env, stdio: "pipe", timeout: NODE_TIMEOUT_MS });
   } catch (e) {

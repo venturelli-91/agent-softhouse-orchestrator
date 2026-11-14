@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { adoptKeys, installDeps, testFailure, verifyEvidence } from "../src/guardrails.ts";
+import { setupSnapshot } from "../src/evidence.ts";
 
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
 
@@ -197,6 +198,26 @@ test("with install, ignored files the agent left are wiped before the test and n
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, true);
   assert.equal(left, false);
+});
+
+test("with a custom setup, the ignored host files it left pass; new or edited ones fail verification", () => {
+  const dep = (d: string, name: string, body = "{}") => {
+    mkdirSync(join(d, "node_modules", name), { recursive: true });
+    writeFileSync(join(d, "node_modules", name, "package.json"), body);
+  };
+  const { d, base } = withCommit();
+  dep(d, "dep");
+  const snap = setupSnapshot(d);
+  assert.equal(snap.length, 1);
+  assert.equal(verifyEvidence(d, base, "node -e 0", false, [], null, snap).ok, true);
+  dep(d, "dep", '{"x":1}');
+  assert.match((verifyEvidence(d, base, "node -e 0", false, [], null, snap) as { reason: string }).reason, /new or changed since setup/);
+  dep(d, "dep");
+  dep(d, "planted");
+  const r = verifyEvidence(d, base, "node -e 0", false, [], null, snap);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /planted/);
 });
 
 test("install refuses a repo without a committed lockfile", () => {

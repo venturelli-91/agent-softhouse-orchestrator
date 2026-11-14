@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { devNull } from "../src/git-safe.ts";
+import { installDeps } from "../src/guardrails.ts";
 import { buildGraph, config, createWorktree } from "../src/graph.ts";
 import { answer, paused, roots } from "./helpers/graph-harness.ts";
 
@@ -19,7 +20,7 @@ function repoWith(files: Record<string, string>, cfg: object, lock = false) {
   for (const [f, c] of Object.entries(files)) writeFileSync(join(repo, f), c);
   if (lock) spawnSync("npm install --package-lock-only --ignore-scripts", { cwd: repo, shell: true });
   git(repo, "add", "-A");
-  git(repo, "commit", "-qm", "files");
+  git(repo, "commit", "-q", "--allow-empty", "-m", "files");
   writeFileSync(join(process.env.ORCH_HOME!, "config.json"), JSON.stringify({ repos: { [resolve(repo)]: cfg } }));
   return { repo, wt: join(root, "wt") };
 }
@@ -46,9 +47,9 @@ test("an npm repo with install: true goes install, test and evidence to completi
 test("setup runs with a minimal env plus the listed names, hooks off and the worktree as cwd", () => {
   const out = join(mkdtempSync(join(tmpdir(), "sh-out-")), "env.json");
   const dump = `require("node:fs").writeFileSync(${JSON.stringify(out)}, JSON.stringify({ cwd: process.cwd(), env: process.env }));\n`;
-  const r = repoWith({ "dump.cjs": dump }, { setup: ["node dump.cjs"], env: ["LISTED_TOKEN"] });
-  const names = ["ANTHROPIC_API_KEY", "UNLISTED_SECRET", "LISTED_TOKEN"];
-  Object.assign(process.env, { ANTHROPIC_API_KEY: "sk-x", UNLISTED_SECRET: "u", LISTED_TOKEN: "l" });
+  const r = repoWith({ "dump.cjs": dump }, { setup: ["node dump.cjs"], env: ["LISTED_VAR"] });
+  const names = ["ANTHROPIC_API_KEY", "UNLISTED_SECRET", "LISTED_VAR"];
+  Object.assign(process.env, { ANTHROPIC_API_KEY: "sk-x", UNLISTED_SECRET: "u", LISTED_VAR: "l" });
   try {
     createWorktree(r.repo, "T-1", r.wt);
   } finally {
@@ -56,12 +57,37 @@ test("setup runs with a minimal env plus the listed names, hooks off and the wor
   }
   const { cwd, env } = JSON.parse(readFileSync(out, "utf8"));
   assert.equal(resolve(cwd), resolve(r.wt));
-  assert.equal(env.LISTED_TOKEN, "l");
+  assert.equal(env.LISTED_VAR, "l");
   assert.equal(env.UNLISTED_SECRET, undefined);
   assert.equal(Object.keys(env).some((k) => k.startsWith("ANTHROPIC_")), false);
   assert.equal(env.PIP_CONFIG_FILE, devNull);
   assert.equal(env.GIT_CONFIG_KEY_0, "core.hooksPath");
   assert.equal(env.GIT_CONFIG_VALUE_0, devNull);
+});
+
+test("listed env names never override a variable the sandbox sets", () => {
+  const out = join(mkdtempSync(join(tmpdir(), "sh-out-")), "env.json");
+  const dump = `require("node:fs").writeFileSync(${JSON.stringify(out)}, JSON.stringify({ pip: process.env.PIP_CONFIG_FILE }));\n`;
+  const r = repoWith({ "dump.cjs": dump }, {});
+  const worktree = join(r.wt, "..", "plain");
+  git(r.repo, "worktree", "add", "-q", worktree);
+  process.env.PIP_CONFIG_FILE = "/evil";
+  try {
+    installDeps(worktree, "node dump.cjs", ["PIP_CONFIG_FILE"]);
+  } finally {
+    delete process.env.PIP_CONFIG_FILE;
+  }
+  assert.equal(JSON.parse(readFileSync(out, "utf8")).pip, devNull);
+});
+
+test("a custom setup records the ignored host files it left, and a default install does not", () => {
+  const mk = 'const fs = require("node:fs");\nfs.mkdirSync(".venv/lib", { recursive: true });\nfs.writeFileSync(".venv/lib/setup.py", "x");\n';
+  const r = repoWith({ "mk.cjs": mk, ".gitignore": ".venv\n" }, { setup: ["node mk.cjs"] });
+  const t = createWorktree(r.repo, "T-1", r.wt);
+  assert.equal(t.install, false);
+  assert.match(String(t.setup_ignored), /^\.venv\/lib\/setup\.py@[0-9a-f]{40}$/);
+  const none = repoWith({}, {});
+  assert.equal(createWorktree(none.repo, "T-2", none.wt).setup_ignored, null);
 });
 
 test("setup commands run in order, and nothing runs when the config has none", () => {

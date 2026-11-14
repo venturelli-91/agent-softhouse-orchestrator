@@ -2,6 +2,7 @@ import { rmSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Command, END, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { DEFAULT_INSTALL } from "./commands.ts";
+import { setupSnapshot } from "./evidence.ts";
 import { activeTickets, gitConfigHash, installDeps, MAX_ACTIVE_TICKETS, MAX_REVISIONS, RECURSION_LIMIT, tokens } from "./guardrails.ts";
 import { ceoApproval } from "./ceo-node.ts";
 import { dev, DEV_RULES, devRules, partialWork, taskBlock } from "./dev-node.ts";
@@ -112,8 +113,10 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   const rules = [loadConventions(repo, base), stack && `Stack decided for this repo: ${stack}`, lessons(loadPlaybooks(repo, base))].filter(Boolean).join("\n\n");
   const git_config_hash = gitConfigHash(repo);
   sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
+  let setup_ignored: string[] | null = null;
   try {
     for (const c of setup) installDeps(dir, c, env);
+    if (setup.length && !install) setup_ignored = setupSnapshot(dir);
   } catch (e) {
     removeTicketResources(repo, dir, id);
     throw e;
@@ -125,6 +128,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
     base,
     test,
     install,
+    setup_ignored,
     merge,
     publisher: publisher ?? "",
     push_remote,
