@@ -7,8 +7,8 @@ import { NodeFailure, runAgent } from "./run-agent.ts";
 import { UI_SPECIALTIES } from "./specialties.ts";
 import { cap, summary, type T } from "./ticket.ts";
 
-const ReviewOutput = z.object({
-  verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary, explanation: z.string().default(""), caveats: z.array(z.string()).default([]),
+export const ReviewOutput = z.object({
+  verdict: z.enum(["approved", "rejected"]), comments: z.string(), summary, explanation: z.string().default(""), unmet: z.array(z.string()).default([]), caveats: z.array(z.string()).default([]),
 });
 
 export const evidenceNote = (evidence: string[]) =>
@@ -38,6 +38,8 @@ function reviewStep(name: "reviewer" | "design" | "qa", files: (t: T) => string[
       schema: ReviewOutput,
       context: context(
         ticketData(t),
+        `Original CEO request:\n${t.request}`,
+        "Judge whether the behavior delivers the request. Do not reject on the wording of a criterion when the behavior is met; reject only on a behavior that fails. `unmet`: every item of the request the change does not deliver, one per item, empty when none.",
         evidenceNote(v.evidence),
         "`explanation`: what changed and why, in plain language a non-programmer follows, up to 6 lines.",
         "`caveats`: only when approving, points that do not block this delivery but deserve a later ticket, one per item; each becomes a backlog item.",
@@ -46,7 +48,7 @@ function reviewStep(name: "reviewer" | "design" | "qa", files: (t: T) => string[
       ),
     });
     const id = { [`${name}_id`]: `agent-${name}` };
-    if (output.verdict === "approved") {
+    if (output.verdict === "approved" && !output.unmet.length) {
       const n = addCaveats(t.id, name, output.caveats);
       return {
         ...id,
@@ -56,7 +58,7 @@ function reviewStep(name: "reviewer" | "design" | "qa", files: (t: T) => string[
         history: log(t, name, n ? `approved (${n} caveats to backlog)` : "approved", usage),
       };
     }
-    const comments = output.comments.split("\n").slice(0, 10).join("\n");
+    const comments = [output.comments, ...output.unmet.map((u) => `unmet: ${u}`)].filter(Boolean).join("\n").split("\n").slice(0, 10).join("\n");
     return {
       status: "dev_failed",
       revisions: t.revisions + 1,

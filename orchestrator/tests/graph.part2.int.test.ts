@@ -176,6 +176,33 @@ function reviewerFailsOnceHere() {
   return () => (n++ ? approved() : { verdict: "rejected", comments: "again", summary: "s" });
 }
 
+test("reviewer and qa prompts carry the original request and the behavior-over-wording instruction", async () => {
+  const ctx: Record<string, string> = {};
+  for (const role of ["reviewer", "qa"] as const) {
+    const base = defaults[role]!;
+    knobs.override[role] = (req) => ((ctx[role] = req.context), base(req));
+  }
+  await start("T-1", new MemorySaver(), { request: "make the checkout button green" });
+  for (const role of ["reviewer", "qa"]) {
+    assert.match(ctx[role], /Original CEO request:\nmake the checkout button green/);
+    assert.match(ctx[role], /Do not reject on the wording of a criterion when the behavior is met/);
+  }
+});
+
+test("an approval with unmet request items is rejected back to the dev with the items listed", async () => {
+  let n = 0;
+  knobs.override.reviewer = () => (n++ ? approved() : { ...approved(), unmet: ["export to csv"] });
+  const g = await start();
+  assert.match(g.r.rejections[0], /^reviewer: unmet: export to csv/);
+  assert.equal(g.r.revisions, 1);
+});
+
+test("the review schema defaults unmet to empty and keeps the items it is given", async () => {
+  const { ReviewOutput } = await import("../src/review-nodes.ts");
+  assert.deepEqual(ReviewOutput.parse(approved()).unmet, []);
+  assert.deepEqual(ReviewOutput.parse({ ...approved(), unmet: ["a"] }).unmet, ["a"]);
+});
+
 test("an abort answer closes an approval and keeps the reason in the history", async () => {
   const g = await start();
   assert.equal(paused(g.r)?.type, "approval");
