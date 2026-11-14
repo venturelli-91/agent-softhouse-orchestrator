@@ -255,7 +255,7 @@ test("orch demand groups a code and a manual ticket, shows the waiting decision 
     assert.match(sb.orch("status", "D-1").out, /task T-1 code approval\n {2}task M-1 manual open\n {2}#1 \S+ CEO \[T-1\]: Ship T-1 later\? -> waiting/);
     const home = join(sb.repo, "..", "home");
     writeFileSync(join(home, "backlog.jsonl"), `${JSON.stringify({ ticket: "T-1", from: "reviewer", caveat: "name it", time: "", status: "open" })}\n`);
-    writeFileSync(join(sb.repo, "stray.txt"), "x");
+    writeFileSync(join(sb.repo, "checkout.html"), "<button>Edited</button>\n");
     const refused = sb.orch("demand", "close", "D-1");
     assert.equal(refused.code, 1, refused.out);
     for (const p of [/FAIL tasks closed or decided: T-1 approval; M-1 open/, /FAIL decisions answered: #1 \(CEO\)/, /FAIL backlog reviewed.*T-1: name it/,
@@ -264,7 +264,7 @@ test("orch demand groups a code and a manual ticket, shows the waiting decision 
     assert.match(sb.orch("demand", "answer", "D-1", "1", "yes, next sprint").out, /decision #1 answered/);
     writeFileSync(join(sb.repo, "out.json"), "[]");
     assert.equal(sb.orch("evidence", "M-1", join(sb.repo, "out.json"), "--exit", "0").code, 0);
-    rmSync(join(sb.repo, "stray.txt"));
+    writeFileSync(join(sb.repo, "checkout.html"), "<button>Submit</button>\n");
     rmSync(join(sb.repo, "out.json"));
     sb.orch("backlog", "review", "1");
     const closed = sb.orch("demand", "close", "D-1");

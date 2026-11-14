@@ -46,7 +46,7 @@ export async function demand(c: Ctx) {
       console.log(`${id}: decision #${n} answered`);
     } else {
       const d = readDemand(c.home, id);
-      const checks = closingChecklist(d, await taskStates(c, d), readBacklog(c.home), safeGit(d.repo, "status", "--porcelain"),
+      const checks = closingChecklist(d, await taskStates(c, d), readBacklog(c.home), safeGit(d.repo, "status", "--porcelain", "--untracked-files=no"),
         projectDocs(d.repo));
       for (const k of checks) console.log(`${k.ok ? "ok  " : "FAIL"} ${k.item}${k.detail ? `: ${k.detail}` : ""}`);
       const closed = attempt(() => closeDemand(c.home, id, checks)).status === "closed";

@@ -15,7 +15,7 @@ export async function run(c: Ctx) {
   const id = c.values.id ?? `T-${Date.now().toString(36)}`;
   const repo = resolve(c.values.repo ?? c.host);
   const demand = demandOf(c);
-  if (safeGit(repo, "status", "--porcelain"))
+  if (safeGit(repo, "status", "--porcelain", "--untracked-files=no"))
     console.warn(`warning: ${repo} has uncommitted changes the ticket will not see; to ship them through a ticket: orch adopt --title "<what they do>"`);
   await c.locked(id, async () => {
     const wt = prepare(c, repo, id);

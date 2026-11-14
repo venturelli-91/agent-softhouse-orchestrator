@@ -13,7 +13,7 @@ export function safeGit(cwd: string, ...args: string[]): string {
 
 const run = (cwd: string, extraEnv: NodeJS.ProcessEnv, args: string[]) =>
   execFileSync("git", ["-c", "core.fsmonitor=false", "-c", "core.pager=cat", "-c", `core.hooksPath=${devNull}`, ...args], {
-    cwd, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_EXTERNAL_DIFF: "", GIT_TERMINAL_PROMPT: "0", ...extraEnv }, encoding: "utf8",
+    cwd, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_EXTERNAL_DIFF: "", GIT_TERMINAL_PROMPT: "0", ...extraEnv }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024,
   }).trim();
 
 // Network git on the main checkout: no hooks, and plain `ssh` (env wins over a core.sshCommand an agent could have written).
