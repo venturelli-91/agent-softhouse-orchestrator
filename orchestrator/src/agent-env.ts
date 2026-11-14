@@ -34,6 +34,7 @@ export function minimalEnv(role: Role, src: Env = process.env): Record<string, s
     GIT_CONFIG_VALUE_2: "cat",
     GIT_EXTERNAL_DIFF: "",
     NPM_CONFIG_USERCONFIG: devNull,
+    PYTHONDONTWRITEBYTECODE: "1",
     GIT_TERMINAL_PROMPT: "0",
     GIT_AUTHOR_NAME: `agent-${role}`,
     GIT_AUTHOR_EMAIL: `${role}@orchestrator.local`,

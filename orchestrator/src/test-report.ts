@@ -10,11 +10,11 @@ export type Counts = z.infer<typeof TestCounts>;
 
 const KIND: Record<string, keyof Counts> = {
   pass: "pass", passed: "pass", xpassed: "pass",
-  fail: "fail", failed: "fail", error: "fail", errors: "fail",
+  fail: "fail", failed: "fail", failures: "fail", error: "fail", errors: "fail",
   skipped: "skip", todo: "skip", pending: "skip", xfailed: "skip",
 };
 
-// node --test (spec `ℹ pass 3`, TAP `# pass 3`), pytest (`== 3 passed, 1 skipped in 0.2s ==`), jest (`Tests: 1 skipped, 3 passed, 4 total`).
+// unittest (`Ran 3 tests in 0.1s` then `OK (skipped=1)` or `FAILED (failures=1, errors=1)`), node --test (spec `ℹ pass 3`, TAP `# pass 3`), pytest (`== 3 passed, 1 skipped in 0.2s ==`), jest (`Tests: 1 skipped, 3 passed, 4 total`).
 // Several runs in one command (e.g. unit && int) add up; output in none of these formats gives null.
 export function parseCounts(out: string): Counts | null {
   const c: Counts = { pass: 0, skip: 0, fail: 0 };
@@ -26,6 +26,12 @@ export function parseCounts(out: string): Counts | null {
   for (const m of out.matchAll(/^[ℹ#] (pass|fail|skipped|todo) (\d+)\r?$/gm)) add(m[1], m[2]);
   for (const line of out.matchAll(/^=+ (.+?) in [\d.]+s\b.*=+\r?$|^Tests:\s+(.+ total)\r?$/gm))
     for (const m of (line[1] ?? line[2]).matchAll(/(\d+) (\w+)/g)) add(m[2], m[1]);
+  for (const m of out.matchAll(/^Ran (\d+) tests? in [\d.]+s\r?\n+(?:(?:OK|FAILED|NO TESTS RAN)(?: \((.*)\))?)?/gm)) {
+    const before = c.skip + c.fail;
+    for (const k of (m[2] ?? "").matchAll(/(skipped|failures|errors)=(\d+)/g)) add(k[1], k[2]);
+    c.pass += Number(m[1]) - (c.skip + c.fail - before);
+    found = true;
+  }
   return found ? c : null;
 }
 
@@ -36,15 +42,21 @@ export function parseCounts(out: string): Counts | null {
 export const testFailure = (wt: string, test: Test = DEFAULT_TEST, noTestsOk = false) => runTests(wt, test, noTestsOk).failure;
 
 // Commands run in order and stop at the first failure; the counts of the commands that ran add up.
-export function runTests(wt: string, test: Test = DEFAULT_TEST, noTestsOk = false): { failure: string; counts: Counts | null } {
+export function runTests(wt: string, test: Test = DEFAULT_TEST, noTestsOk = false): { failure: string; counts: Counts | null; none: boolean } {
   let out = "";
+  let none = false;
   for (const cmd of commands(test)) {
     const r = spawnSync(cmd, { cwd: wt, env: minimalEnv("dev"), shell: true, encoding: "utf8", timeout: NODE_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
     out += `${r.stdout ?? ""}\n${r.stderr ?? ""}\n`;
-    if (r.status === 0 || (noTestsOk && /\bpytest\b/.test(cmd) && r.status === 5)) continue;
-    return { failure: `${cmd} failed: ${r.error ? `${r.error.message} ` : ""}${String(r.stdout || r.stderr || "").slice(-400)}`, counts: parseCounts(out) };
+    if (r.status === 0) continue;
+    if (noTestsOk && /\bpytest\b/.test(cmd) && r.status === 5) {
+      none = true;
+      continue;
+    }
+    return { failure: `${cmd} failed: ${r.error ? `${r.error.message} ` : ""}${String(r.stdout || r.stderr || "").slice(-400)}`, counts: parseCounts(out), none };
   }
-  return { failure: "", counts: parseCounts(out) };
+  const counts = parseCounts(out);
+  return { failure: "", counts, none: none || (counts !== null && counts.pass + counts.skip + counts.fail === 0) };
 }
 
 const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*|[^/]*_test)\.py$/i;

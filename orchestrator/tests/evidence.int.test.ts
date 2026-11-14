@@ -134,7 +134,7 @@ test("a test command that moves HEAD voids the verification", () => {
 
 test("a test command that dirties the worktree voids the verification", () => {
   const { d, base } = repo();
-  writeFileSync(join(d, "dirty.js"), "require('fs').writeFileSync('dirt.txt', 'x');");
+  writeFileSync(join(d, "dirty.js"), "require('fs').writeFileSync('fail.js', 'x');");
   git(d, "add", "-A");
   git(d, "commit", "-qm", "add dirty script");
   const r = verifyEvidence(d, base, "node dirty.js");
@@ -286,4 +286,31 @@ test("modularity check reads the committed blob: a dangling symlink and a delete
   const r = verifyEvidence(d, base, GREEN);
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, true);
+});
+
+test("files the test run leaves untracked (e.g. __pycache__) are cleaned and do not void the verification", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "leave.js"), "require('fs').mkdirSync('__pycache__');require('fs').writeFileSync('__pycache__/m.pyc','x');");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "add leave script");
+  const r = verifyEvidence(d, base, "node leave.js");
+  const left = existsSync(join(d, "__pycache__"));
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, true);
+  assert.equal(left, false);
+});
+
+const NONE = `node -e "console.log('Ran 0 tests in 0.000s')"`;
+const counts = { pass: 3, skip: 0, fail: 0 };
+
+test("a run that collects no tests is its own outcome, a failure only when the base had tests", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "a.txt"), "x");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "change");
+  const free = verifyEvidence(d, base, NONE);
+  const red = verifyEvidence(d, base, NONE, false, [], counts);
+  rmSync(d, { recursive: true, force: true });
+  assert.ok(free.ok && free.none && free.evidence.some((e) => e.endsWith("none collected")));
+  assert.ok(!red.ok && /no tests collected/.test(red.reason));
 });
