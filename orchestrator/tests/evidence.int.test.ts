@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -288,29 +288,80 @@ test("modularity check reads the committed blob: a dangling symlink and a delete
   assert.equal(r.ok, true);
 });
 
-test("files the test run leaves untracked (e.g. __pycache__) are cleaned and do not void the verification", () => {
+function linkedWorktree(d: string, file: string, content: string) {
+  const wt = `${d}-wt`;
+  git(d, "worktree", "add", "-q", "-b", "ticket/T-1", wt);
+  writeFileSync(join(wt, file), content);
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "dev");
+  return wt;
+}
+
+const cleanup = (...dirs: string[]) => dirs.forEach((x) => rmSync(x, { recursive: true, force: true }));
+
+test("in a linked worktree, files the test run leaves untracked (e.g. __pycache__) are cleaned and do not void the verification", () => {
   const { d, base } = repo();
-  writeFileSync(join(d, "leave.js"), "require('fs').mkdirSync('__pycache__');require('fs').writeFileSync('__pycache__/m.pyc','x');");
-  git(d, "add", "-A");
-  git(d, "commit", "-qm", "add leave script");
-  const r = verifyEvidence(d, base, "node leave.js");
-  const left = existsSync(join(d, "__pycache__"));
-  rmSync(d, { recursive: true, force: true });
+  const wt = linkedWorktree(d, "leave.js", "require('fs').mkdirSync('__pycache__');require('fs').writeFileSync('__pycache__/m.pyc','x');");
+  const r = verifyEvidence(wt, base, "node leave.js");
+  const left = existsSync(join(wt, "__pycache__"));
+  cleanup(wt, d);
   assert.equal(r.ok, true);
   assert.equal(left, false);
 });
 
-const NONE = `node -e "console.log('Ran 0 tests in 0.000s')"`;
-const counts = { pass: 3, skip: 0, fail: 0 };
+test("in a main checkout nothing is deleted: leftovers still void the verification and user files survive", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "leave.js"), "require('fs').writeFileSync('leftover.txt','x');");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "dev");
+  const r = verifyEvidence(d, base, "node leave.js");
+  const kept = existsSync(join(d, "leftover.txt"));
+  cleanup(d);
+  assert.ok(!r.ok && /worktree changed during verification/.test(r.reason));
+  assert.equal(kept, true);
+});
 
-test("a run that collects no tests is its own outcome, a failure only when the base had tests", () => {
+const NONE = `node -e "console.log('Ran 0 tests in 0.000s')"`;
+const zeros = { pass: 0, skip: 0, fail: 0 };
+const some = { pass: 3, skip: 0, fail: 0 };
+
+test("no tests collected: accepted and labelled only when the base positively had none; unknown or non-empty base rejects it", () => {
   const { d, base } = repo();
   writeFileSync(join(d, "a.txt"), "x");
   git(d, "add", "-A");
   git(d, "commit", "-qm", "change");
-  const free = verifyEvidence(d, base, NONE);
-  const red = verifyEvidence(d, base, NONE, false, [], counts);
-  rmSync(d, { recursive: true, force: true });
+  const free = verifyEvidence(d, base, NONE, false, [], zeros);
+  const unknown = verifyEvidence(d, base, NONE, false, [], null);
+  const had = verifyEvidence(d, base, NONE, false, [], some);
+  cleanup(d);
   assert.ok(free.ok && free.none && free.evidence.some((e) => e.endsWith("none collected")));
-  assert.ok(!red.ok && /no tests collected/.test(red.reason));
+  assert.ok(!unknown.ok && /no tests collected/.test(unknown.reason));
+  assert.ok(!had.ok && /no tests collected/.test(had.reason));
+});
+
+const PYS = ["python", "python3"].filter((x) => spawnSync(x, ["--version"]).status === 0);
+
+function pyRepo(body: string) {
+  const { d, base } = repo();
+  mkdirSync(join(d, "tests"));
+  writeFileSync(join(d, "tests", "test_a.py"), body);
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "py");
+  return { d, base };
+}
+
+for (const py of PYS) test(`${py} unittest: pass, fail and none collected are three distinct outcomes`, () => {
+  const cmd = `${py} -m unittest discover -s tests`;
+  const pass = pyRepo("import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        pass\n");
+  const fail = pyRepo("import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        self.fail('x')\n");
+  const none = pyRepo("import unittest\n");
+  const rp = verifyEvidence(pass.d, pass.base, cmd, false, [], zeros);
+  const rf = verifyEvidence(fail.d, fail.base, cmd, false, [], zeros);
+  const rn = verifyEvidence(none.d, none.base, cmd, false, [], zeros);
+  const rnBad = verifyEvidence(none.d, none.base, cmd, false, [], some);
+  cleanup(pass.d, fail.d, none.d);
+  assert.ok(rp.ok && !rp.none && rp.counts?.pass === 1);
+  assert.ok(!rf.ok && /failed/.test(rf.reason));
+  assert.ok(rn.ok && rn.none);
+  assert.ok(!rnBad.ok);
 });

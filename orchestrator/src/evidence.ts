@@ -1,5 +1,6 @@
 // Evidence verified by code (zero token cost): what the agent claims does not count.
 import { execSync } from "node:child_process";
+import { resolve } from "node:path";
 import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
 import { safeGit } from "./git-safe.ts";
@@ -53,14 +54,15 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   const skips = addedSkips(git("-c", "core.quotePath=false", "diff", "-U0", "--text", "--no-color", "--no-ext-diff", "--no-textconv", `${base}..HEAD`));
   if (skips.length) return { ok: false, reason: `the diff skips tests instead of making them pass (${skips.slice(0, 5).join("; ")})` };
   if (install) installDeps(wt);
-  const baseHadTests = !!baseTests && baseTests.pass + baseTests.skip + baseTests.fail > 0;
-  const { failure, counts, none } = runTests(wt, test, !baseHadTests);
+  const baseNone = !!baseTests && baseTests.pass + baseTests.skip + baseTests.fail === 0;
+  const { failure, counts, none } = runTests(wt, test, baseNone);
   if (failure) return { ok: false, reason: failure };
-  if (none && baseHadTests) return { ok: false, reason: "no tests collected: the base suite had tests and this run found none" };
+  if (none && !baseNone) return { ok: false, reason: "no tests collected: the base suite had tests (or its count is unknown) and this run found none" };
   // npm test runs repo code: if it moved HEAD or dirtied the tree, the verification is void.
   if (git("rev-parse", "HEAD") !== sha) return { ok: false, reason: "HEAD changed during verification" };
-  git("clean", "-fdq");
-  if (git("status", "--porcelain", "--untracked-files=no").length) return { ok: false, reason: "worktree changed during verification" };
+  const linked = resolve(wt, git("rev-parse", "--git-dir")) !== resolve(wt, git("rev-parse", "--git-common-dir"));
+  if (linked) git("clean", "-fdq");
+  if (git("status", "--porcelain", linked ? "--untracked-files=no" : "--untracked-files=all").length) return { ok: false, reason: "worktree changed during verification" };
   const tally = counts ? ` (pass ${counts.pass}, skip ${counts.skip}, fail ${counts.fail})` : "";
   const evidence = [`commit:${git("rev-parse", "--short", sha)}`, `tests:${commands(test).join(" + ")} ${none ? "none collected" : `ok${tally}`}`];
   return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence, counts, none };
