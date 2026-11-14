@@ -5,8 +5,6 @@ import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
 import { commands, DEFAULT_TEST, type Test } from "./commands.ts";
 
-export { commands, type Test };
-
 export const TestCounts = z.object({ pass: z.number(), skip: z.number(), fail: z.number() });
 export type Counts = z.infer<typeof TestCounts>;
 

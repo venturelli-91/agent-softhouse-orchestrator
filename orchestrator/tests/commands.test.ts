@@ -14,11 +14,11 @@ import { Ticket } from "../src/ticket.ts";
 
 const ACCEPT = [
   "npm test", "pytest -q", "python -m unittest", "python -m pytest tests/unit -x", "npm run test:unit -- --ci",
-  "pytest tests/test_a.py::test_b", ".venv/bin/python -m pytest", ".venv\Scripts\python -m pytest", "make test", "pytest -k a,b",
+  "pytest tests/test_a.py::test_b", ".venv/bin/python -m pytest", ".venv\\Scripts\\python -m pytest", "C:\\tools\\py.exe -m pytest", "make test", "pytest -k a,b",
 ];
 const REJECT = [
   "a; b", "a && b", "a || b", "a | b", "a & b", "a > f", "a < f", "`a`", "$(a)", "$A", "%A%", "a ^ b", "a !b", '"a b"', "'a'", "a*", "a?",
-  "a[1]", "a{1,2}", "~/a", "a # c", "a\nb", "a\tb", "", "   ",
+  "a[1]", "a{1,2}", "~/a", "a # c", "a\nb", "a\\\nb", "a\tb", "", "   ",
 ];
 
 const verdicts = (c: string) => [

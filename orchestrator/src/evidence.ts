@@ -4,8 +4,8 @@ import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
 import { safeGit } from "./git-safe.ts";
 import { MAX_FILE_LINES, MAX_LINE_COLS, modularityViolations } from "./modularity.ts";
-import { DEFAULT_INSTALL, DEFAULT_TEST } from "./commands.ts";
-import { addedSkips, commands, type Counts, runTests, type Test } from "./test-report.ts";
+import { commands, DEFAULT_INSTALL, DEFAULT_TEST, type Test } from "./commands.ts";
+import { addedSkips, type Counts, runTests } from "./test-report.ts";
 import type { T } from "./ticket.ts";
 
 // Paths no agent may change: secrets (never, not even adopted), and CI and the orchestrator itself (only in a version `orch adopt` took
