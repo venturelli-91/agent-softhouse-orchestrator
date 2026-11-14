@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { NodeFailure } from "./node-failure.ts";
 import { dailyCapReached, recordUsage } from "./daily-cap.ts";
 import { minimalEnv, readEnv, permissionArgs, tokens, NODE_TIMEOUT_MS, type Role } from "./guardrails.ts";
 
@@ -29,10 +30,7 @@ export interface Executor {
   run<T>(req: Req<T>): Promise<Result<T>>;
 }
 
-// `usage` is set when the CLI reported what a failed run spent (e.g. max_turns), so the budget still counts it.
-export class NodeFailure extends Error {
-  usage?: Usage;
-}
+export { NodeFailure };
 // A failure worth retrying (API busy, overloaded, rate limited). A usage limit is not: waiting seconds will not fix it.
 export class TransientFailure extends NodeFailure {}
 
