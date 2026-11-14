@@ -83,6 +83,31 @@ port that already answers escalates to you; no `webcheck` configured, or Playwri
 warning in the docs record. INP needs real interaction, so there is no INP budget. Ads, Analytics and GTM are checked
 only through the browser: no account APIs or credentials.
 
+## Load and concurrency stage
+
+Off by default. With `repos["<abs path>"].load` in the external config (never in `.orchestrator.json`), backend, fullstack,
+integrations and data tickets pass through `load` after `webcheck`. It is code, not an agent: zero tokens. It starts
+`serve` from the ticket worktree on the host, then runs three phases against `base_url`: a baseline of `fast_path`,
+`concurrency` parallel writers for `duration_s`, and the same writers while a localhost proxy makes the dependency
+`delay_ms` slower. The proxy address goes to the service in the env var named by `slow_dependency.env`; without
+`target` it is an HTTP stub that answers 200 after the delay. A service that hardcodes its dependency address is reported
+as "dependency not reached".
+
+| Key | Meaning |
+|---|---|
+| `serve`, `base_url`, `env`, `timeout_s` | As in `webcheck`; `timeout_s` (default 300, max 600) caps the whole stage. |
+| `health_path`, `fast_path` | Default `/`; `fast_path` must not touch the dependency. |
+| `writes` | 1 to 5 `{method, path, body?}`, body a static JSON string. |
+| `slow_dependency` | `{env, target?, delay_ms}` or `null`; `target` is localhost:port. |
+| `concurrency`, `duration_s` | Defaults 20 and 20. |
+| `thresholds` | `max_error_rate` 0.01, `max_fast_p95_ms` 500, `max_fast_p95_ratio` 5, `recover_s` 10. |
+| `runner` | Optional plain command that replaces the built-in driver: gets `ORCH_LOAD_TARGET`, `ORCH_SLOW_DEP` (dependency slow for the whole run) and `ORCH_LOAD_DURATION`; exit 0 pass, 1 breach, other crash; last stdout line `{"requests":N,"errors":N,"p95_ms":N}`. |
+
+A breach (error rate, fast path stalled while the dependency is slow, no recovery, service died) goes back to the dev as
+`load: ...`; a failed phase is re-run once before it counts. A pass puts one summary line in the PR body and in the
+approval request, and the JSON report is saved as `ORCH_HOME/load-<id>.json`. A port that already answers or a runner
+that crashes escalates to you; a runner or proxy that cannot start skips with a warning in the docs record.
+
 ## Merge permission outside the orchestrator
 
 With `merge: pr` the orchestrator publishes the PR and stops; the merge is yours. When the flow is driven from Claude Code, its permission classifier can deny `gh pr merge` ("Merge Without Review") until the user explicitly asks for that merge or adds a permission rule. `merge: auto` runs `gh` from the orchestrator process and is not affected. A ticket merged by hand stays unfinished in the state: answer its approval or `orch clean --force <id>`, and `orch clean --all` removes finished worktrees.
