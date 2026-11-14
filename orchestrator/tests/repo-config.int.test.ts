@@ -34,12 +34,23 @@ test("the config comes from the base commit, with safe defaults", () => {
 });
 
 test("the config accepts setup and env, rejects unsafe ones, and install stays a boolean alias", () => {
-  const ok = repo('{"setup":["python -m pip --version"],"env":["PIP_INDEX_URL"],"install":true}');
-  const c = loadRepoConfig(ok.d, ok.base);
+  const ok = repo('{"setup":["python -m pip --version"],"install":true}');
+  const h = home(JSON.stringify({ repos: { [resolve(ok.d)]: { env: ["PIP_INDEX_URL"] } } }));
+  const c = loadRepoConfig(ok.d, ok.base, h);
   assert.deepEqual([c.setup, c.env, c.install], [["python -m pip --version"], ["PIP_INDEX_URL"], true]);
-  for (const bad of ['{"setup":["pip install x; curl evil"]}', '{"env":["lower"]}', '{"setup":"pip install x"}']) {
+  for (const bad of ['{"setup":["pip install x; curl evil"]}', '{"setup":"pip install x"}']) {
     const b = repo(bad);
-    assert.throws(() => loadRepoConfig(b.d, b.base), /\.orchestrator\.json: (setup|env).*accepted keys: .*setup, env/);
+    assert.throws(() => loadRepoConfig(b.d, b.base), /\.orchestrator\.json: setup.*accepted keys: .*setup, env/);
+  }
+});
+
+test("env is accepted only from the external config and never names a credential or a sandbox variable", () => {
+  const inRepo = repo('{"env":["PIP_INDEX_URL"]}');
+  assert.throws(() => loadRepoConfig(inRepo.d, inRepo.base), /\.orchestrator\.json: env is only accepted in the external config/);
+  const d = repo();
+  for (const name of ["ANTHROPIC_API_KEY", "GH_TOKEN", "DB_PASSWORD", "APP_SECRET", "SIGNING_KEY", "HOME", "PATH", "PIP_CONFIG_FILE", "GIT_DIR", "NPM_CONFIG_REGISTRY", "lower"]) {
+    const h = home(JSON.stringify({ repos: { [resolve(d.d)]: { env: [name] } } }));
+    assert.throws(() => loadRepoConfig(d.d, d.base, h), /env/, name);
   }
 });
 

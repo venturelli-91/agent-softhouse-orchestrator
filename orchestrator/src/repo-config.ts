@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { DEFAULT_TEST, safeCommand, TestSpec } from "./commands.ts";
 import { orchHome } from "./daily-cap.ts";
+import { ALLOWED_ENV, minimalEnv } from "./agent-env.ts";
 import { safeGit } from "./guardrails.ts";
 import { SPECIALTIES } from "./specialties.ts";
 import { ProposedAgents } from "./team.ts";
@@ -20,6 +21,13 @@ export const DeployConfig = z.object({
   max_latency_ms: z.number().positive().default(2000),
 });
 export type DeployConfig = z.infer<typeof DeployConfig>;
+
+// Names a setup command may read: never credentials, and never a key minimalEnv already sets or passes (the hardening must not be overridable).
+const reserved = new Set([...ALLOWED_ENV, ...Object.keys(minimalEnv("dev", {}))]);
+const hostName = z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(
+  (n) => !reserved.has(n) && !/^ANTHROPIC_|^GIT_|^NPM_CONFIG_|_(TOKEN|KEY|SECRET|PASSWORD)$/.test(n),
+  "env must not name a credential or a variable the sandbox sets",
+);
 
 const tagId = (prefix: string) => z.array(z.string().regex(new RegExp(`^${prefix}-[A-Z0-9]+$`))).default([]);
 // The app is started on the host from the ticket's worktree, so, like deploy, this block comes only from the external config.
@@ -54,7 +62,7 @@ export const RepoConfig = z.strictObject({
   // Commands run on the host in each new worktree, in order; never in the dev's allowlist. `install: true` is an alias for [DEFAULT_INSTALL].
   setup: z.array(safeCommand("setup")).default([]),
   // Host variable names the setup commands may read; nothing else leaks from the operator's environment.
-  env: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
+  env: z.array(hostName).default([]),
   deploy: DeployConfig.nullable().default(null),
   webcheck: WebcheckConfig.nullable().default(null),
   // The dev specialties triage may route to in this repo; the whole team by default.
@@ -104,7 +112,7 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
   try {
     const text = safeGit(repo, "show", `${ref}:.orchestrator.json`);
     const raw = readJson(".orchestrator.json", text);
-    for (const k of ["deploy", "webcheck"]) if (raw && typeof raw === "object" && k in raw) throw new Error(`.orchestrator.json: ${k} is only accepted in the external config`);
+    for (const k of ["deploy", "webcheck", "env"]) if (raw && typeof raw === "object" && k in raw) throw new Error(`.orchestrator.json: ${k} is only accepted in the external config`);
     inRepo = check(".orchestrator.json", raw);
   } catch (e) {
     if ((e as Error).message.startsWith(".orchestrator.json:")) throw e;
