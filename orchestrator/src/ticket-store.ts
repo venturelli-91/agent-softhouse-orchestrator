@@ -43,6 +43,16 @@ export function runningPid(home: string, id: string): number | null {
   }
 }
 
+export const DONE = ["simulated_deploy", "deployed", "aborted", "closed", "merged"];
+
+export type RunState = "waiting" | "running" | "dead" | "done";
+
+export function runState(home: string, id: string, pending: unknown, status: string): RunState {
+  if (DONE.includes(status)) return "done";
+  if (pending) return "waiting";
+  return runningPid(home, id) === null ? "dead" : "running";
+}
+
 export function lockTicket(home: string, id: string, pid = process.pid): () => void {
   checkId(id);
   mkdirSync(dir(home), { recursive: true });

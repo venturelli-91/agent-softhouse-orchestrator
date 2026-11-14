@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { lockTicket, runningPid, ticketFile, ticketIds } from "../src/ticket-store.ts";
+import { lockTicket, runningPid, runState, ticketFile, ticketIds } from "../src/ticket-store.ts";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "tstore-"));
 
@@ -59,4 +59,27 @@ test("runningPid sees a live lock and ignores a released one or one left by a de
   const dead = spawnSync(process.execPath, ["-e", ""]);
   lockTicket(home, "T-2", dead.pid);
   assert.equal(runningPid(home, "T-2"), null);
+});
+
+test("runState tells waiting, running, dead and done apart", () => {
+  const home = tmp();
+  assert.equal(runState(home, "T-1", null, "dev"), "dead");
+  assert.equal(runState(home, "T-1", { type: "approval" }, "approval"), "waiting");
+  assert.equal(runState(home, "T-1", null, "deployed"), "done");
+  const unlock = lockTicket(home, "T-1");
+  assert.equal(runState(home, "T-1", null, "dev"), "running");
+  unlock();
+  assert.equal(runState(home, "T-1", null, "dev"), "dead");
+});
+
+test("a killed process leaves a stale lock: dead until the ticket reaches a finished status", async () => {
+  const home = tmp();
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"]);
+  const exited = new Promise((r) => child.once("exit", r));
+  lockTicket(home, "T-1", child.pid);
+  assert.equal(runState(home, "T-1", null, "dev"), "running");
+  child.kill();
+  await exited;
+  assert.equal(runState(home, "T-1", null, "dev"), "dead");
+  assert.equal(runState(home, "T-1", null, "merged"), "done");
 });

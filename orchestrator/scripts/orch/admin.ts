@@ -19,12 +19,10 @@ import { isManual, manualIds, readManual } from "../../src/manual.ts";
 import { recordMetrics } from "../../src/metrics.ts";
 import { bareNodeTest } from "../../src/repo-config.ts";
 import { TEAMS } from "../../src/specialties.ts";
-import { runningPid, ticketFile, ticketIds } from "../../src/ticket-store.ts";
+import { DONE, runState, ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 import { demandLines, showDemand } from "./demand.ts";
 import { demandIds, forgetDemand, isDemand, readDemand } from "../../src/demand.ts";
-
-const DONE = ["simulated_deploy", "deployed", "aborted", "closed", "merged"];
 
 export function init(c: Ctx) {
   const repo = resolve(c.positionals[0] ?? c.host);
@@ -109,10 +107,10 @@ export async function status(c: Ctx) {
       await c.mark(id, { status: "merged", history: log(t, "status", `merged: every commit is already on ${t.base_branch}`) });
       ({ ticket: t, pending } = await c.load(id));
     }
-    // Not finished, not waiting for an answer, and no live process: the run died (closed session, crash).
-    const dead = !pending && !DONE.includes(t.status) && runningPid(c.home, id) === null;
-    const waiting = pending ? `  <- waiting (${pending.type})` : dead ? `  <- no process running: orch continue ${id}` : "";
-    console.log(`${id.padEnd(12)} ${t.status.padEnd(16)} ${t.priority.padEnd(4)} ${t.title}${waiting}${t.docs_warnings.length ? "  docs!" : ""}`);
+    // Dead: not finished, not waiting for an answer, and no live process (closed session, crash). A launcher that exited is not completion.
+    const state = runState(c.home, id, pending, t.status);
+    const waiting = pending ? `  <- waiting (${pending.type})` : state === "dead" ? `  <- no process running: orch continue ${id}` : "";
+    console.log(`${id.padEnd(12)} ${t.status.padEnd(16)} ${state.padEnd(8)} ${t.priority.padEnd(4)} ${t.title}${waiting}${t.docs_warnings.length ? "  docs!" : ""}`);
     if (c.positionals[0]) {
       console.log(report(t));
       if (pending) console.log(JSON.stringify(pending, null, 1));
