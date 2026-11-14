@@ -19,7 +19,7 @@ export async function run(c: Ctx) {
     console.warn(`warning: ${repo} has uncommitted changes the ticket will not see; to ship them through a ticket: orch adopt --title "<what they do>"`);
   await c.locked(id, async () => {
     const wt = prepare(c, repo, id);
-    await attachOrDrop(c, demand, repo, wt.worktree, id);
+    attachOrDrop(c, demand, repo, wt.worktree, id);
     await c.drive(id, { id, request, ...wt });
   });
 }
@@ -51,9 +51,9 @@ const drop = (repo: string, worktree: string, id: string, msg: string): never =>
   return die(msg);
 };
 
-async function attachOrDrop(c: Ctx, demand: string | undefined, repo: string, worktree: string, id: string, onFail = "") {
+function attachOrDrop(c: Ctx, demand: string | undefined, repo: string, worktree: string, id: string, onFail = "") {
   try {
-    await attach(c, demand, id);
+    attach(c, demand, id);
   } catch (e) {
     drop(repo, worktree, id, `${(e as Error).message}${onFail}`);
   }
@@ -87,7 +87,7 @@ export async function adopt(c: Ctx) {
     } catch (e) {
       drop(repo, wt.worktree, id, `adopt failed: ${(e as Error).message}${keep}`);
     }
-    await attachOrDrop(c, demand, repo, wt.worktree, id, keep);
+    attachOrDrop(c, demand, repo, wt.worktree, id, keep);
     if (safeGit(repo, "rev-parse", "stash@{0}") === stash) safeGit(repo, "stash", "drop", "-q");
     const request = `${title}\n\nAlready written by the CEO and left uncommitted in the worktree; the dev only commits it:\n` +
       safeGit(wt.worktree, "diff", "--stat", wt.base, tree);

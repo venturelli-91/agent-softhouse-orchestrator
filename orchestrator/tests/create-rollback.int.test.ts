@@ -164,6 +164,7 @@ test("a demand that cannot take the task rolls the new ticket back", { skip: pro
     chmodSync(join(sb.home, "demands", "D-1.json"), 0o444);
     const r = run(sb, "--demand", "D-1");
     assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /EPERM|EACCES/);
     sb.nothingLeft();
   } finally {
     chmodSync(join(sb.home, "demands", "D-1.json"), 0o644);
@@ -184,4 +185,28 @@ test("removeTicketResources refuses to remove the repo or a directory that conta
   } finally {
     sb.done();
   }
+});
+
+test("adopt keeps the stash and says so when the demand cannot take the task", { skip: process.getuid?.() === 0 && "root ignores read-only files" }, () => {
+  const sb = sandbox();
+  try {
+    assert.equal(sb.orch("demand", "new", "Export", "--repo", sb.repo, "--id", "D-1").code, 0);
+    chmodSync(join(sb.home, "demands", "D-1.json"), 0o444);
+    writeFileSync(join(sb.repo, "checkout.html"), "<button>Changed</button>\n");
+    const r = sb.orch("adopt", "--repo", sb.repo, "--id", "T-1", "--demand", "D-1");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /EPERM|EACCES/);
+    const stash = git(sb.repo, "rev-parse", "refs/stash");
+    assert.match(r.out, new RegExp(`your changes are kept in the stash: git stash apply ${stash}`));
+    assert.match(git(sb.repo, "show", `${stash}:checkout.html`), /Changed/);
+    sb.nothingLeft();
+  } finally {
+    chmodSync(join(sb.home, "demands", "D-1.json"), 0o644);
+    sb.done();
+  }
+});
+
+test("the guard does not misread a directory whose name starts with two dots", () => {
+  const base = join(tmpdir(), "guard-x");
+  assert.equal(removeTicketResources(join(base, "..x", "r"), base, "T-1")[0]!.step, "guard");
 });
