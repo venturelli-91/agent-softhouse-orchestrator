@@ -91,8 +91,17 @@ export function demandOf(c: Ctx): string | undefined {
   return id;
 }
 
-export const attach = (c: Ctx, demandId: string | undefined, ticket: string) =>
-  demandId ? c.locked(demandId, async () => void attempt(() => addTask(c.home, demandId, ticket))) : Promise.resolve();
+export const attach = (c: Ctx, demandId: string | undefined, ticket: string, undo = () => {}) =>
+  demandId
+    ? c.locked(demandId, async () => void attempt(() => {
+      try {
+        return addTask(c.home, demandId, ticket);
+      } catch (e) {
+        undo();
+        throw e;
+      }
+    }))
+    : Promise.resolve();
 
 export function demandLines(home: string): string[] {
   return demandIds(home).map((id) => {
