@@ -85,10 +85,16 @@ export function removeTicketResources(repo: string, worktree: string, id: string
     }
   };
   return [
-    attempt("worktree remove", () => sh(repo, "worktree", "remove", "--force", worktree)),
+    attempt("worktree remove", () => {
+      const norm = (p: string) => (process.platform === "win32" ? resolve(p).toLowerCase() : resolve(p));
+      const registered = sh(repo, "worktree", "list", "--porcelain").split("\n").some((l) => l.startsWith("worktree ") && norm(l.slice(9)) === norm(worktree));
+      if (registered) sh(repo, "worktree", "remove", "--force", worktree);
+    }),
     attempt("remove directory", () => rmSync(worktree, { recursive: true, force: true })),
     attempt("worktree prune", () => sh(repo, "worktree", "prune")),
-    attempt("branch delete", () => sh(repo, "branch", "-D", `ticket/${id}`)),
+    attempt("branch delete", () => {
+      if (sh(repo, "branch", "--list", `ticket/${id}`)) sh(repo, "branch", "-D", `ticket/${id}`);
+    }),
   ];
 }
 
