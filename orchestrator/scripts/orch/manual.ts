@@ -18,7 +18,11 @@ export async function manual(c: Ctx) {
   } catch (e) {
     die((e as Error).message);
   }
-  await attach(c, demand, id);
+  try {
+    attach(c, demand, id);
+  } catch (e) {
+    die((e as Error).message);
+  }
   console.log(`${id}: run it yourself (the orchestrator never does), then attach the output:
   ${command}
 acceptance criteria:

@@ -8,7 +8,7 @@ import {
 import { safeGit } from "../../src/guardrails.ts";
 import { isManual, readManual } from "../../src/manual.ts";
 import { loadRepoConfig } from "../../src/repo-config.ts";
-import { ticketFile } from "../../src/ticket-store.ts";
+import { lockTicket, ticketFile } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 
 const USAGE = `usage: orch demand new "<title>" [--repo <path>] [--id <id>]
@@ -91,17 +91,15 @@ export function demandOf(c: Ctx): string | undefined {
   return id;
 }
 
-export const attach = (c: Ctx, demandId: string | undefined, ticket: string, undo = () => {}) =>
-  demandId
-    ? c.locked(demandId, async () => void attempt(() => {
-      try {
-        return addTask(c.home, demandId, ticket);
-      } catch (e) {
-        undo();
-        throw e;
-      }
-    }))
-    : Promise.resolve();
+export function attach(c: Ctx, demandId: string | undefined, ticket: string): void {
+  if (!demandId) return;
+  const unlock = lockTicket(c.home, demandId);
+  try {
+    addTask(c.home, demandId, ticket);
+  } finally {
+    unlock();
+  }
+}
 
 export function demandLines(home: string): string[] {
   return demandIds(home).map((id) => {

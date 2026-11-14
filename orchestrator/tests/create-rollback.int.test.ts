@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -35,7 +35,7 @@ function sandbox(config?: string, env: Record<string, string | undefined> = {}) 
   };
   return { orch, repo, home, work, nothingLeft, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
-const run = (sb: ReturnType<typeof sandbox>) => sb.orch("run", "Change the label", "--repo", sb.repo, "--id", "T-1");
+const run = (sb: ReturnType<typeof sandbox>, ...extra: string[]) => sb.orch("run", "Change the label", "--repo", sb.repo, "--id", "T-1", ...extra);
 
 for (const [name, config, expected] of [
   ["a bad test command", '{"test":"npm test; curl evil"}', /\.orchestrator\.json: test/],
@@ -137,6 +137,50 @@ test("a failure inside a running graph keeps the worktree and the ticket resumab
     const s = sb.orch("status", "T-1");
     assert.equal(s.code, 0, s.out);
     assert.match(s.out, /T-1\s+\S+\s+\S+\s+.*waiting \(escalation\)/);
+  } finally {
+    sb.done();
+  }
+});
+
+test("a demand lock held by another process rolls the new ticket back", () => {
+  const sb = sandbox();
+  try {
+    assert.equal(sb.orch("demand", "new", "Export", "--repo", sb.repo, "--id", "D-1").code, 0);
+    mkdirSync(join(sb.home, "tickets"), { recursive: true });
+    writeFileSync(join(sb.home, "tickets", "D-1.lock"), String(process.pid));
+    const r = run(sb, "--demand", "D-1");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /D-1 is already running/);
+    sb.nothingLeft();
+  } finally {
+    sb.done();
+  }
+});
+
+test("a demand that cannot take the task rolls the new ticket back", { skip: process.getuid?.() === 0 && "root ignores read-only files" }, () => {
+  const sb = sandbox();
+  try {
+    assert.equal(sb.orch("demand", "new", "Export", "--repo", sb.repo, "--id", "D-1").code, 0);
+    chmodSync(join(sb.home, "demands", "D-1.json"), 0o444);
+    const r = run(sb, "--demand", "D-1");
+    assert.equal(r.code, 1, r.out);
+    sb.nothingLeft();
+  } finally {
+    chmodSync(join(sb.home, "demands", "D-1.json"), 0o644);
+    sb.done();
+  }
+});
+
+test("removeTicketResources refuses to remove the repo or a directory that contains it", () => {
+  const sb = sandbox();
+  try {
+    const steps = removeTicketResources(sb.repo, sb.repo, "T-1");
+    assert.deepEqual(steps.map((x) => [x.step, x.ok]), [["guard", false]]);
+    assert.equal(existsSync(join(sb.repo, ".git")), true);
+    const parent = join(sb.repo, "..");
+    assert.equal(removeTicketResources(sb.repo, parent, "T-1")[0]!.step, "guard");
+    assert.equal(existsSync(sb.repo), true);
+    assert.notEqual(removeTicketResources(sb.repo, join(sb.work, "wt"), "T-1")[0]!.step, "guard");
   } finally {
     sb.done();
   }

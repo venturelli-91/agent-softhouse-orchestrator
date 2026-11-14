@@ -19,7 +19,7 @@ export async function run(c: Ctx) {
     console.warn(`warning: ${repo} has uncommitted changes the ticket will not see; to ship them through a ticket: orch adopt --title "<what they do>"`);
   await c.locked(id, async () => {
     const wt = prepare(c, repo, id);
-    await attach(c, demand, id, () => removeTicketResources(repo, wt.worktree, id));
+    await attachOrDrop(c, demand, repo, wt.worktree, id);
     await c.drive(id, { id, request, ...wt });
   });
 }
@@ -47,9 +47,17 @@ function prepare(c: Ctx, repo: string, id: string, onFail = "") {
 }
 
 const drop = (repo: string, worktree: string, id: string, msg: string): never => {
-  removeTicketResources(repo, worktree, id);
+  for (const s of removeTicketResources(repo, worktree, id)) if (!s.ok) console.error(`cleanup: ${s.step} failed: ${s.reason}`);
   return die(msg);
 };
+
+async function attachOrDrop(c: Ctx, demand: string | undefined, repo: string, worktree: string, id: string, onFail = "") {
+  try {
+    await attach(c, demand, id);
+  } catch (e) {
+    drop(repo, worktree, id, `${(e as Error).message}${onFail}`);
+  }
+}
 
 // The CEO's uncommitted changes in the main checkout become a ticket: stashed there, applied in the ticket worktree, committed by the dev
 // without changing a byte, then reviewed, tested and approved like any other ticket. The main checkout ends clean.
@@ -79,10 +87,10 @@ export async function adopt(c: Ctx) {
     } catch (e) {
       drop(repo, wt.worktree, id, `adopt failed: ${(e as Error).message}${keep}`);
     }
+    await attachOrDrop(c, demand, repo, wt.worktree, id, keep);
     if (safeGit(repo, "rev-parse", "stash@{0}") === stash) safeGit(repo, "stash", "drop", "-q");
     const request = `${title}\n\nAlready written by the CEO and left uncommitted in the worktree; the dev only commits it:\n` +
       safeGit(wt.worktree, "diff", "--stat", wt.base, tree);
-    await attach(c, demand, id, () => removeTicketResources(repo, wt.worktree, id));
     await c.drive(id, { id, request, ...wt, adopt_tree: tree, host_approved: adoptKeys(wt.worktree, wt.base, tree, wt.install) });
   });
 }
