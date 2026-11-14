@@ -29,7 +29,8 @@ function prepare(c: Ctx, repo: string, id: string, onFail = "") {
   const behind = behindBy(repo);
   if (behind) console.warn(`warning: ${repo} is ${behind} commit(s) behind its upstream; the ticket will branch from a stale base`);
   const wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), c.home);
-  const { failure: red, counts: test_base } = runTests(wt.worktree, wt.test, true);
+  const { failure: red, counts, none } = runTests(wt.worktree, wt.test, true);
+  const test_base = counts ?? (none ? { pass: 0, skip: 0, fail: 0 } : null);
   if (red) drop(repo, wt.worktree, id, `base is red before any agent ran (no tokens spent); fix it first: ${red}${onFail}`);
   return { ...wt, test_base };
 }

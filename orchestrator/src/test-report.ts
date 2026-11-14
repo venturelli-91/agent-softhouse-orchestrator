@@ -26,7 +26,7 @@ export function parseCounts(out: string): Counts | null {
   for (const m of out.matchAll(/^[ℹ#] (pass|fail|skipped|todo) (\d+)\r?$/gm)) add(m[1], m[2]);
   for (const line of out.matchAll(/^=+ (.+?) in [\d.]+s\b.*=+\r?$|^Tests:\s+(.+ total)\r?$/gm))
     for (const m of (line[1] ?? line[2]).matchAll(/(\d+) (\w+)/g)) add(m[2], m[1]);
-  for (const m of out.matchAll(/^Ran (\d+) tests? in [\d.]+s\r?\n+(?:(?:OK|FAILED|NO TESTS RAN)(?: \((.*)\))?)?/gm)) {
+  for (const m of out.matchAll(/^Ran (\d+) tests? in [\d.]+s(?:\r?\n)+(?:(?:OK|FAILED|NO TESTS RAN)(?: \((.*)\))?)?/gm)) {
     const before = c.skip + c.fail;
     for (const k of (m[2] ?? "").matchAll(/(skipped|failures|errors)=(\d+)/g)) add(k[1], k[2]);
     c.pass += Number(m[1]) - (c.skip + c.fail - before);
@@ -49,7 +49,7 @@ export function runTests(wt: string, test: Test = DEFAULT_TEST, noTestsOk = fals
     const r = spawnSync(cmd, { cwd: wt, env: minimalEnv("dev"), shell: true, encoding: "utf8", timeout: NODE_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
     out += `${r.stdout ?? ""}\n${r.stderr ?? ""}\n`;
     if (r.status === 0) continue;
-    if (noTestsOk && /\bpytest\b/.test(cmd) && r.status === 5) {
+    if (noTestsOk && /\b(pytest|unittest)\b/.test(cmd) && r.status === 5) {
       none = true;
       continue;
     }
