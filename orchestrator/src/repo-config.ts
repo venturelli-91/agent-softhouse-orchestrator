@@ -39,7 +39,7 @@ export type WebcheckConfig = z.infer<typeof WebcheckConfig>;
 
 // Per-repo settings: defaults < `repos[<abs path>]` in ~/.orchestrator/config.json < `.orchestrator.json` at the base
 // commit. The in-repo file is read from the base commit, never from the worktree: a ticket cannot rewrite its own rules.
-export const RepoConfig = z.object({
+export const RepoConfig = z.strictObject({
   // Plain command (no ;, &&, pipes, quotes or expansions): it runs on the host and goes into the dev's allowlist. A list runs every command.
   test: TestSpec.default(DEFAULT_TEST),
   // "auto" squash-merges after the CEO approves and the CI checks are green; "pr" leaves the PR to the CEO; "local" merges in the local clone.
@@ -56,6 +56,7 @@ export const RepoConfig = z.object({
   specialties: z.array(z.enum(SPECIALTIES)).min(1).default([...SPECIALTIES]),
   // The stack the team decided (`orch team`); goes into every dev's context next to the repo conventions.
   stack: z.string().max(400).default(""),
+  proposed_agents: z.array(z.unknown()).optional(),
   // Tracked docs of the repo (README, CHANGELOG...) the docs node may update on the ticket's branch, before review; exact relative .md paths.
   project_docs: z
     .array(z.string().regex(/^(?!.*(^|\/)\.\.?(\/|$))[\w.-]+(\/[\w.-]+)*\.md$/, "project_docs entries must be relative .md paths"))
@@ -67,7 +68,7 @@ export type RepoConfig = z.infer<typeof RepoConfig>;
 function check(source: string, raw: unknown): Record<string, unknown> {
   const parsed = RepoConfig.safeParse(raw);
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    const issues = parsed.error.issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message)).join("; ");
     throw new Error(`${source}: ${issues} (accepted keys: ${Object.keys(RepoConfig.shape).join(", ")}; \`orch init\` writes a valid file)`);
   }
   return raw as Record<string, unknown>;
