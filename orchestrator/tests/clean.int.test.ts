@@ -117,10 +117,49 @@ test("a worktree that cannot be removed (locked on Windows, read-only parent els
     assert.equal(existsSync(join(sb.home, "tickets", "A-1.json")), true);
     assert.equal(existsSync(join(sb.home, "tickets", "A-2.json")), false);
     assert.equal(existsSync(join(a, "mine.txt")), true);
+    assert.equal(git(a, "branch", "--list", "ticket/A-1"), "");
+    if (process.platform === "win32") {
+      holder?.kill();
+      await new Promise((r) => setTimeout(r, 500));
+    } else chmodSync(join(parent, "A-1"), 0o755);
+    const retry = sb.orch("clean", "--all", "--repo", a);
+    assert.equal(retry.code, 0, retry.out);
+    assert.match(retry.out, /cleaned A-1/);
+    assert.equal(existsSync(join(sb.home, "tickets", "A-1.json")), false);
   } finally {
     holder?.kill();
     if (process.platform !== "win32") chmodSync(join(parent, "A-1"), 0o755);
     await new Promise((r) => setTimeout(r, 200));
+    sb.done();
+  }
+});
+
+test("clean finishes a ticket whose worktree and branch are already gone (after a deploy), and a corrupt ticket of another repo is reported without stopping it", () => {
+  const sb = sandbox();
+  try {
+    const a = sb.mkRepo("a");
+    const b = sb.mkRepo("b");
+    sb.ticket(a, "A-1");
+    sb.ticket(b, "B-1");
+    git(a, "worktree", "remove", "--force", join(sb.work, "worktrees", "A-1"));
+    git(a, "branch", "-D", "ticket/A-1");
+    writeFileSync(join(sb.home, "tickets", "B-1.json"), "{not json");
+    const r = sb.orch("clean", "--all", "--repo", a);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /FAIL B-1 read/);
+    assert.match(r.out, /cleaned A-1/);
+    assert.doesNotMatch(r.out, /FAIL A-1/);
+    assert.doesNotMatch(sb.orch("status").out, /A-1/);
+    const b1 = join(sb.home, "tickets", "B-1.json");
+    rmSync(b1);
+    sb.ticket(a, "A-3");
+    git(a, "worktree", "remove", "--force", join(sb.work, "worktrees", "A-3"));
+    git(a, "branch", "-D", "ticket/A-3");
+    const single = sb.orch("clean", "A-3");
+    assert.equal(single.code, 0, single.out);
+    assert.match(single.out, /cleaned A-3 \(\w+, /);
+    assert.doesNotMatch(sb.orch("status").out, /A-3/);
+  } finally {
     sb.done();
   }
 });

@@ -150,14 +150,21 @@ function step(item: string, fn: () => unknown): boolean {
 }
 
 export async function clean(c: Ctx) {
-  const usage = "usage: orch clean <id> | --all [--repo <path>] [--force] [--remote]  (--all takes only this repo's tickets and demands; manual tickets are left alone)";
+  const usage = "usage: orch clean <id> | --all [--repo <path>] [--force] [--remote]  (--all takes only this repo's tickets and demands; manual tickets are left alone; --force also removes open demands, even if their tickets were kept)";
   const all = c.values.all;
   if (!all && !c.positionals[0]) die(usage);
   const scope = resolve(c.values.repo ?? c.host);
   const ids: string[] = [];
   for (const id of all ? ticketIds(c.home) : [c.positionals[0]!]) {
     if (!all) ids.push(id);
-    else if (sameRepo((await c.load(id)).ticket.repo || " ", scope)) ids.push(id);
+    else {
+      try {
+        const { repo } = (await c.load(id)).ticket;
+        if (repo && sameRepo(repo, scope)) ids.push(id);
+      } catch (e) {
+        step(`${id} read`, () => { throw e; });
+      }
+    }
   }
   for (const id of ids) {
     await c.locked(id, async () => {
@@ -166,7 +173,6 @@ export async function clean(c: Ctx) {
         if (!all) die(`${id} is ${t.status}, not finished (use --force to discard it)`);
         return;
       }
-      const hadWorktree = existsSync(t.worktree);
       let repo = t.repo;
       if (!repo && !step(`${id} locate repo`, () => (repo = repoOf(t.worktree)))) return;
       const results = [];
@@ -177,22 +183,22 @@ export async function clean(c: Ctx) {
         }));
       }
       for (const s of removeTicketResources(repo, t.worktree, id)) {
-        if (s.step === "worktree remove" && !hadWorktree) continue;
         results.push(step(`${id} ${s.step}`, () => { if (!s.ok) throw new Error(s.reason); }));
       }
       if (results.includes(false)) return void console.log(`kept ${id}: its state stays so the clean can be retried`);
+      if (!step(`${id} state`, () => unlinkSync(ticketFile(c.home, id)))) return;
       step(`${id} metrics`, () => recordMetrics(c.home, t));
-      step(`${id} state`, () => unlinkSync(ticketFile(c.home, id)));
       step(`${id} deploy record`, () => forgetDeploy(c.home, id));
       step(`${id} deploy log`, () => rmSync(join(c.home, "deploy-logs", `${id}.txt`), { force: true }));
       step(`${id} host diff`, () => rmSync(join(c.home, `host-diff-${id}.diff`), { force: true }));
-      console.log(`cleaned ${id} (${t.status})`);
+      console.log(`cleaned ${id} (${t.status}${all ? "" : `, ${repo}`})`);
     });
   }
   if (!all) return;
   for (const id of demandIds(c.home)) {
-    const d = readDemand(c.home, id);
-    if (!sameRepo(d.repo, scope) || (d.status !== "closed" && !c.values.force)) continue;
-    step(`demand ${id}`, () => forgetDemand(c.home, id));
+    step(`demand ${id}`, () => {
+      const d = readDemand(c.home, id);
+      if (sameRepo(d.repo, scope) && (d.status === "closed" || c.values.force)) forgetDemand(c.home, id);
+    });
   }
 }
