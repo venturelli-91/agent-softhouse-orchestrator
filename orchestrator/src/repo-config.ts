@@ -5,6 +5,7 @@ import { DEFAULT_TEST, safeCommand, TestSpec } from "./commands.ts";
 import { orchHome } from "./daily-cap.ts";
 import { safeGit } from "./guardrails.ts";
 import { SPECIALTIES } from "./specialties.ts";
+import { ProposedAgents } from "./team.ts";
 
 const plain = safeCommand();
 // Real deploy commands run on the host with credentials, so this block is accepted only from the external config.
@@ -56,7 +57,7 @@ export const RepoConfig = z.strictObject({
   specialties: z.array(z.enum(SPECIALTIES)).min(1).default([...SPECIALTIES]),
   // The stack the team decided (`orch team`); goes into every dev's context next to the repo conventions.
   stack: z.string().max(400).default(""),
-  proposed_agents: z.array(z.unknown()).optional(),
+  proposed_agents: ProposedAgents.optional(),
   // Tracked docs of the repo (README, CHANGELOG...) the docs node may update on the ticket's branch, before review; exact relative .md paths.
   project_docs: z
     .array(z.string().regex(/^(?!.*(^|\/)\.\.?(\/|$))[\w.-]+(\/[\w.-]+)*\.md$/, "project_docs entries must be relative .md paths"))

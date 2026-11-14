@@ -9,6 +9,8 @@ import { safeGit } from "./guardrails.ts";
 import { runAgent } from "./run-agent.ts";
 import { SPECIALTIES } from "./specialties.ts";
 
+export const ProposedAgents = z.array(z.object({ name: z.string().max(60), responsibility: z.string().max(200), why: z.string().max(200) })).max(5);
+
 export const TeamProposal = z.object({
   specialties: z.array(z.enum(SPECIALTIES)).min(1),
   stack: z.string().max(400),
@@ -16,7 +18,7 @@ export const TeamProposal = z.object({
   test: safeCommand("test").default(DEFAULT_TEST),
   rationale: z.string().max(600),
   // Roles or subagents the roster lacks. Only a proposal: a new agent needs a prompt and the CEO's approval, nothing runs it by itself.
-  proposed_agents: z.array(z.object({ name: z.string().max(60), responsibility: z.string().max(200), why: z.string().max(200) })).max(5).default([]),
+  proposed_agents: ProposedAgents.default([]),
 });
 export type TeamProposal = z.infer<typeof TeamProposal>;
 
