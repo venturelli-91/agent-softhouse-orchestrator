@@ -2,7 +2,7 @@
 import { NodeFailure } from "./node-failure.ts";
 import type { Usage } from "./run-agent.ts";
 
-export const MAX_REVISIONS = 3;
+export const MAX_REVISIONS = 2;
 export const RECURSION_LIMIT = 40;
 export const MAX_ACTIVE_TICKETS = 5;
 export const NODE_TIMEOUT_MS = 600_000;

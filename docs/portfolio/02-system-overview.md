@@ -94,7 +94,7 @@ The orchestrator reads its role prompts from `orchestrator/agents/` (the single 
 3. **Large request** → the planner splits it into **atomic tasks**; the dev runs them one at a time, each verified before the next.
 4. **Dev** works in an isolated git worktree (`ticket/<id>`, kept outside the repo) with a restricted tool set and commits its work.
 5. **Code verifies the evidence** (new commit, clean tree, allowed paths, tests pass). Only then the ticket moves on.
-6. **Reviewer** and **QA** (read-only, different identities from the author) receive the diff plus the code-verified evidence. UI tickets (`frontend`, `fullstack`) also pass through **design** (read-only) after the reviewer and **webcheck** (code) after QA. A rejection sends the ticket back to the dev with `revisions + 1`; at 3 revisions it escalates.
+6. **Reviewer** and **QA** (read-only, different identities from the author) receive the diff plus the code-verified evidence. UI tickets (`frontend`, `fullstack`) also pass through **design** (read-only) after the reviewer and **webcheck** (code) after QA. A rejection sends the ticket back to the dev with `revisions + 1`; at 2 revisions it escalates.
 7. **Publish** (code) pushes exactly the verified SHA and opens a **draft PR**.
 8. **CEO approval** is a LangGraph `interrupt()`. The CEO sees a plain-language explanation, the evidence, the PR and the active risk flags, and answers `orch approve` or `orch reject "reason"`.
 9. **Merge** (opt-in `merge: auto`) squash-merges the approved commit only if CI is green and stable; otherwise the PR is left to the human.

@@ -4,7 +4,7 @@
 
 | Rule | Enforced by |
 |---|---|
-| Max 3 revisions per ticket | Router sends to `ceo_approval` at `revisions >= 3` |
+| Max 2 attempts per ticket | Router sends to `ceo_approval` at `revisions >= 2` |
 | Max 5 active tickets | `createWorktree` refuses the 6th (hotfixes count too) |
 | Author ≠ reviewer ≠ QA | `selfApproval()` checked **before** spending tokens; `author_id` comes from the git commit author injected via env |
 | Evidence verified by code | `verifyEvidence()` at dev, again at reviewer, at QA, and before honoring CEO approval |
