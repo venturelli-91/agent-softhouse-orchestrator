@@ -52,8 +52,12 @@ test("clean --all removes every ticket and demand of the repo, leaves the repo a
     assert.equal(open.code, 0, open.out);
     assert.match(open.out, /ok {3}A-1 branch delete/);
     assert.match(open.out, /cleaned A-2/);
+    assert.match(open.out, /skip demand D-A \(open, use --force\)/);
+    assert.doesNotMatch(open.out, /D-B/);
     assert.equal(existsSync(join(sb.home, "demands", "D-A.json")), true, "an open demand needs --force");
-    assert.equal(sb.orch("clean", "--all", "--repo", a, "--force").code, 0);
+    const forced = sb.orch("clean", "--all", "--repo", a, "--force");
+    assert.equal(forced.code, 0);
+    assert.match(forced.out, /ok {3}demand D-A/);
     const status = sb.orch("status").out;
     assert.doesNotMatch(status, /A-1|A-2|D-A/);
     assert.match(status, /B-1/);

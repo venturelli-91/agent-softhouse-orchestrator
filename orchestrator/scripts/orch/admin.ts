@@ -150,7 +150,7 @@ function step(item: string, fn: () => unknown): boolean {
 }
 
 export async function clean(c: Ctx) {
-  const usage = "usage: orch clean <id> | --all [--repo <path>] [--force] [--remote]  (--all takes only this repo's tickets and demands; manual tickets are left alone; --force also removes open demands, even if their tickets were kept)";
+  const usage = "usage: orch clean <id> | --all [--repo <path>] [--force] [--remote]  (--all takes only this repo's tickets and demands; manual tickets are left alone; --force also removes open demands, even if their tickets were kept; --all skips tickets with no recorded repo: clean those by id)";
   const all = c.values.all;
   if (!all && !c.positionals[0]) die(usage);
   const scope = resolve(c.values.repo ?? c.host);
@@ -187,18 +187,24 @@ export async function clean(c: Ctx) {
       }
       if (results.includes(false)) return void console.log(`kept ${id}: its state stays so the clean can be retried`);
       if (!step(`${id} state`, () => unlinkSync(ticketFile(c.home, id)))) return;
-      step(`${id} metrics`, () => recordMetrics(c.home, t));
+      const metrics = step(`${id} metrics`, () => recordMetrics(c.home, t));
       step(`${id} deploy record`, () => forgetDeploy(c.home, id));
       step(`${id} deploy log`, () => rmSync(join(c.home, "deploy-logs", `${id}.txt`), { force: true }));
       step(`${id} host diff`, () => rmSync(join(c.home, `host-diff-${id}.diff`), { force: true }));
-      console.log(`cleaned ${id} (${t.status}${all ? "" : `, ${repo}`})`);
+      console.log(metrics ? `cleaned ${id} (${t.status}${all ? "" : `, ${repo}`})` : `${id} removed, but its metrics line was lost`);
     });
   }
   if (!all) return;
   for (const id of demandIds(c.home)) {
-    step(`demand ${id}`, () => {
-      const d = readDemand(c.home, id);
-      if (sameRepo(d.repo, scope) && (d.status === "closed" || c.values.force)) forgetDemand(c.home, id);
-    });
+    let d: ReturnType<typeof readDemand>;
+    try {
+      d = readDemand(c.home, id);
+    } catch (e) {
+      step(`demand ${id} read`, () => { throw e; });
+      continue;
+    }
+    if (!sameRepo(d.repo, scope)) continue;
+    if (d.status !== "closed" && !c.values.force) console.log(`skip demand ${id} (open, use --force)`);
+    else step(`demand ${id}`, () => forgetDemand(c.home, id));
   }
 }
