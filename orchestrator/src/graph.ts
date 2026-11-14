@@ -1,5 +1,5 @@
 import { rmSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Command, END, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { activeTickets, gitConfigHash, installDeps, MAX_ACTIVE_TICKETS, MAX_REVISIONS, RECURSION_LIMIT, tokens } from "./guardrails.ts";
 import { ceoApproval } from "./ceo-node.ts";
@@ -74,7 +74,7 @@ export type Cleanup = { step: string; ok: boolean; reason?: string };
 
 export function removeTicketResources(repo: string, worktree: string, id: string): Cleanup[] {
   const up = relative(resolve(worktree), resolve(repo));
-  if (up === "" || !(up.startsWith("..") || isAbsolute(up)))
+  if (up === "" || !(up === ".." || up.startsWith(`..${sep}`) || isAbsolute(up)))
     return [{ step: "guard", ok: false, reason: `refusing to remove ${worktree}: it is the repo or contains it` }];
   const attempt = (step: string, fn: () => unknown): Cleanup => {
     try {
