@@ -12,7 +12,11 @@ defaults:
     working-directory: orchestrator
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,6 +24,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: orchestrator/package-lock.json
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
       - run: npm ci
       - run: npm run typecheck
       # Fake nodes: no model, no credentials.
