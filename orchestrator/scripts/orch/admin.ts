@@ -1,6 +1,6 @@
 // Commands that set up and tidy the orchestrator itself: init, status, clean.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
@@ -10,10 +10,10 @@ import { usedToday } from "../../src/daily-cap.ts";
 import { forgetDeploy } from "../../src/deploy.ts";
 import { ensureLocalOnly } from "../../src/docs.ts";
 import { deleteRemoteBranch } from "../../src/git-remote.ts";
-import { report } from "../../src/graph.ts";
+import { removeTicketResources, report } from "../../src/graph.ts";
 import { log } from "../../src/graph-kit.ts";
 import { landedOn } from "../../src/local-merge.ts";
-import { assertGitConfigUnchanged, repoOf, safeGit } from "../../src/guardrails.ts";
+import { assertGitConfigUnchanged, repoOf } from "../../src/guardrails.ts";
 import { listIncidents } from "../../src/incidents.ts";
 import { isManual, manualIds, readManual } from "../../src/manual.ts";
 import { recordMetrics } from "../../src/metrics.ts";
@@ -22,7 +22,7 @@ import { TEAMS } from "../../src/specialties.ts";
 import { runningPid, ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 import { demandLines, showDemand } from "./demand.ts";
-import { isDemand } from "../../src/demand.ts";
+import { demandIds, forgetDemand, isDemand, readDemand } from "../../src/demand.ts";
 
 const DONE = ["simulated_deploy", "deployed", "aborted", "closed", "merged"];
 
@@ -135,28 +135,64 @@ export async function status(c: Ctx) {
   if (process.env.TOKEN_CAP_DAILY) console.log(`tokens in the last 24h: ${usedToday()} / ${process.env.TOKEN_CAP_DAILY}`);
 }
 
+const sameRepo = (a: string, b: string) => (process.platform === "win32" ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b));
+
+function step(item: string, fn: () => unknown): boolean {
+  try {
+    fn();
+    console.log(`ok   ${item}`);
+    return true;
+  } catch (e) {
+    console.log(`FAIL ${item}: ${(e as Error).message.split("\n", 1)[0]}`);
+    process.exitCode = 1;
+    return false;
+  }
+}
+
 export async function clean(c: Ctx) {
-  const ids = c.values.all ? ticketIds(c.home) : c.positionals[0] ? [c.positionals[0]] : die("usage: orch clean <id> | --all [--force] [--remote]");
+  const usage = "usage: orch clean <id> | --all [--repo <path>] [--force] [--remote]  (--all takes only this repo's tickets and demands; manual tickets are left alone)";
+  const all = c.values.all;
+  if (!all && !c.positionals[0]) die(usage);
+  const scope = resolve(c.values.repo ?? c.host);
+  const ids: string[] = [];
+  for (const id of all ? ticketIds(c.home) : [c.positionals[0]!]) {
+    if (!all) ids.push(id);
+    else if (sameRepo((await c.load(id)).ticket.repo || " ", scope)) ids.push(id);
+  }
   for (const id of ids) {
     await c.locked(id, async () => {
       const { ticket: t } = await c.load(id);
       if (!DONE.includes(t.status) && !c.values.force) {
-        if (!c.values.all) die(`${id} is ${t.status}, not finished (use --force to discard it)`);
+        if (!all) die(`${id} is ${t.status}, not finished (use --force to discard it)`);
         return;
       }
-      if (existsSync(t.worktree)) {
-        const repo = t.repo || repoOf(t.worktree);
-        if (c.values.remote) {
+      const hadWorktree = existsSync(t.worktree);
+      let repo = t.repo;
+      if (!repo && !step(`${id} locate repo`, () => (repo = repoOf(t.worktree)))) return;
+      const results = [];
+      if (c.values.remote) {
+        results.push(step(`${id} remote branch`, () => {
           assertGitConfigUnchanged(repo, t.git_config_hash);
-          console.log(`${id}: remote branch ${deleteRemoteBranch(repo, t.push_remote, id)}`);
-        }
-        safeGit(repo, "worktree", "remove", "--force", t.worktree);
-        safeGit(repo, "branch", "-D", `ticket/${id}`);
+          return deleteRemoteBranch(repo, t.push_remote, id);
+        }));
       }
-      recordMetrics(c.home, t);
-      unlinkSync(ticketFile(c.home, id));
-      forgetDeploy(c.home, id);
+      for (const s of removeTicketResources(repo, t.worktree, id)) {
+        if (s.step === "worktree remove" && !hadWorktree) continue;
+        results.push(step(`${id} ${s.step}`, () => { if (!s.ok) throw new Error(s.reason); }));
+      }
+      if (results.includes(false)) return void console.log(`kept ${id}: its state stays so the clean can be retried`);
+      step(`${id} metrics`, () => recordMetrics(c.home, t));
+      step(`${id} state`, () => unlinkSync(ticketFile(c.home, id)));
+      step(`${id} deploy record`, () => forgetDeploy(c.home, id));
+      step(`${id} deploy log`, () => rmSync(join(c.home, "deploy-logs", `${id}.txt`), { force: true }));
+      step(`${id} host diff`, () => rmSync(join(c.home, `host-diff-${id}.diff`), { force: true }));
       console.log(`cleaned ${id} (${t.status})`);
     });
+  }
+  if (!all) return;
+  for (const id of demandIds(c.home)) {
+    const d = readDemand(c.home, id);
+    if (!sameRepo(d.repo, scope) || (d.status !== "closed" && !c.values.force)) continue;
+    step(`demand ${id}`, () => forgetDemand(c.home, id));
   }
 }

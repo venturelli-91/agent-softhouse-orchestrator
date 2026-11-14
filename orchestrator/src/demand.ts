@@ -1,6 +1,6 @@
 // A demand groups its tasks (code and manual tickets) and its decision log until a blocking checklist closes it
 // (ORCH_HOME/demands/<id>.json). Task status is never copied here: it is read from each ticket's own store when needed.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BacklogItem } from "./backlog.ts";
 import type { Counts } from "./test-report.ts";
@@ -27,6 +27,7 @@ export function demandFile(home: string, id: string): string {
 }
 
 export const isDemand = (home: string, id: string) => existsSync(demandFile(home, id));
+export const forgetDemand = (home: string, id: string): void => rmSync(demandFile(home, id), { force: true });
 export const readDemand = (home: string, id: string): Demand => JSON.parse(readFileSync(demandFile(home, id), "utf8"));
 export const demandIds = (home: string) =>
   existsSync(dir(home)) ? readdirSync(dir(home)).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).sort() : [];
