@@ -86,8 +86,12 @@ test("a custom setup records the ignored host files it left, and a default insta
   const t = createWorktree(r.repo, "T-1", r.wt);
   assert.equal(t.install, false);
   assert.match(String(t.setup_ignored), /^\.venv\/lib\/setup\.py@[0-9a-f]{40}$/);
-  const none = repoWith({}, {});
+  const none = repoWith({}, { install: true }, true);
   assert.equal(createWorktree(none.repo, "T-2", none.wt).setup_ignored, null);
+  const both = repoWith({ "mk.cjs": mk, ".gitignore": ".venv\nnode_modules\n" }, { install: true, setup: ["node mk.cjs"], env: ["LISTED_VAR"] }, true);
+  const b = createWorktree(both.repo, "T-3", both.wt);
+  assert.deepEqual([b.install, b.setup_env], [true, ["LISTED_VAR"]]);
+  assert.match(String(b.setup_ignored), /^\.venv\/lib\/setup\.py@[0-9a-f]{40}$/);
 });
 
 test("setup commands run in order, and nothing runs when the config has none", () => {

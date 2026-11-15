@@ -45,6 +45,7 @@ export const Ticket = z.object({
   test: TestSpec.default(DEFAULT_TEST),
   install: z.boolean().default(false),
   setup_ignored: z.array(z.string()).nullable().default(null),
+  setup_env: z.array(z.string()).default([]),
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.string().default(""),
   push_remote: z.string().default("origin"),

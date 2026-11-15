@@ -164,12 +164,13 @@ test("a test command that dirties the worktree voids the verification", () => {
   assert.match((r as { reason: string }).reason, /worktree changed during verification/);
 });
 
-function withCommit(lock = false) {
+function withCommit(lock = false, files: Record<string, string> = {}) {
   const d = mkdtempSync(join(tmpdir(), "ev-"));
   git(d, "init", "-q", "-b", "main");
   writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: "node -e 0" } }));
   writeFileSync(join(d, ".gitignore"), "node_modules\n.npmrc\n");
   if (lock) writeFileSync(join(d, "package-lock.json"), JSON.stringify({ name: "x", lockfileVersion: 3, packages: { "": {} } }));
+  for (const [f, c] of Object.entries(files)) writeFileSync(join(d, f), c);
   git(d, "add", "-A");
   git(d, "commit", "-q", "-m", "base");
   const base = git(d, "rev-parse", "HEAD");
@@ -218,6 +219,30 @@ test("with a custom setup, the ignored host files it left pass; new or edited on
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
   assert.match((r as { reason: string }).reason, /planted/);
+});
+
+test("with install plus another setup, node_modules is rebuilt and the other setup's recorded output stays and passes", () => {
+  const check = 'process.exit(require("node:fs").existsSync(".venv/out") ? 0 : 1);\n';
+  const { d, base } = withCommit(true, { ".gitignore": "node_modules\n.venv\n", "check.cjs": check });
+  mkdirSync(join(d, ".venv", "lib"), { recursive: true });
+  writeFileSync(join(d, ".venv", "lib", "setup.py"), "x");
+  writeFileSync(join(d, ".venv", "out"), "x");
+  const snap = setupSnapshot(d, true);
+  mkdirSync(join(d, "node_modules", "dep"), { recursive: true });
+  writeFileSync(join(d, "node_modules", "dep", "package.json"), "{}");
+  const r = verifyEvidence(d, base, "node check.cjs", true, [], null, snap);
+  const [planted, kept] = [existsSync(join(d, "node_modules", "dep")), existsSync(join(d, ".venv", "lib", "setup.py"))];
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual([planted, kept], [false, true]);
+});
+
+test("an install that fails at verification gives the command and exit code, never its stderr", () => {
+  const { d, base } = withCommit(true, { "package.json": JSON.stringify({ name: "x", dependencies: { "left-pad": "1.0.0" } }) });
+  const r = verifyEvidence(d, base, "node -e 0", true);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /^setup failed \(npm ci --ignore-scripts --no-audit --no-fund\), exit \d+$/);
 });
 
 test("install refuses a repo without a committed lockfile", () => {

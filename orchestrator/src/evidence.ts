@@ -26,12 +26,17 @@ const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc|conftest\.py|setup\.py|setup\
 
 type Verdict = { ok: true; author: string; sha: string; evidence: string[]; counts: Counts | null; none: boolean } | { ok: false; reason: string; host?: string[] };
 
-export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TEST, install = false, hostApproved: string[] = [], baseTests: Counts | null = null, setupIgnored: string[] | null = null): Verdict {
+export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TEST, install = false, hostApproved: string[] = [], baseTests: Counts | null = null, setupIgnored: string[] | null = null, env: string[] = []): Verdict {
   const git = (...a: string[]) => safeGit(wt, ...a);
   const sha = git("rev-parse", "HEAD");
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, reason: "no new commit in the worktree" };
   // With install, whatever the agent left outside the commit is wiped first and node_modules is rebuilt from the lockfile just before the test.
-  if (install) git("clean", "-fdXq");
+  // Another setup's output is not rebuilt (it would run agent-edited code on the host), so then only node_modules goes and the snapshot guards the rest.
+  if (install && !setupIgnored) git("clean", "-fdXq");
+  else if (install) {
+    const deps = git("ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory").split("\0").filter((f) => NODE_MODULES.test(f));
+    if (deps.length) git("--literal-pathspecs", "clean", "-fdXq", "--", ...deps);
+  }
   // assume-unchanged / skip-worktree hide edits from `git status` and from the diff gate while npm still reads them from disk.
   if (git("ls-files", "-v").split("\n").some((l) => /^[a-zS] /.test(l))) {
     return { ok: false, reason: "worktree has files hidden from git (assume-unchanged or skip-worktree)" };
@@ -40,7 +45,7 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   const dirt = git("status", "--porcelain", "--untracked-files=all", "--ignored").split("\n").filter(Boolean);
   if (dirt.some((l) => !l.startsWith("!!"))) return { ok: false, reason: "worktree has uncommitted changes" };
   if (setupIgnored) {
-    const fresh = setupSnapshot(wt).filter((k) => !setupIgnored.includes(k));
+    const fresh = setupSnapshot(wt, install).filter((k) => !setupIgnored.includes(k));
     if (fresh.length) return { ok: false, reason: `ignored file that runs code on the host is new or changed since setup (${fresh.slice(0, 5).join(", ")})` };
   } else if (dirt.some((l) => RUNS_ON_HOST.test(l.slice(3)))) return { ok: false, reason: "file that runs code on the host is outside the commit (ignored)" };
   const diffFiles = (...extra: string[]) =>
@@ -62,7 +67,11 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   if (skips.length) return { ok: false, reason: `the diff skips tests instead of making them pass (${skips.slice(0, 5).join("; ")})` };
   const untested = untestedLogic(diffFiles("--diff-filter=d"));
   if (untested.length) return { ok: false, reason: `${UNTESTED} (${untested.slice(0, 5).join(", ")})` };
-  if (install) installDeps(wt);
+  try {
+    if (install) installDeps(wt, DEFAULT_INSTALL, env, false);
+  } catch (e) {
+    return { ok: false, reason: (e as Error).message };
+  }
   const baseNone = !!baseTests && baseTests.pass + baseTests.skip + baseTests.fail === 0;
   const { failure, counts, none } = runTests(wt, test, baseNone);
   if (failure) return { ok: false, reason: failure };
@@ -98,13 +107,16 @@ function blobAt(wt: string, f: string, rev = "HEAD"): string {
   return meta.split(" ")[2];
 }
 
-export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved" | "test_base" | "setup_ignored">, base = t.base) =>
-  verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved, t.test_base, t.setup_ignored);
+export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved" | "test_base" | "setup_ignored" | "setup_env">, base = t.base) =>
+  verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved, t.test_base, t.setup_ignored, t.setup_env);
+
+const NODE_MODULES = /(^|\/)node_modules\//;
 
 // What setup left behind: ignored files npm or pip would run, as path@sha1. Verification tolerates exactly these and rejects anything new or edited.
-export function setupSnapshot(wt: string): string[] {
+// With install, node_modules is rebuilt before every verification, so it is left out.
+export function setupSnapshot(wt: string, install = false): string[] {
   return safeGit(wt, "ls-files", "-z", "--others", "--ignored", "--exclude-standard").split("\0")
-    .filter((f) => f && RUNS_ON_HOST.test(f))
+    .filter((f) => f && RUNS_ON_HOST.test(f) && !(install && NODE_MODULES.test(f)))
     .map((f) => {
       let sha = "unreadable";
       try {
@@ -116,7 +128,8 @@ export function setupSnapshot(wt: string): string[] {
 
 
 // Host-side install for repos that opt in (`install` in the repo config): the lockfile comes from the base commit and no package script runs.
-export function installDeps(wt: string, install = DEFAULT_INSTALL, envNames: string[] = []): void {
+// The stderr can echo the env values, so the verification (whose reason the agent reads) leaves it out.
+export function installDeps(wt: string, install = DEFAULT_INSTALL, envNames: string[] = [], stderr = true): void {
   if (install === DEFAULT_INSTALL) {
     try {
       safeGit(wt, "cat-file", "-e", "HEAD:package-lock.json");
@@ -129,6 +142,8 @@ export function installDeps(wt: string, install = DEFAULT_INSTALL, envNames: str
   try {
     execSync(install, { cwd: wt, env, stdio: "pipe", timeout: NODE_TIMEOUT_MS });
   } catch (e) {
-    throw new Error(`${install === DEFAULT_INSTALL ? "install" : "setup"} failed (${install}): ${String((e as { stderr?: Buffer }).stderr ?? "").slice(-400)}`);
+    const err = e as { status?: number | null; signal?: string | null; stderr?: Buffer };
+    const tail = stderr ? `: ${String(err.stderr ?? "").slice(-400)}` : "";
+    throw new Error(`setup failed (${install}), exit ${err.status ?? err.signal}${tail}`);
   }
 }

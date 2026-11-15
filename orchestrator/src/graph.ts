@@ -116,7 +116,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
   let setup_ignored: string[] | null = null;
   try {
     for (const c of setup) installDeps(dir, c, env);
-    if (setup.length && !install) setup_ignored = setupSnapshot(dir);
+    if (setup.some((c) => c !== DEFAULT_INSTALL)) setup_ignored = setupSnapshot(dir, install);
   } catch (e) {
     removeTicketResources(repo, dir, id);
     throw e;
@@ -129,6 +129,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
     test,
     install,
     setup_ignored,
+    setup_env: env,
     merge,
     publisher: publisher ?? "",
     push_remote,
