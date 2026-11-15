@@ -9,12 +9,16 @@ const HOOKS = resolve(import.meta.dirname, "..", "..", ".claude", "hooks");
 const hook = (name: string, root: string, input: object) =>
   spawnSync(process.execPath, [join(HOOKS, name)], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
 
-test("guard hook blocks secrets and git internals, lets source files through", () => {
+test("guard hook blocks secrets, git internals and its own files, also behind Win32 spellings; lets source files through", () => {
   const root = mkdtempSync(join(tmpdir(), "hk-"));
   const run = (file_path: string) => hook("guard.mjs", root, { tool_name: "Edit", tool_input: { file_path } }).status;
-  const r = { env: run(".env.local"), key: run(join(root, "certs", "a.pem")), git: run(".git/hooks/pre-commit"), src: run("src/a.ts") };
+  const r = {
+    env: run(".env.local"), key: run(join(root, "certs", "a.pem")), git: run(".git/hooks/pre-commit"),
+    self: run(".claude/hooks/verify.mjs"), settings: run(".claude/settings.local.json"),
+    dots: run(".env. "), stream: run(".git:x/config"), src: run("src/a.ts"),
+  };
   rmSync(root, { recursive: true, force: true });
-  assert.deepEqual(r, { env: 2, key: 2, git: 2, src: 0 });
+  assert.deepEqual(r, { env: 2, key: 2, git: 2, self: 2, settings: 2, dots: 2, stream: 2, src: 0 });
 });
 
 function repo(files: Record<string, string>) {
