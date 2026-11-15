@@ -22,18 +22,13 @@ test("guard hook blocks secrets, git internals and its own files, also behind Wi
   assert.deepEqual(r, { env: 2, key: 2, git: 2, self: 2, settings: 2, dots: 2, stream: 2, src: 0, user: 2, device: 2, short: 2 });
 });
 
-// A fake remote base (origin/HEAD at the base commit): verify.mjs only trusts a ref the session cannot move.
-function repo(files: Record<string, string>, remote = true) {
+function repo(files: Record<string, string>) {
   const d = mkdtempSync(join(tmpdir(), "hk-"));
   const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd: d });
   git("init", "-q", "-b", "main");
-  writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: 'node -e "process.exit(require(\'fs\').existsSync(\'red\')?1:0)"' } }));
+  writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: `node -e "require('fs').writeFileSync('ran','')"` } }));
   git("add", "-A");
   git("commit", "-qm", "base");
-  if (remote) {
-    git("update-ref", "refs/remotes/origin/main", "HEAD");
-    git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
-  }
   for (const [f, body] of Object.entries(files)) {
     mkdirSync(dirname(join(d, f)), { recursive: true });
     writeFileSync(join(d, f), body);
@@ -41,36 +36,21 @@ function repo(files: Record<string, string>, remote = true) {
   return d;
 }
 
-test("verify hook: logic without a test or with a red suite blocks the stop; a second stop only warns", () => {
+test("verify hook asks for a test and a Bash test run when logic changed, never runs the suite itself, and lets a second stop end the turn", () => {
   const cases = {
     docs: repo({ "README.md": "x" }),
     untested: repo({ "src/a.ts": "x" }),
-    red: repo({ "src/a.ts": "x", "tests/a.test.ts": "x", red: "" }),
-    green: repo({ "src/a.ts": "x", "tests/a.test.ts": "x" }),
+    tested: repo({ "src/a.ts": "x", "tests/a.test.ts": "x" }),
+    quoted: repo({ "src/ação €.ts": "x" }),
   };
   const out = Object.fromEntries(Object.entries(cases).map(([k, d]) => [k, hook("verify.mjs", d, {}).stdout]));
-  const again = JSON.parse(hook("verify.mjs", cases.untested, { stop_hook_active: true }).stdout);
+  const again = hook("verify.mjs", cases.untested, { stop_hook_active: true }).stdout;
+  const ran = Object.values(cases).some((d) => existsSync(join(d, "ran")));
   Object.values(cases).forEach((d) => rmSync(d, { recursive: true, force: true }));
   assert.equal(out.docs, "");
   assert.match(JSON.parse(out.untested).reason, /without a test \(src\/a\.ts\)/);
-  assert.match(JSON.parse(out.red).reason, /npm test failed/);
-  assert.equal(out.green, "");
-  assert.ok(!("decision" in again) && /without a test/.test(again.systemMessage));
-});
-
-test("verify hook runs nothing when a file that decides the test command changed, or with no remote base", () => {
-  const pwn = `node -e "require('fs').writeFileSync('pwned','')"`;
-  const cases = {
-    pretest: repo({ "src/a.ts": "x", "tests/a.test.ts": "x", "package.json": JSON.stringify({ scripts: { pretest: pwn, test: "node -e 0" } }) }),
-    npmrc: repo({ "src/a.ts": "x", "tests/a.test.ts": "x", ".npmrc": "script-shell=evil" }),
-    local: repo({ "src/a.ts": "x", "tests/a.test.ts": "x", red: "" }, false),
-  };
-  const out = Object.fromEntries(Object.entries(cases).map(([k, d]) => [k, JSON.parse(hook("verify.mjs", d, {}).stdout)]));
-  const ran = Object.values(cases).some((d) => existsSync(join(d, "pwned")));
-  Object.values(cases).forEach((d) => rmSync(d, { recursive: true, force: true }));
-  assert.match(out.pretest.systemMessage, /decide what the tests run changed \(package\.json\)/);
-  assert.match(out.npmrc.systemMessage, /\.npmrc/);
-  assert.match(out.local.systemMessage, /no remote base/);
-  assert.ok(Object.values(out).every((o) => !("decision" in o)));
+  assert.match(JSON.parse(out.tested).reason, /run the repo's test command with Bash/);
+  assert.match(JSON.parse(out.quoted).reason, /without a test/);
+  assert.equal(again, "");
   assert.equal(ran, false);
 });

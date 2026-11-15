@@ -8,9 +8,9 @@ the project's repository. The commands (`/demand`, `/ticket`, `/daily-brief`,
 `/daily-report`, `/watchdog-scan`) then run against that actual code.
 
 **Deterministic hooks** (`.claude/settings.json`, scripts in `.claude/hooks/`): `guard.mjs` blocks
-writes to secrets and git internals; `verify.mjs` keeps the turn open while changed logic has no
-test or the repo's test command (`.orchestrator.json` `test`, else `npm test`, read from `origin/HEAD`;
-nothing runs without a remote base or when a file that decides the command changed) is red. They hold in
+writes to secrets, git internals and Claude hooks/settings; `verify.mjs` keeps the turn open once
+when logic changed, asking for the missing test and for a test run through Bash. It never runs the
+suite itself: the tests are session-written code, so they stay behind the permission prompt. They hold in
 the interactive session the same rules `orch` enforces in code.
 
 The CEO is the human user. They set vision, priorities, budget and critical approvals.

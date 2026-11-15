@@ -1,50 +1,37 @@
-// Stop: when the session changed logic files, the turn only ends with a test touched and the suite green.
+// Stop: when the session changed logic files, the turn only ends with a test touched, and once the model was asked to run the suite.
+// It never runs anything itself: the tests are session-written code, so they run through Bash, behind the permission prompt.
 // ponytail: mirrors untestedLogic in orchestrator/src/test-report.ts (.claude/ ships without orchestrator/).
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*|[^/]*_test)\.(py|go)$|Tests?\.(java|kt|cs|swift)$/i;
 const LOGIC_FILE = /\.(?:[cm]?[jt]sx?|py|go|rs|java|kt|swift|rb|php|cs|c|cpp)$/i;
 const NO_LOGIC = /\.d\.[cm]?ts$|(^|\/)[^/]*\.config\.[cm]?[jt]s$/i;
 
 const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+// A second stop in a row ends the turn: the model already got the request once, and a loop helps nobody.
+if (input.stop_hook_active) process.exit(0);
 const root = process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd();
-const git = (...a) => execFileSync("git", ["-c", "core.quotePath=false", ...a], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-const tryGit = (...a) => { try { return git(...a); } catch { return ""; } };
+const git = (...a) => { try { return execFileSync("git", ["-c", "core.quotePath=false", ...a], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch { return ""; } };
 
 // Uncommitted changes plus commits not yet on the default remote branch.
-const base = tryGit("merge-base", "HEAD", "origin/HEAD").trim();
+const base = git("merge-base", "HEAD", "origin/HEAD").trim();
+// -z: paths come raw (no quoting); a rename entry is followed by its old path, which is skipped.
+const status = git("status", "--porcelain", "-z", "--untracked-files=all").split("\0");
+const changed = [];
+for (let i = 0; i < status.length; i++) {
+  if (!status[i]) continue;
+  changed.push(status[i].slice(3));
+  if (/^[RC]/.test(status[i])) i++;
+}
 const files = [
-  ...tryGit("status", "--porcelain", "--untracked-files=all").split("\n").filter(Boolean).map((l) => l.slice(3).replace(/^.* -> /, "")),
-  ...(base ? tryGit("diff", "--name-only", "--diff-filter=d", `${base}..HEAD`).split("\n").filter(Boolean) : []),
+  ...changed,
+  ...(base ? git("diff", "--name-only", "-z", "--diff-filter=d", `${base}..HEAD`).split("\0").filter(Boolean) : []),
 ];
 const logic = files.filter((f) => LOGIC_FILE.test(f) && !NO_LOGIC.test(f) && !TEST_FILE.test(f));
 if (!logic.length) process.exit(0);
 
-const block = (reason) => {
-  // A second stop in a row only warns, so a hook failure the model cannot fix does not loop forever.
-  const out = input.stop_hook_active ? { systemMessage: `verify.mjs: ${reason}` } : { decision: "block", reason };
-  process.stdout.write(JSON.stringify(out));
-  process.exit(0);
-};
-
-if (!files.some((f) => TEST_FILE.test(f))) block(`Logic changed without a test (${logic.slice(0, 5).join(", ")}): write the test that fails without the change.`);
-
-// The command and every file that decides what it runs come from the remote base, which the session cannot move: with no remote
-// base nothing runs automatically. A changed host file (scripts and their pre/post hooks, npm config, lockfiles, make/pytest config)
-// means unreviewed code would run on the host, so it is left to the CEO.
-// ponytail: mirrors RUNS_ON_HOST in orchestrator/src/evidence.ts.
-const HOST_FILES = [".orchestrator.json", "package.json", ".npmrc", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock",
-  "Makefile", "conftest.py", "setup.py", "setup.cfg", "pyproject.toml", "pytest.ini", "tox.ini"];
-const warn = (msg) => { process.stdout.write(JSON.stringify({ systemMessage: `verify.mjs: ${msg}` })); process.exit(0); };
-if (!base) warn("no remote base (origin/HEAD) to trust the test command from; run the tests yourself.");
-const changedHost = files.filter((f) => HOST_FILES.some((h) => f.toLowerCase().endsWith(h.toLowerCase())));
-if (changedHost.length) warn(`files that decide what the tests run changed (${changedHost.slice(0, 5).join(", ")}); review them and run the tests yourself.`);
-const committed = (f) => { try { return JSON.parse(git("show", `${base}:${f}`)); } catch { return undefined; } };
-const configured = committed(".orchestrator.json")?.test;
-const tests = configured ? [configured].flat() : committed("package.json")?.scripts?.test ? ["npm test"] : [];
-for (const cmd of tests) {
-  const r = spawnSync(cmd, { cwd: root, shell: true, encoding: "utf8", timeout: 600_000 });
-  if (r.status !== 0) block(`${cmd} failed:\n${String(r.stdout + r.stderr).slice(-1500)}`);
-}
+const reason = files.some((f) => TEST_FILE.test(f))
+  ? "Logic changed: run the repo's test command with Bash now and fix any failure before finishing (the hook does not run it for you)."
+  : `Logic changed without a test (${logic.slice(0, 5).join(", ")}): write the test that fails without the change, then run the suite with Bash.`;
+process.stdout.write(JSON.stringify({ decision: "block", reason }));
