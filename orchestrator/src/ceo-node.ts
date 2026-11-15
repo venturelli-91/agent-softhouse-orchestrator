@@ -38,6 +38,7 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
     explanation: t.explanation,
     brief: t.brief,
     evidence: t.evidence,
+    ...(t.load_note ? { load: t.load_note } : {}),
     ...(t.status === "host_review" ? { host_diff: hostDiff(t) } : {}),
     ...(t.test_alerts.length ? { test_alerts: t.test_alerts } : {}),
     deploy: {
@@ -106,5 +107,5 @@ const hostDiff = (t: T) => {
   return `${diff.slice(0, HOST_DIFF_CHARS)}\n[TRUNCATED: the full diff is in ${file}]`;
 };
 
-const RETRYABLE = ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "publish", "deploy"];
-const POST_DEV = ["reviewer", "design", "qa", "webcheck", "publish", "deploy"];
+const RETRYABLE = ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy"];
+const POST_DEV = ["reviewer", "design", "qa", "webcheck", "load", "publish", "deploy"];

@@ -22,6 +22,7 @@ export const publishNode = guarded("publish", async (t) => {
     "Criteria:",
     ...t.criteria.map((c) => `- ${c}`),
     `Evidence: ${v.evidence.join(", ")}`,
+    ...(t.load_note ? [t.load_note] : []),
   ].join("\n\n");
   const pr = publish(
     {

@@ -25,7 +25,8 @@ flowchart TD
     reviewer --> qa
     design --> qa
     qa --> webcheck
-    webcheck --> publish["publish (draft PR)"]
+    webcheck --> load
+    load --> publish["publish (draft PR)"]
     publish --> gate{{"CEO approval (human)"}}
     reviewer -.->|failure / budget| gate
     qa -.->|failure / budget| gate
