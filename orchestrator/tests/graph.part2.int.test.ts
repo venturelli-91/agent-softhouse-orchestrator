@@ -37,7 +37,7 @@ test("alerts flag stalled, looping, over-budget and escalated tickets, and skip 
   assert.deepEqual(alerts([t({ status: "simulated_deploy", history: old })], now, env), []);
   const found = alerts([t({ id: "A", status: "approval", history: old, revisions: 2 })], now, env).join("|");
   assert.match(found, /A \[P2\] approval for 36\.0h/);
-  assert.match(found, /A review loop: 2\/3/);
+  assert.match(found, /A review loop: 2\/2/);
   const usage = { tokens_in: 90, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 };
   assert.match(alerts([t({ id: "B", status: "dev", history: [{ ...old[0], time: "2026-01-02T11:30:00Z", usage }] })], now, env).join(),
     /B token budget at 90%/);
@@ -159,7 +159,7 @@ test("the same verification failure twice escalates at once, with the cause, the
 test("a red suite twice in a row still uses every revision", async () => {
   knobs.override.dev = (req) => (commit(req.cwd, "agent-dev", "checkout.html", "<button>Nope</button>\n"), { summary: "tried", brief: BRIEF });
   const g = await start();
-  assert.equal(paused(g.r)?.revisions, 3);
+  assert.equal(paused(g.r)?.revisions, 2);
 });
 
 test("a dev that reruns over committed work sees the commits and the diff", async () => {

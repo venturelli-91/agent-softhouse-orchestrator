@@ -65,7 +65,7 @@ test("orch run stops at the CEO approval, and status shows the ticket waiting", 
     assert.match(run.out, /"type": "approval"/);
     const status = sb.orch("status", "T-1");
     assert.equal(status.code, 0, status.out);
-    assert.match(status.out, /T-1\s+\S+\s+P2\s+.*waiting \(approval\)/);
+    assert.match(status.out, /T-1\s+\S+\s+waiting\s+P2\s+.*waiting \(approval\)/);
   } finally {
     sb.done();
   }

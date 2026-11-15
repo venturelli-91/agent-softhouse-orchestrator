@@ -29,7 +29,7 @@ flowchart TD
     publish --> gate{{"CEO approval (human)"}}
     reviewer -.->|failure / budget| gate
     qa -.->|failure / budget| gate
-    gate -->|rejected, up to 3 revisions| dev
+    gate -->|rejected, up to 2 attempts| dev
     gate -->|approved| merge_pr
     merge_pr --> deploy
     deploy --> E([done])
@@ -80,7 +80,7 @@ No live model run was executed for this README.
 - **Guardrails enforced in code:**
   - Token budget ([`flow-limits.ts`](orchestrator/src/flow-limits.ts)): an overrun escalates, test "an exceeded token budget interrupts the ticket".
     `budgetExceeded` also throws when `TOKEN_BUDGET_TICKET` is missing; no test covers the missing-value case.
-  - Revision cap of 3: test "the cap of 3 revisions escalates to the CEO".
+  - Retry cap of 2 attempts: test "the cap of 2 attempts escalates to the CEO and a third never starts".
   - Reviewer and QA refuse to run if they authored the commit: test "self-approval blocked".
 - **Irreversible actions need a human:** merge and deploy sit behind a LangGraph `interrupt()` in [`ceo-node.ts`](orchestrator/src/ceo-node.ts).
   - The approval is bound to the published commit SHA and the evidence is re-verified first ([`evidence.ts`](orchestrator/src/evidence.ts)).

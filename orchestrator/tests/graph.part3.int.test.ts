@@ -59,11 +59,11 @@ test("retry on a revision-cap escalation still instructs the dev", async () => {
   knobs.override.reviewer = () => ({ verdict: "rejected", comments: "no", summary: "s" });
   const g = await start();
   assert.equal(paused(g.r)?.type, "escalation");
-  assert.equal(knobs.calls.filter((c) => c === "dev").length, 3);
+  assert.equal(knobs.calls.filter((c) => c === "dev").length, 2);
   knobs.override.reviewer = approved;
   const r = await answer(g, "retry");
   assert.equal(paused(r)?.type, "approval");
-  assert.equal(knobs.calls.filter((c) => c === "dev").length, 4);
+  assert.equal(knobs.calls.filter((c) => c === "dev").length, 3);
 });
 
 test("a non-retry answer after an escalation still goes to the dev", async () => {
@@ -205,7 +205,7 @@ test("an app that does not start goes back to the dev, and an unexpected collect
   try {
     const g = await start("T-4", new MemorySaver(), { webcheck_cfg: WEB });
     assert.match(g.r.rejections.join(), /webcheck: the serve command exited/);
-    assert.equal(knobs.calls.filter((c) => c === "dev").length, 3);
+    assert.equal(knobs.calls.filter((c) => c === "dev").length, 2);
     setCollector(async () => { throw new Error("boom"); });
     const h = await start("T-5", new MemorySaver(), { webcheck_cfg: WEB });
     assert.equal(paused(h.r)?.type, "escalation");

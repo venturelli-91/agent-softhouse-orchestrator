@@ -20,7 +20,7 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
           : "commit changed since it was published"
         : `invalid evidence: ${v ? v.reason : "no evidence"}`
       : t.status === "dev_failed"
-        ? `cap of ${MAX_REVISIONS} revisions reached: ${t.summary}`
+        ? `cap of ${MAX_REVISIONS} attempts reached: ${t.summary}\n${changedWork(t)}`
         : t.status === "no_change"
           ? `the dev found nothing to change: ${t.explanation}`
           : t.status === "host_review"
@@ -79,6 +79,20 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
   if (!t.criteria.length) return { status: "aborted", history: h("aborted") };
   return { status: "dev_failed", revisions: 0, summary: `CEO instructed: ${r}`.slice(0, 500), history: h("resumed") };
 };
+
+const LIST_LINES = 40;
+const capped = (title: string, out: string) => {
+  const lines = out.split("\n").filter(Boolean);
+  return lines.length ? `${title}:\n${lines.slice(0, LIST_LINES).join("\n")}${lines.length > LIST_LINES ? `\n[${lines.length - LIST_LINES} more lines]` : ""}` : "";
+};
+const changedWork = (t: T) =>
+  [
+    capped("Changed files", safeGit(t.worktree, "diff", "--name-status", `${t.base}..HEAD`)),
+    capped("Diff stat", safeGit(t.worktree, "diff", "--stat", `${t.base}..HEAD`)),
+    capped("Uncommitted", safeGit(t.worktree, "status", "--porcelain")),
+  ]
+    .filter(Boolean)
+    .join("\n");
 
 // What the CEO approves: the diff of each pending host file (path@blob), as text whatever .gitattributes says, never cut silently.
 const HOST_DIFF_CHARS = 20_000;

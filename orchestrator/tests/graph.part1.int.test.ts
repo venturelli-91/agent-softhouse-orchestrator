@@ -57,12 +57,15 @@ test("self-approval blocked: reviewer equal to the author does not even run", as
   assert.equal((await answer(g, "abort")).status, "aborted");
 });
 
-test("the cap of 3 revisions escalates to the CEO", async () => {
+test("the cap of 2 attempts escalates to the CEO and a third never starts", async () => {
   knobs.override.reviewer = () => ({ verdict: "rejected", comments: "redo it", summary: "x" });
   const g = await start();
-  assert.equal(knobs.calls.filter((c) => c === "dev").length, 3);
+  assert.equal(knobs.calls.filter((c) => c === "dev").length, 2);
   assert.equal(paused(g.r)?.type, "escalation");
-  assert.match(String(paused(g.r)?.reason), /cap of 3/);
+  const reason = String(paused(g.r)?.reason);
+  assert.match(reason, /cap of 2/);
+  assert.match(reason, /Changed files:\nM\tcheckout\.html/);
+  assert.match(reason, /Diff stat:\n checkout\.html \| 2 \+-\n 1 file changed/);
 });
 
 test("invalid node output is a failure: it escalates and does not advance", async () => {
