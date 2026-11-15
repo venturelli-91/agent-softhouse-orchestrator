@@ -50,6 +50,26 @@ test("a valid commit with passing tests yields verified evidence", () => {
   assert.equal(r.ok, true);
 });
 
+test("a diff that changes logic needs a test in the same diff", () => {
+  const run = (files: string[]) => {
+    const { d, base } = repo();
+    for (const f of files) {
+      mkdirSync(dirname(join(d, f)), { recursive: true });
+      writeFileSync(join(d, f), "export const x = 1;\n");
+    }
+    git(d, "add", "-A");
+    git(d, "commit", "-qm", "x");
+    const r = verifyEvidence(d, base, GREEN);
+    rmSync(d, { recursive: true, force: true });
+    return r;
+  };
+  const untested = run(["src/total.ts"]);
+  assert.equal(untested.ok, false);
+  assert.match((untested as { reason: string }).reason, /without adding or changing a test \(src\/total\.ts\)/);
+  assert.equal(run(["src/total.ts", "tests/total.test.ts"]).ok, true);
+  assert.equal(run(["vite.config.ts", "types.d.ts", "page.html", "README.md"]).ok, true);
+});
+
 test("a diff that touches a forbidden path is refused", () => {
   for (const f of [".env", ".github/workflows/x.yml", "orchestrator/src/a.ts", "config/credentials.json"]) {
     const { d, base } = repo();
@@ -134,10 +154,10 @@ test("a test command that moves HEAD voids the verification", () => {
 
 test("a test command that dirties the worktree voids the verification", () => {
   const { d, base } = repo();
-  writeFileSync(join(d, "dirty.js"), "require('fs').writeFileSync('fail.js', 'x');");
+  writeFileSync(join(d, "dirty.test.js"), "require('fs').writeFileSync('fail.js', 'x');");
   git(d, "add", "-A");
   git(d, "commit", "-qm", "add dirty script");
-  const r = verifyEvidence(d, base, "node dirty.js");
+  const r = verifyEvidence(d, base, "node dirty.test.js");
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
   assert.match((r as { reason: string }).reason, /worktree changed during verification/);
@@ -219,14 +239,14 @@ test("a host file passes only in the exact version the CEO approved", () => {
 test("an adopted protected file passes in the adopted version only; a secret is never protected-approvable", () => {
   const { d, base } = repo();
   mkdirSync(join(d, "orchestrator"));
-  writeFileSync(join(d, "orchestrator", "x.ts"), "export {};\n");
+  writeFileSync(join(d, "orchestrator", "x.test.ts"), "export {};\n");
   git(d, "add", "-A");
   const approved = adoptKeys(d, base, git(d, "write-tree"), false);
   git(d, "commit", "-qm", "adopted");
-  assert.deepEqual(approved, [`orchestrator/x.ts@${git(d, "rev-parse", "HEAD:orchestrator/x.ts")}`]);
+  assert.deepEqual(approved, [`orchestrator/x.test.ts@${git(d, "rev-parse", "HEAD:orchestrator/x.test.ts")}`]);
   assert.equal(verifyEvidence(d, base, GREEN).ok, false);
   assert.equal(verifyEvidence(d, base, GREEN, false, approved).ok, true);
-  writeFileSync(join(d, "orchestrator", "x.ts"), "export const x = 1;\n");
+  writeFileSync(join(d, "orchestrator", "x.test.ts"), "export const x = 1;\n");
   git(d, "commit", "-qam", "dev edit");
   const again = verifyEvidence(d, base, GREEN, false, approved);
   writeFileSync(join(d, ".env"), "K=v\n");
@@ -234,7 +254,7 @@ test("an adopted protected file passes in the adopted version only; a secret is 
   git(d, "commit", "-qm", "env");
   const env = verifyEvidence(d, base, GREEN, false, [...approved, `.env@${git(d, "rev-parse", "HEAD:.env")}`]);
   rmSync(d, { recursive: true, force: true });
-  assert.match((again as { reason: string }).reason, /forbidden path \(orchestrator\/x\.ts\)/);
+  assert.match((again as { reason: string }).reason, /forbidden path \(orchestrator\/x\.test\.ts\)/);
   assert.match((env as { reason: string }).reason, /forbidden path .*\.env/);
 });
 
@@ -255,9 +275,9 @@ test("a file hidden with assume-unchanged or skip-worktree voids the verificatio
 
 test("touched source files over the modularity limits are refused; untouched or non-source files are not", () => {
   const cases: [string, string, boolean][] = [
-    ["a.ts", "x\n".repeat(301), false],
-    ["b.ts", `${"x".repeat(161)}\n`, false],
-    ["c.ts", "x\n".repeat(300), true],
+    ["a.test.ts", "x\n".repeat(301), false],
+    ["b.test.ts", `${"x".repeat(161)}\n`, false],
+    ["c.test.ts", "x\n".repeat(300), true],
     ["d.json", "x\n".repeat(500), true],
   ];
   for (const [f, body, ok] of cases) {
@@ -280,7 +300,7 @@ test("modularity check reads the committed blob: a dangling symlink and a delete
   const base = git(d, "rev-parse", "HEAD");
   git(d, "rm", "-q", "big.ts");
   const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: "/nonexistent", encoding: "utf8" }).trim();
-  git(d, "update-index", "--add", "--cacheinfo", `120000,${blob},link.ts`);
+  git(d, "update-index", "--add", "--cacheinfo", `120000,${blob},link.test.ts`);
   git(d, "commit", "-qm", "delete big, add dangling symlink");
   git(d, "reset", "-q", "--hard");
   const r = verifyEvidence(d, base, GREEN);
@@ -301,8 +321,8 @@ const cleanup = (...dirs: string[]) => dirs.forEach((x) => rmSync(x, { recursive
 
 test("in a linked worktree, files the test run leaves untracked (e.g. __pycache__) are cleaned and do not void the verification", () => {
   const { d, base } = repo();
-  const wt = linkedWorktree(d, "leave.js", "require('fs').mkdirSync('__pycache__');require('fs').writeFileSync('__pycache__/m.pyc','x');");
-  const r = verifyEvidence(wt, base, "node leave.js");
+  const wt = linkedWorktree(d, "leave.test.js", "require('fs').mkdirSync('__pycache__');require('fs').writeFileSync('__pycache__/m.pyc','x');");
+  const r = verifyEvidence(wt, base, "node leave.test.js");
   const left = existsSync(join(wt, "__pycache__"));
   cleanup(wt, d);
   assert.equal(r.ok, true);
@@ -311,10 +331,10 @@ test("in a linked worktree, files the test run leaves untracked (e.g. __pycache_
 
 test("in a main checkout nothing is deleted: leftovers still void the verification and user files survive", () => {
   const { d, base } = repo();
-  writeFileSync(join(d, "leave.js"), "require('fs').writeFileSync('leftover.txt','x');");
+  writeFileSync(join(d, "leave.test.js"), "require('fs').writeFileSync('leftover.txt','x');");
   git(d, "add", "-A");
   git(d, "commit", "-qm", "dev");
-  const r = verifyEvidence(d, base, "node leave.js");
+  const r = verifyEvidence(d, base, "node leave.test.js");
   const kept = existsSync(join(d, "leftover.txt"));
   cleanup(d);
   assert.ok(!r.ok && /worktree changed during verification/.test(r.reason));

@@ -59,7 +59,14 @@ export function runTests(wt: string, test: Test = DEFAULT_TEST, noTestsOk = fals
   return { failure: "", counts, none: none || (counts !== null && counts.pass + counts.skip + counts.fail === 0) };
 }
 
-const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*|[^/]*_test)\.py$/i;
+const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*|[^/]*_test)\.(py|go)$|Tests?\.(java|kt|cs|swift)$/i;
+// ponytail: extension heuristic; markup, styles, docs and *.config/*.d.ts files carry no logic a test must pin.
+const LOGIC_FILE = /\.(?:[cm]?[jt]sx?|py|go|rs|java|kt|swift|rb|php|cs|c|cpp)$/i;
+const NO_LOGIC = /\.d\.[cm]?ts$|(^|\/)[^/]*\.config\.[cm]?[jt]s$/i;
+
+// TDD gate: a diff that changes logic must also add or change a test. Returns the logic files left untested (empty = ok).
+export const untestedLogic = (files: string[]) =>
+  files.some((f) => TEST_FILE.test(f)) ? [] : files.filter((f) => LOGIC_FILE.test(f) && !NO_LOGIC.test(f));
 // Unconditional skips only: a `{ skip: <condition> }` or `skipif` stays allowed and shows up in the skipped count instead.
 const SKIP = new RegExp(
   [String.raw`\.(skip|todo)\s*\(`, String.raw`\bx(it|describe|test)\s*\(`, String.raw`\b(skip|todo)\s*:\s*true\b`,

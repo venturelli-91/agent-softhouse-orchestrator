@@ -6,7 +6,9 @@ import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
 import { safeGit } from "./git-safe.ts";
 import { MAX_FILE_LINES, MAX_LINE_COLS, modularityViolations } from "./modularity.ts";
 import { commands, DEFAULT_INSTALL, DEFAULT_TEST, type Test } from "./commands.ts";
-import { addedSkips, type Counts, runTests } from "./test-report.ts";
+import { addedSkips, type Counts, runTests, untestedLogic } from "./test-report.ts";
+
+export const UNTESTED = "the diff changes logic without adding or changing a test";
 import type { T } from "./ticket.ts";
 
 // Paths no agent may change: secrets (never, not even adopted), and CI and the orchestrator itself (only in a version `orch adopt` took
@@ -53,6 +55,8 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   }
   const skips = addedSkips(git("-c", "core.quotePath=false", "diff", "-U0", "--text", "--no-color", "--no-ext-diff", "--no-textconv", `${base}..HEAD`));
   if (skips.length) return { ok: false, reason: `the diff skips tests instead of making them pass (${skips.slice(0, 5).join("; ")})` };
+  const untested = untestedLogic(diffFiles("--diff-filter=d"));
+  if (untested.length) return { ok: false, reason: `${UNTESTED} (${untested.slice(0, 5).join(", ")})` };
   if (install) installDeps(wt);
   const baseNone = !!baseTests && baseTests.pass + baseTests.skip + baseTests.fail === 0;
   const { failure, counts, none } = runTests(wt, test, baseNone);

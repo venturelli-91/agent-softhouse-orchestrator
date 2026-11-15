@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_FILE_LINES, MAX_LINE_COLS, verifyTicket } from "./guardrails.ts";
+import { UNTESTED } from "./evidence.ts";
 import { commands, DEFAULT_TEST, type Test } from "./commands.ts";
 import { skipAlerts } from "./test-report.ts";
 import { context, escalate, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
@@ -15,6 +16,7 @@ export const devRules = (tests: Test = DEFAULT_TEST, turns?: number) => {
   `where it applies (modules, endpoints, screens or users affected, and what is deliberately not touched). ` +
   `Modularity is mandatory: every source file you touch must stay within ${MAX_FILE_LINES} lines and ${MAX_LINE_COLS} columns per line; ` +
   `split by responsibility instead of growing a file. The orchestrator rejects the commit otherwise. ` +
+  `Test first: write the test that fails without the change, then the code. A diff that changes logic without adding or changing a test is rejected. ` +
   (turns
     ? `You have at most ${turns} turns and uncommitted work is lost value: ` +
       `get a first version passing ${test} and commit it early, then refine and commit again. `
@@ -123,6 +125,8 @@ export const dev = guarded("dev", async (t) => {
       summary: cap(output.summary),
       history: log(t, "dev", `host files need CEO review: ${v.host.join(", ")}`, usage),
     };
+  // Adopted content is the CEO's own: the dev cannot add the missing test without changing it, so the CEO decides.
+  if (!v.ok && t.adopt_tree && v.reason.startsWith(UNTESTED)) return { ...escalate(t, "dev", v.reason, usage), brief: output.brief };
   if (!v.ok) {
     const result = `verification failed: ${v.reason.slice(0, 300)}`;
     // Only structural causes (no commit, forbidden path, dirt): a red suite's output tail looks alike even when another test fails.
