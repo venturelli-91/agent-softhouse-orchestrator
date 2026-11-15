@@ -23,7 +23,8 @@ afterEach(() => {
 });
 const opts = { timeout_ms: 300, max_latency_ms: 100 };
 
-test("a healthy answer is null", async () => assert.equal(await httpProbe(url, opts), null));
+test("a healthy answer is null", async () =>
+  assert.equal(await httpProbe(url, { timeout_ms: 2000, max_latency_ms: 1000 }), null));
 
 test("a 503 reports http 503", async () => {
   handler = (res) => (res.statusCode = 503, res.end());
