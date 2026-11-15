@@ -271,7 +271,7 @@ test("a node_modules symlink never lets npm ci empty its target", (t) => {
 });
 
 test("an npm.cmd in the worktree root stops the install at verification", { skip: process.platform !== "win32" }, () => {
-  const { d, base } = withCommit(true, { "npm.cmd": "@echo pwned > pwned.txt\r\n" });
+  const { d, base } = withCommit(true, { "npm.cmd": "@echo pwned > pwned.txt\n" });
   const r = verifyEvidence(d, base, "node -e 0", true);
   const ran = existsSync(join(d, "pwned.txt"));
   rmSync(d, { recursive: true, force: true });
@@ -281,7 +281,7 @@ test("an npm.cmd in the worktree root stops the install at verification", { skip
 });
 
 test("a node.cmd in the worktree root never runs in place of node during the install", { skip: process.platform !== "win32" }, () => {
-  const { d } = withCommit(true, { "node.cmd": "@echo pwned > pwned.txt\r\n" });
+  const { d } = withCommit(true, { "node.cmd": "@echo pwned > pwned.txt\n" });
   installDeps(d);
   const ran = existsSync(join(d, "pwned.txt"));
   rmSync(d, { recursive: true, force: true });
