@@ -1,7 +1,7 @@
 // The load stage against real fixture services (node only) and, through the graph, with a stubbed runner.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +24,8 @@ const freePort = () =>
 
 async function fixture(mode: string, over: object = {}) {
   const port = await freePort();
-  const dir = mkdtempSync(join(tmpdir(), "load-"));
+  // The CI runner's tmpdir is an 8.3 short name (RUNNER~1); `~` is not allowed in a plain command, so expand it.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "load-")));
   const info = join(dir, "info.json");
   const cfg = LoadConfig.parse({ serve: `node ${SERVICE} ${port} ${mode} ${info}`, base_url: `http://127.0.0.1:${port}`, writes: [{ method: "POST", path: "/w" }],
     slow_dependency: { env: "DEP_URL", delay_ms: 300 }, duration_s: 2, concurrency: 10, thresholds: { recover_s: 5 }, timeout_s: 60, ...over });
