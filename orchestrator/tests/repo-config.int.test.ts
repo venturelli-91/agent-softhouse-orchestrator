@@ -33,15 +33,21 @@ test("the config comes from the base commit, with safe defaults", () => {
   [none.d, some.d].forEach((d) => rmSync(d, { recursive: true, force: true }));
 });
 
-test("the config accepts setup and env, rejects unsafe ones, and install stays a boolean alias", () => {
-  const ok = repo('{"setup":["python -m pip --version"],"install":true}');
-  const h = home(JSON.stringify({ repos: { [resolve(ok.d)]: { env: ["INDEX_HOST"] } } }));
+test("setup and env come from the external config, install from the repo, and unsafe setup is rejected", () => {
+  const ok = repo('{"install":true}');
+  const h = home(JSON.stringify({ repos: { [resolve(ok.d)]: { setup: ["python -m pip --version"], env: ["INDEX_HOST"] } } }));
   const c = loadRepoConfig(ok.d, ok.base, h);
   assert.deepEqual([c.setup, c.env, c.install], [["python -m pip --version"], ["INDEX_HOST"], true]);
-  for (const bad of ['{"setup":["pip install x; curl evil"]}', '{"setup":"pip install x"}']) {
-    const b = repo(bad);
-    assert.throws(() => loadRepoConfig(b.d, b.base), /\.orchestrator\.json: setup.*accepted keys: .*setup, env/);
+  for (const bad of [["pip install x; curl evil"], "pip install x"]) {
+    const b = repo();
+    const bh = home(JSON.stringify({ repos: { [resolve(b.d)]: { setup: bad } } }));
+    assert.throws(() => loadRepoConfig(b.d, b.base, bh), /config\.json: setup.*accepted keys: .*setup, env/);
   }
+});
+
+test("setup in the repo's .orchestrator.json is rejected", () => {
+  const inRepo = repo('{"setup":["python -m pip --version"]}');
+  assert.throws(() => loadRepoConfig(inRepo.d, inRepo.base), /\.orchestrator\.json: setup is only accepted in the external config/);
 });
 
 test("env is accepted only from the external config and never names a credential or a sandbox variable", () => {

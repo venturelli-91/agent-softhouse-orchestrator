@@ -65,7 +65,8 @@ export const RepoConfig = z.strictObject({
   disclosure: z.boolean().default(true),
   // Run `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, tsc and build can be the test command.
   install: z.boolean().default(false),
-  // Commands run on the host in each new worktree, in order; never in the dev's allowlist. `install: true` is an alias for [DEFAULT_INSTALL].
+  // Commands run on the host in each new worktree, in order; never in the dev's allowlist. Only from the external config, like deploy.
+  // `install: true` is an alias for [DEFAULT_INSTALL], which runs first.
   setup: z.array(safeCommand("setup")).default([]),
   // Host variable names the setup commands may read; nothing else leaks from the operator's environment.
   env: z.array(hostName).default([]),
@@ -118,7 +119,7 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
   try {
     const text = safeGit(repo, "show", `${ref}:.orchestrator.json`);
     const raw = readJson(".orchestrator.json", text);
-    for (const k of ["deploy", "webcheck", "env"]) if (raw && typeof raw === "object" && k in raw) throw new Error(`.orchestrator.json: ${k} is only accepted in the external config`);
+    for (const k of ["deploy", "webcheck", "env", "setup"]) if (raw && typeof raw === "object" && k in raw) throw new Error(`.orchestrator.json: ${k} is only accepted in the external config`);
     inRepo = check(".orchestrator.json", raw);
   } catch (e) {
     if ((e as Error).message.startsWith(".orchestrator.json:")) throw e;
