@@ -65,7 +65,7 @@ test("the cap of 2 attempts escalates to the CEO and a third never starts", asyn
   const reason = String(paused(g.r)?.reason);
   assert.match(reason, /cap of 2/);
   assert.match(reason, /Changed files:\nM\tcheckout\.html/);
-  assert.match(reason, /Diff stat:\ncheckout\.html \| 2 \+-\n 1 file changed/);
+  assert.match(reason, /Diff stat:\n checkout\.html \| 2 \+-\n 1 file changed/);
 });
 
 test("invalid node output is a failure: it escalates and does not advance", async () => {

@@ -44,5 +44,5 @@ test("the dirty probe ignores untracked files and sees tracked changes", () => {
   const tracked = dirty();
   rmSync(d, { recursive: true, force: true });
   assert.equal(untrackedOnly, "");
-  assert.match(tracked, /a\.txt/);
+  assert.equal(tracked, " M a.txt");
 });
