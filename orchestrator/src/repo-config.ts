@@ -22,10 +22,16 @@ export const DeployConfig = z.object({
 });
 export type DeployConfig = z.infer<typeof DeployConfig>;
 
-// Names a setup command may read: never credentials, and never a key minimalEnv already sets or passes (the hardening must not be overridable).
+// Names a setup command may read: never credentials (URLs often embed them), never a loader or interpreter hook,
+// and never a key minimalEnv already sets or passes (the hardening must not be overridable).
 const reserved = new Set([...ALLOWED_ENV, ...Object.keys(minimalEnv("dev", {}))]);
+const BLOCKED_ENV = new RegExp([
+  "^ANTHROPIC_", "^GIT_", "^NPM_CONFIG_", "_(TOKEN|KEY|SECRET|PASSWORD|ID|URL|PASS(WD)?|PWD|AUTH|CREDENTIALS)$", "^(TOKEN|SECRET|PASSWORD)$",
+  "^SSH_AUTH_SOCK$", "^AWS_", "^GOOGLE_APPLICATION_CREDENTIALS$", "^KUBECONFIG$", "^NODE_OPTIONS$", "^LD_", "^DYLD_", "^PYTHON",
+  "^BASH_ENV$", "^ENV$", "^PERL5OPT$", "^PIP_",
+].join("|"));
 const hostName = z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(
-  (n) => !reserved.has(n) && !/^ANTHROPIC_|^GIT_|^NPM_CONFIG_|_(TOKEN|KEY|SECRET|PASSWORD)$/.test(n),
+  (n) => !reserved.has(n) && !BLOCKED_ENV.test(n),
   "env must not name a credential or a variable the sandbox sets",
 );
 

@@ -35,9 +35,9 @@ test("the config comes from the base commit, with safe defaults", () => {
 
 test("the config accepts setup and env, rejects unsafe ones, and install stays a boolean alias", () => {
   const ok = repo('{"setup":["python -m pip --version"],"install":true}');
-  const h = home(JSON.stringify({ repos: { [resolve(ok.d)]: { env: ["PIP_INDEX_URL"] } } }));
+  const h = home(JSON.stringify({ repos: { [resolve(ok.d)]: { env: ["INDEX_HOST"] } } }));
   const c = loadRepoConfig(ok.d, ok.base, h);
-  assert.deepEqual([c.setup, c.env, c.install], [["python -m pip --version"], ["PIP_INDEX_URL"], true]);
+  assert.deepEqual([c.setup, c.env, c.install], [["python -m pip --version"], ["INDEX_HOST"], true]);
   for (const bad of ['{"setup":["pip install x; curl evil"]}', '{"setup":"pip install x"}']) {
     const b = repo(bad);
     assert.throws(() => loadRepoConfig(b.d, b.base), /\.orchestrator\.json: setup.*accepted keys: .*setup, env/);
@@ -48,7 +48,10 @@ test("env is accepted only from the external config and never names a credential
   const inRepo = repo('{"env":["PIP_INDEX_URL"]}');
   assert.throws(() => loadRepoConfig(inRepo.d, inRepo.base), /\.orchestrator\.json: env is only accepted in the external config/);
   const d = repo();
-  for (const name of ["ANTHROPIC_API_KEY", "GH_TOKEN", "DB_PASSWORD", "APP_SECRET", "SIGNING_KEY", "HOME", "PATH", "PIP_CONFIG_FILE", "GIT_DIR", "NPM_CONFIG_REGISTRY", "lower"]) {
+  for (const name of ["ANTHROPIC_API_KEY", "GH_TOKEN", "DB_PASSWORD", "APP_SECRET", "SIGNING_KEY", "HOME", "PATH", "PIP_CONFIG_FILE", "GIT_DIR", "NPM_CONFIG_REGISTRY", "lower",
+    "CLIENT_ID", "PIP_INDEX_URL", "DATABASE_URL", "DB_PASS", "DB_PASSWD", "DB_PWD", "NPM_AUTH", "GCP_CREDENTIALS", "TOKEN", "SECRET", "PASSWORD",
+    "SSH_AUTH_SOCK", "AWS_REGION", "GOOGLE_APPLICATION_CREDENTIALS", "KUBECONFIG", "NODE_OPTIONS", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES",
+    "PYTHONPATH", "PYTHONSTARTUP", "BASH_ENV", "ENV", "PERL5OPT", "PIP_EXTRA_INDEX"]) {
     const h = home(JSON.stringify({ repos: { [resolve(d.d)]: { env: [name] } } }));
     assert.throws(() => loadRepoConfig(d.d, d.base, h), /env/, name);
   }
