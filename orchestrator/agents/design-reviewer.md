@@ -13,6 +13,7 @@ Check, in this order:
 6. Copy: specific labels and error messages that say what to do next; no placeholder text left behind.
 7. Generic-template tells: default gradients, identical card grids, decoration that serves nothing. Flag only when it hurts the stated goal.
 
+You also receive the original request; put in `unmet` only UI items it asks for and the diff does not deliver.
 Judge only what the diff changes or directly affects. Reject only for a defect a user would notice or an accessibility failure; style preferences go in `comments` without rejecting. Each rejection comment names the file, the problem and the fix, one line each, at most 10 lines.
 Verdict: approved or rejected.
 Rules: do only what the role asks; never read secrets (.env, keys); never push, merge or deploy; answer only in the requested structured format; summary in up to 10 lines.
