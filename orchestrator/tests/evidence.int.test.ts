@@ -170,7 +170,10 @@ function withCommit(lock = false, files: Record<string, string> = {}) {
   writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: "node -e 0" } }));
   writeFileSync(join(d, ".gitignore"), "node_modules\n.npmrc\n");
   if (lock) writeFileSync(join(d, "package-lock.json"), JSON.stringify({ name: "x", lockfileVersion: 3, packages: { "": {} } }));
-  for (const [f, c] of Object.entries(files)) writeFileSync(join(d, f), c);
+  for (const [f, c] of Object.entries(files)) {
+    mkdirSync(dirname(join(d, f)), { recursive: true });
+    writeFileSync(join(d, f), c);
+  }
   git(d, "add", "-A");
   git(d, "commit", "-q", "-m", "base");
   const base = git(d, "rev-parse", "HEAD");
@@ -223,15 +226,15 @@ test("with a custom setup, the ignored host files it left pass; new or edited on
 
 test("with install plus another setup, node_modules is rebuilt and the other setup's recorded output stays and passes", () => {
   const check = 'process.exit(require("node:fs").existsSync(".venv/out") ? 0 : 1);\n';
-  const { d, base } = withCommit(true, { ".gitignore": "node_modules\n.venv\n", "check.cjs": check });
+  const { d, base } = withCommit(true, { ".gitignore": "node_modules\n.venv\n", "check.cjs": check, "sub/keep.txt": "x" });
   mkdirSync(join(d, ".venv", "lib"), { recursive: true });
   writeFileSync(join(d, ".venv", "lib", "setup.py"), "x");
   writeFileSync(join(d, ".venv", "out"), "x");
   const snap = setupSnapshot(d, true);
-  mkdirSync(join(d, "node_modules", "dep"), { recursive: true });
-  writeFileSync(join(d, "node_modules", "dep", "package.json"), "{}");
+  mkdirSync(join(d, "sub", "node_modules", "x"), { recursive: true });
+  writeFileSync(join(d, "sub", "node_modules", "x", "package.json"), "{}");
   const r = verifyEvidence(d, base, "node check.cjs", true, [], null, snap);
-  const [planted, kept] = [existsSync(join(d, "node_modules", "dep")), existsSync(join(d, ".venv", "lib", "setup.py"))];
+  const [planted, kept] = [existsSync(join(d, "sub", "node_modules")), existsSync(join(d, ".venv", "lib", "setup.py"))];
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.deepEqual([planted, kept], [false, true]);
