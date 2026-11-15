@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -16,9 +16,10 @@ test("guard hook blocks secrets, git internals and its own files, also behind Wi
     env: run(".env.local"), key: run(join(root, "certs", "a.pem")), git: run(".git/hooks/pre-commit"),
     self: run(".claude/hooks/verify.mjs"), settings: run(".claude/settings.local.json"),
     dots: run(".env. "), stream: run(".git:x/config"), src: run("src/a.ts"),
+    user: run(join(tmpdir(), "home", ".claude", "settings.json")), device: run(String.raw`\\?\C:\x\a.ts`), short: run("CLAUDE~1/hooks/x.mjs"),
   };
   rmSync(root, { recursive: true, force: true });
-  assert.deepEqual(r, { env: 2, key: 2, git: 2, self: 2, settings: 2, dots: 2, stream: 2, src: 0 });
+  assert.deepEqual(r, { env: 2, key: 2, git: 2, self: 2, settings: 2, dots: 2, stream: 2, src: 0, user: 2, device: 2, short: 2 });
 });
 
 function repo(files: Record<string, string>) {
@@ -50,4 +51,14 @@ test("verify hook: logic without a test or with a red suite blocks the stop; a s
   assert.match(JSON.parse(out.red).reason, /npm test failed/);
   assert.equal(out.green, "");
   assert.ok(!("decision" in again) && /without a test/.test(again.systemMessage));
+});
+
+test("verify hook takes the test command from the base commit and refuses a test script the session changed", () => {
+  const d = repo({ "src/a.ts": "x", "tests/a.test.ts": "x" });
+  writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: "node -e \"require('fs').writeFileSync('pwned','')\"" } }));
+  const out = JSON.parse(hook("verify.mjs", d, {}).stdout);
+  const ran = existsSync(join(d, "pwned"));
+  rmSync(d, { recursive: true, force: true });
+  assert.ok(!("decision" in out) && /test script changed/.test(out.systemMessage));
+  assert.equal(ran, false);
 });

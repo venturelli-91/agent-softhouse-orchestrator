@@ -31,10 +31,19 @@ const block = (reason) => {
 
 if (!files.some((f) => TEST_FILE.test(f))) block(`Logic changed without a test (${logic.slice(0, 5).join(", ")}): write the test that fails without the change.`);
 
-const config = join(root, ".orchestrator.json");
+// The command to run comes from the base commit, never from files the session can edit; with no remote, HEAD is the base.
+const ref = base || "HEAD";
+const committed = (f) => { try { return JSON.parse(git("show", `${ref}:${f}`)); } catch { return undefined; } };
+const configured = committed(".orchestrator.json")?.test;
+const baseScript = committed("package.json")?.scripts?.test;
+const tests = configured ? [configured].flat() : baseScript ? ["npm test"] : [];
+// npm runs the working-tree script: if the session changed it, running it would execute unreviewed code on the host.
 const pkg = join(root, "package.json");
-const configured = existsSync(config) ? JSON.parse(readFileSync(config, "utf8")).test : undefined;
-const tests = configured ? [configured].flat() : existsSync(pkg) && JSON.parse(readFileSync(pkg, "utf8")).scripts?.test ? ["npm test"] : [];
+const liveScript = existsSync(pkg) ? JSON.parse(readFileSync(pkg, "utf8")).scripts?.test : undefined;
+if (tests.includes("npm test") && liveScript !== baseScript) {
+  process.stdout.write(JSON.stringify({ systemMessage: "verify.mjs: package.json test script changed in this session; not running it. Review it and run the tests yourself." }));
+  process.exit(0);
+}
 for (const cmd of tests) {
   const r = spawnSync(cmd, { cwd: root, shell: true, encoding: "utf8", timeout: 600_000 });
   if (r.status !== 0) block(`${cmd} failed:\n${String(r.stdout + r.stderr).slice(-1500)}`);
