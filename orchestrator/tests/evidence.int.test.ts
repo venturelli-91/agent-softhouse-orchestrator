@@ -280,6 +280,14 @@ test("an npm.cmd in the worktree root stops the install at verification", { skip
   assert.equal(ran, false);
 });
 
+test("a node.cmd in the worktree root never runs in place of node during the install", { skip: process.platform !== "win32" }, () => {
+  const { d } = withCommit(true, { "node.cmd": "@echo pwned > pwned.txt\r\n" });
+  installDeps(d);
+  const ran = existsSync(join(d, "pwned.txt"));
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(ran, false);
+});
+
 test("an install that fails at verification gives the command and exit code, never its stderr", () => {
   const { d, base } = withCommit(true, { "package.json": JSON.stringify({ name: "x", dependencies: { "left-pad": "1.0.0" } }) });
   const r = verifyEvidence(d, base, "node -e 0", true);
