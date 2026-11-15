@@ -31,19 +31,19 @@ const block = (reason) => {
 
 if (!files.some((f) => TEST_FILE.test(f))) block(`Logic changed without a test (${logic.slice(0, 5).join(", ")}): write the test that fails without the change.`);
 
-// The command to run comes from the base commit, never from files the session can edit; with no remote, HEAD is the base.
-const ref = base || "HEAD";
-const committed = (f) => { try { return JSON.parse(git("show", `${ref}:${f}`)); } catch { return undefined; } };
+// The command and every file that decides what it runs come from the remote base, which the session cannot move: with no remote
+// base nothing runs automatically. A changed host file (scripts and their pre/post hooks, npm config, lockfiles, make/pytest config)
+// means unreviewed code would run on the host, so it is left to the CEO.
+// ponytail: mirrors RUNS_ON_HOST in orchestrator/src/evidence.ts.
+const HOST_FILES = [".orchestrator.json", "package.json", ".npmrc", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock",
+  "Makefile", "conftest.py", "setup.py", "setup.cfg", "pyproject.toml", "pytest.ini", "tox.ini"];
+const warn = (msg) => { process.stdout.write(JSON.stringify({ systemMessage: `verify.mjs: ${msg}` })); process.exit(0); };
+if (!base) warn("no remote base (origin/HEAD) to trust the test command from; run the tests yourself.");
+const changedHost = files.filter((f) => HOST_FILES.some((h) => f.toLowerCase().endsWith(h.toLowerCase())));
+if (changedHost.length) warn(`files that decide what the tests run changed (${changedHost.slice(0, 5).join(", ")}); review them and run the tests yourself.`);
+const committed = (f) => { try { return JSON.parse(git("show", `${base}:${f}`)); } catch { return undefined; } };
 const configured = committed(".orchestrator.json")?.test;
-const baseScript = committed("package.json")?.scripts?.test;
-const tests = configured ? [configured].flat() : baseScript ? ["npm test"] : [];
-// npm runs the working-tree script: if the session changed it, running it would execute unreviewed code on the host.
-const pkg = join(root, "package.json");
-const liveScript = existsSync(pkg) ? JSON.parse(readFileSync(pkg, "utf8")).scripts?.test : undefined;
-if (tests.includes("npm test") && liveScript !== baseScript) {
-  process.stdout.write(JSON.stringify({ systemMessage: "verify.mjs: package.json test script changed in this session; not running it. Review it and run the tests yourself." }));
-  process.exit(0);
-}
+const tests = configured ? [configured].flat() : committed("package.json")?.scripts?.test ? ["npm test"] : [];
 for (const cmd of tests) {
   const r = spawnSync(cmd, { cwd: root, shell: true, encoding: "utf8", timeout: 600_000 });
   if (r.status !== 0) block(`${cmd} failed:\n${String(r.stdout + r.stderr).slice(-1500)}`);

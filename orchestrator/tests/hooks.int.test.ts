@@ -22,13 +22,18 @@ test("guard hook blocks secrets, git internals and its own files, also behind Wi
   assert.deepEqual(r, { env: 2, key: 2, git: 2, self: 2, settings: 2, dots: 2, stream: 2, src: 0, user: 2, device: 2, short: 2 });
 });
 
-function repo(files: Record<string, string>) {
+// A fake remote base (origin/HEAD at the base commit): verify.mjs only trusts a ref the session cannot move.
+function repo(files: Record<string, string>, remote = true) {
   const d = mkdtempSync(join(tmpdir(), "hk-"));
   const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd: d });
   git("init", "-q", "-b", "main");
   writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: 'node -e "process.exit(require(\'fs\').existsSync(\'red\')?1:0)"' } }));
   git("add", "-A");
   git("commit", "-qm", "base");
+  if (remote) {
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+  }
   for (const [f, body] of Object.entries(files)) {
     mkdirSync(dirname(join(d, f)), { recursive: true });
     writeFileSync(join(d, f), body);
@@ -53,12 +58,19 @@ test("verify hook: logic without a test or with a red suite blocks the stop; a s
   assert.ok(!("decision" in again) && /without a test/.test(again.systemMessage));
 });
 
-test("verify hook takes the test command from the base commit and refuses a test script the session changed", () => {
-  const d = repo({ "src/a.ts": "x", "tests/a.test.ts": "x" });
-  writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: "node -e \"require('fs').writeFileSync('pwned','')\"" } }));
-  const out = JSON.parse(hook("verify.mjs", d, {}).stdout);
-  const ran = existsSync(join(d, "pwned"));
-  rmSync(d, { recursive: true, force: true });
-  assert.ok(!("decision" in out) && /test script changed/.test(out.systemMessage));
+test("verify hook runs nothing when a file that decides the test command changed, or with no remote base", () => {
+  const pwn = `node -e "require('fs').writeFileSync('pwned','')"`;
+  const cases = {
+    pretest: repo({ "src/a.ts": "x", "tests/a.test.ts": "x", "package.json": JSON.stringify({ scripts: { pretest: pwn, test: "node -e 0" } }) }),
+    npmrc: repo({ "src/a.ts": "x", "tests/a.test.ts": "x", ".npmrc": "script-shell=evil" }),
+    local: repo({ "src/a.ts": "x", "tests/a.test.ts": "x", red: "" }, false),
+  };
+  const out = Object.fromEntries(Object.entries(cases).map(([k, d]) => [k, JSON.parse(hook("verify.mjs", d, {}).stdout)]));
+  const ran = Object.values(cases).some((d) => existsSync(join(d, "pwned")));
+  Object.values(cases).forEach((d) => rmSync(d, { recursive: true, force: true }));
+  assert.match(out.pretest.systemMessage, /decide what the tests run changed \(package\.json\)/);
+  assert.match(out.npmrc.systemMessage, /\.npmrc/);
+  assert.match(out.local.systemMessage, /no remote base/);
+  assert.ok(Object.values(out).every((o) => !("decision" in o)));
   assert.equal(ran, false);
 });
