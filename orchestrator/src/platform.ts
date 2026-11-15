@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { execFileSync, spawn, spawnSync, type ChildProcess, type ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
 import { resolve } from "node:path";
 import type { Env } from "./agent-env.ts";
@@ -12,6 +13,16 @@ export const devNullPath = (p: Platform = process.platform) => (isWindows(p) ? "
 
 export const samePath = (a: string, b: string, p: Platform = process.platform) =>
   isWindows(p) ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b);
+
+// Every extension cmd.exe may resolve: the live PATHEXT plus the Windows defaults and .ps1.
+const shadowExts = (): string[] => [...new Set([...(process.env.PATHEXT ?? "").split(";"), ".com", ".exe", ".bat", ".cmd", ".vbs", ".vbe", ".js",
+  ".jse", ".wsf", ".wsh", ".msc", ".ps1"].map((e) => e.toLowerCase()).filter(Boolean))];
+
+// cmd.exe looks in the cwd before PATH: a file named like the binary there would run instead of it.
+export function shadowsBin(cwd: string, bin: string, p: Platform = process.platform): boolean {
+  const b = bin.toLowerCase();
+  return isWindows(p) && readdirSync(cwd).some((f) => [b, ...shadowExts().map((e) => b + e)].includes(f.toLowerCase()));
+}
 
 export function runShimmed(
   line: string, bin: string, args: string[], opts: ExecFileSyncOptionsWithStringEncoding,

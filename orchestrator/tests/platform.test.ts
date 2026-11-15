@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isWindows, killTree, runShimmed, samePath, shellName, devNullPath, spawnServe } from "../src/platform.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { isWindows, killTree, runShimmed, samePath, shadowsBin, shellName, devNullPath, spawnServe } from "../src/platform.ts";
 
 test("shell and null device per platform", () => {
   assert.equal(shellName("win32"), "PowerShell");
@@ -43,4 +46,12 @@ test("killTree: taskkill /t /f on win32, SIGKILL to the group on linux", () => {
   killTree(42, "win32", io);
   killTree(42, "linux", io);
   assert.deepEqual(seen, [["spawnSync", "taskkill", ["/pid", "42", "/t", "/f"]], ["kill", -42, "SIGKILL"]]);
+});
+
+test("a file named like the binary in the cwd shadows it on Windows only", () => {
+  const d = mkdtempSync(join(tmpdir(), "shadow-"));
+  writeFileSync(join(d, "NPM.cmd"), "");
+  const r = [shadowsBin(d, "npm", "win32"), shadowsBin(d, "node", "win32"), shadowsBin(d, "npm", "linux")];
+  rmSync(d, { recursive: true, force: true });
+  assert.deepEqual(r, [true, false, false]);
 });

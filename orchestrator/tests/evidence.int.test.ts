@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { adoptKeys, installDeps, testFailure, verifyEvidence } from "../src/guardrails.ts";
+import { setupSnapshot } from "../src/evidence.ts";
 
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
 
@@ -163,12 +164,16 @@ test("a test command that dirties the worktree voids the verification", () => {
   assert.match((r as { reason: string }).reason, /worktree changed during verification/);
 });
 
-function withCommit(lock = false) {
+function withCommit(lock = false, files: Record<string, string> = {}) {
   const d = mkdtempSync(join(tmpdir(), "ev-"));
   git(d, "init", "-q", "-b", "main");
   writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { test: "node -e 0" } }));
   writeFileSync(join(d, ".gitignore"), "node_modules\n.npmrc\n");
   if (lock) writeFileSync(join(d, "package-lock.json"), JSON.stringify({ name: "x", lockfileVersion: 3, packages: { "": {} } }));
+  for (const [f, c] of Object.entries(files)) {
+    mkdirSync(dirname(join(d, f)), { recursive: true });
+    writeFileSync(join(d, f), c);
+  }
   git(d, "add", "-A");
   git(d, "commit", "-q", "-m", "base");
   const base = git(d, "rev-parse", "HEAD");
@@ -197,6 +202,98 @@ test("with install, ignored files the agent left are wiped before the test and n
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, true);
   assert.equal(left, false);
+});
+
+test("with a custom setup, the ignored host files it left pass; new or edited ones fail verification", () => {
+  const dep = (d: string, name: string, body = "{}") => {
+    mkdirSync(join(d, "node_modules", name), { recursive: true });
+    writeFileSync(join(d, "node_modules", name, "package.json"), body);
+  };
+  const { d, base } = withCommit();
+  dep(d, "dep");
+  const snap = setupSnapshot(d);
+  assert.equal(snap.length, 1);
+  assert.equal(verifyEvidence(d, base, "node -e 0", false, [], null, snap).ok, true);
+  dep(d, "dep", '{"x":1}');
+  assert.match((verifyEvidence(d, base, "node -e 0", false, [], null, snap) as { reason: string }).reason, /new or changed since setup/);
+  dep(d, "dep");
+  dep(d, "planted");
+  const r = verifyEvidence(d, base, "node -e 0", false, [], null, snap);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /planted/);
+});
+
+test("with install plus another setup, node_modules is rebuilt and the other setup's recorded output stays and passes", () => {
+  const check = 'process.exit(require("node:fs").existsSync(".venv/out") ? 0 : 1);\n';
+  const { d, base } = withCommit(true, { ".gitignore": "node_modules\n.venv\n", "check.cjs": check, "sub/keep.txt": "x" });
+  mkdirSync(join(d, ".venv", "lib"), { recursive: true });
+  writeFileSync(join(d, ".venv", "lib", "setup.py"), "x");
+  writeFileSync(join(d, ".venv", "out"), "x");
+  const snap = setupSnapshot(d, true);
+  mkdirSync(join(d, "sub", "node_modules", "x"), { recursive: true });
+  writeFileSync(join(d, "sub", "node_modules", "x", "package.json"), "{}");
+  const r = verifyEvidence(d, base, "node check.cjs", true, [], null, snap);
+  const [planted, kept] = [existsSync(join(d, "sub", "node_modules")), existsSync(join(d, ".venv", "lib", "setup.py"))];
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual([planted, kept], [false, true]);
+});
+
+test("with install plus another setup, a host file in a node_modules nested in another ignored dir is still caught", () => {
+  const { d, base } = withCommit(true, { ".gitignore": "node_modules\n.venv\n" });
+  const snap = setupSnapshot(d, true);
+  mkdirSync(join(d, ".venv", "node_modules", "c"), { recursive: true });
+  writeFileSync(join(d, ".venv", "node_modules", "c", "package.json"), "{}");
+  const r = verifyEvidence(d, base, "node -e 0", true, [], null, snap);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /new or changed since setup \(\.venv\/node_modules\/c\/package\.json@/);
+});
+
+test("a node_modules symlink never lets npm ci empty its target", (t) => {
+  const { d, base } = withCommit(true);
+  const outside = mkdtempSync(join(tmpdir(), "ev-target-"));
+  writeFileSync(join(outside, "keep.txt"), "x");
+  try {
+    symlinkSync(outside, join(d, "node_modules"), "junction");
+  } catch {
+    rmSync(d, { recursive: true, force: true });
+    return t.skip("cannot create symlinks here");
+  }
+  assert.throws(() => installDeps(d), /node_modules is a symlink/);
+  const r = verifyEvidence(d, base, "node -e 0", true, [], null, []);
+  const kept = existsSync(join(outside, "keep.txt"));
+  rmSync(d, { recursive: true, force: true });
+  rmSync(outside, { recursive: true, force: true });
+  assert.equal(kept, true);
+  assert.equal(r.ok, true, JSON.stringify(r));
+});
+
+test("an npm.cmd in the worktree root stops the install at verification", { skip: process.platform !== "win32" }, () => {
+  const { d, base } = withCommit(true, { "npm.cmd": "@echo pwned > pwned.txt\n" });
+  const r = verifyEvidence(d, base, "node -e 0", true);
+  const ran = existsSync(join(d, "pwned.txt"));
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /npm exists in the worktree and would shadow the binary/);
+  assert.equal(ran, false);
+});
+
+test("a node.cmd in the worktree root never runs in place of node during the install", { skip: process.platform !== "win32" }, () => {
+  const { d } = withCommit(true, { "node.cmd": "@echo pwned > pwned.txt\n" });
+  installDeps(d);
+  const ran = existsSync(join(d, "pwned.txt"));
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(ran, false);
+});
+
+test("an install that fails at verification gives the command and exit code, never its stderr", () => {
+  const { d, base } = withCommit(true, { "package.json": JSON.stringify({ name: "x", dependencies: { "left-pad": "1.0.0" } }) });
+  const r = verifyEvidence(d, base, "node -e 0", true);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /^setup failed \(npm ci --ignore-scripts --no-audit --no-fund\), exit \d+$/);
 });
 
 test("install refuses a repo without a committed lockfile", () => {

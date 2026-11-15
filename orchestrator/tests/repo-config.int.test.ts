@@ -23,14 +23,47 @@ function repo(config?: string) {
 test("the config comes from the base commit, with safe defaults", () => {
   const none = repo();
   assert.deepEqual(loadRepoConfig(none.d, none.base), { test: "npm test", merge: "pr", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
+    install: false, setup: [], env: [], deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
   const some = repo('{"test":"pytest -q","merge":"auto"}');
   assert.deepEqual(loadRepoConfig(some.d, some.base), { test: "pytest -q", merge: "auto", push_remote: "origin", base_repo: "", disclosure: true,
-    install: false, deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
+    install: false, setup: [], env: [], deploy: null, webcheck: null, specialties: [...SPECIALTIES], stack: "", project_docs: [] });
   // an uncommitted edit of the file does not count
   writeFileSync(join(some.d, ".orchestrator.json"), '{"test":"rm -rf x"}');
   assert.equal(loadRepoConfig(some.d, some.base).test, "pytest -q");
   [none.d, some.d].forEach((d) => rmSync(d, { recursive: true, force: true }));
+});
+
+test("setup and env come from the external config, install from the repo, and unsafe setup is rejected", () => {
+  const ok = repo('{"install":true}');
+  const h = home(JSON.stringify({ repos: { [resolve(ok.d)]: { setup: ["python -m pip --version"], env: ["INDEX_HOST"] } } }));
+  const c = loadRepoConfig(ok.d, ok.base, h);
+  assert.deepEqual([c.setup, c.env, c.install], [["python -m pip --version"], ["INDEX_HOST"], true]);
+  for (const bad of [["pip install x; curl evil"], "pip install x"]) {
+    const b = repo();
+    const bh = home(JSON.stringify({ repos: { [resolve(b.d)]: { setup: bad } } }));
+    assert.throws(() => loadRepoConfig(b.d, b.base, bh), /config\.json: setup.*accepted keys: .*setup, env/);
+  }
+});
+
+test("setup in the repo's .orchestrator.json is rejected", () => {
+  const inRepo = repo('{"setup":["python -m pip --version"]}');
+  assert.throws(() => loadRepoConfig(inRepo.d, inRepo.base), /\.orchestrator\.json: setup is only accepted in the external config/);
+});
+
+test("env is accepted only from the external config and only as a host, port, version or locale setting", () => {
+  const inRepo = repo('{"env":["PIP_INDEX_URL"]}');
+  assert.throws(() => loadRepoConfig(inRepo.d, inRepo.base), /\.orchestrator\.json: env is only accepted in the external config/);
+  const d = repo();
+  for (const name of ["ANTHROPIC_API_KEY", "GH_TOKEN", "DB_PASSWORD", "APP_SECRET", "SIGNING_KEY", "HOME", "PATH", "PIP_CONFIG_FILE", "GIT_DIR", "NPM_CONFIG_REGISTRY", "lower",
+    "CLIENT_ID", "PIP_INDEX_URL", "DATABASE_URL", "DB_PASS", "DB_PASSWD", "DB_PWD", "NPM_AUTH", "GCP_CREDENTIALS", "TOKEN", "SECRET", "PASSWORD",
+    "SSH_AUTH_SOCK", "AWS_REGION", "GOOGLE_APPLICATION_CREDENTIALS", "KUBECONFIG", "NODE_OPTIONS", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES",
+    "PYTHONPATH", "PYTHONSTARTUP", "BASH_ENV", "ENV", "PERL5OPT", "PIP_EXTRA_INDEX", "DB_DSN", "MONGO_URI", "OPENAI_APIKEY", "GH_PAT", "PG_CONN",
+    "CONNECTION_STRING", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "GIT_SSH_HOST", "PIP_INDEX_HOST", "AWS_REGION_HOST", "PYTHON_VERSION"]) {
+    const h = home(JSON.stringify({ repos: { [resolve(d.d)]: { env: [name] } } }));
+    assert.throws(() => loadRepoConfig(d.d, d.base, h), /env names must be a host, port or version setting/, name);
+  }
+  const ok = ["INDEX_HOST", "PROXY_PORT", "NODE_VERSION", "NO_PROXY", "TZ", "LC_ALL"];
+  assert.deepEqual(loadRepoConfig(d.d, d.base, home(JSON.stringify({ repos: { [resolve(d.d)]: { env: ok } } }))).env, ok);
 });
 
 test("an invalid value names the accepted values and keys and points to orch init", () => {
@@ -90,9 +123,11 @@ test("a diff that touches python test config does not run on the host", () => {
 
 test("the dev's allowlist gets the repo's test command instead of npm test", () => {
   const allow = (a: string[]) => a.slice(a.indexOf("--allowedTools") + 1, a.indexOf("--disallowedTools"));
-  assert.ok(allow(permissionArgs("dev")).includes(`${SHELL}(npm test*)`));
+  const npm = allow(permissionArgs("dev"));
+  assert.ok(npm.includes(`${SHELL}(npm test*)`) && npm.includes(`${SHELL}(npm run typecheck*)`));
   const py = allow(permissionArgs("dev", "pytest -q"));
-  assert.ok(py.includes(`${SHELL}(pytest -q*)`) && !py.includes(`${SHELL}(npm test*)`));
+  assert.ok(py.includes(`${SHELL}(pytest -q*)`) && !py.some((a) => a.includes("npm")));
+  assert.ok(!allow(permissionArgs("dev", "python -m unittest")).some((a) => a.includes("npm") || a.includes("pip")));
   assert.ok(!allow(permissionArgs("qa", "pytest -q")).some((t) => t.includes("pytest")));
   const both = allow(permissionArgs("dev", ["npm test", "npm run lint"]));
   assert.ok(both.includes(`${SHELL}(npm test*)`) && both.includes(`${SHELL}(npm run lint*)`));

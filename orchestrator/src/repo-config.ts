@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { DEFAULT_TEST, safeCommand, TestSpec } from "./commands.ts";
 import { orchHome } from "./daily-cap.ts";
+import { ALLOWED_ENV, minimalEnv } from "./agent-env.ts";
 import { safeGit } from "./guardrails.ts";
 import { SPECIALTIES } from "./specialties.ts";
 import { ProposedAgents } from "./team.ts";
@@ -20,6 +21,16 @@ export const DeployConfig = z.object({
   max_latency_ms: z.number().positive().default(2000),
 });
 export type DeployConfig = z.infer<typeof DeployConfig>;
+
+// Names a setup command may read: an allowlist, since a blocklist always misses a credential shape (DSN, URI, proxy URL with user:pass@).
+// Never a loader or tool hook prefix, and never a key minimalEnv already sets or passes (the hardening must not be overridable).
+const reserved = new Set([...ALLOWED_ENV, ...Object.keys(minimalEnv("dev", {}))]);
+const ALLOWED_NAME = /^(NO_PROXY|TZ|LC_[A-Z]+|[A-Z][A-Z0-9_]*_(HOST|PORT|VERSION))$/;
+const HOOK_PREFIX = /^(AWS_|GIT_|NPM_CONFIG_|PIP_|PYTHON|LD_|DYLD_|ANTHROPIC_)/;
+const hostName = z.string().refine(
+  (n) => !reserved.has(n) && ALLOWED_NAME.test(n) && !HOOK_PREFIX.test(n),
+  "env names must be a host, port or version setting (NAME_HOST, NAME_PORT, NAME_VERSION), NO_PROXY, TZ or LC_*",
+);
 
 const tagId = (prefix: string) => z.array(z.string().regex(new RegExp(`^${prefix}-[A-Z0-9]+$`))).default([]);
 // The app is started on the host from the ticket's worktree, so, like deploy, this block comes only from the external config.
@@ -51,6 +62,11 @@ export const RepoConfig = z.strictObject({
   disclosure: z.boolean().default(true),
   // Run `npm ci --ignore-scripts` on the host in each new worktree, from the base commit lockfile, so lint, tsc and build can be the test command.
   install: z.boolean().default(false),
+  // Commands run on the host in each new worktree, in order; never in the dev's allowlist. Only from the external config, like deploy.
+  // `install: true` is an alias for [DEFAULT_INSTALL], which runs first.
+  setup: z.array(safeCommand("setup")).default([]),
+  // Host variable names the setup commands may read; nothing else leaks from the operator's environment.
+  env: z.array(hostName).default([]),
   deploy: DeployConfig.nullable().default(null),
   webcheck: WebcheckConfig.nullable().default(null),
   // The dev specialties triage may route to in this repo; the whole team by default.
@@ -100,7 +116,7 @@ export function loadRepoConfig(repo: string, ref: string, home = orchHome()): Re
   try {
     const text = safeGit(repo, "show", `${ref}:.orchestrator.json`);
     const raw = readJson(".orchestrator.json", text);
-    for (const k of ["deploy", "webcheck"]) if (raw && typeof raw === "object" && k in raw) throw new Error(`.orchestrator.json: ${k} is only accepted in the external config`);
+    for (const k of ["deploy", "webcheck", "env", "setup"]) if (raw && typeof raw === "object" && k in raw) throw new Error(`.orchestrator.json: ${k} is only accepted in the external config`);
     inRepo = check(".orchestrator.json", raw);
   } catch (e) {
     if ((e as Error).message.startsWith(".orchestrator.json:")) throw e;
