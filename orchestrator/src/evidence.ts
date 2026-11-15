@@ -1,7 +1,7 @@
 // Evidence verified by code (zero token cost): what the agent claims does not count.
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
@@ -35,7 +35,7 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   // Another setup's output is not rebuilt (it would run agent-edited code on the host), so then only node_modules goes and the snapshot guards the rest.
   if (install && !setupIgnored) git("clean", "-fdXq");
   else if (install) {
-    const deps = git("ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory").split("\0").filter((f) => NODE_MODULES.test(f));
+    const deps = ignoredDeps(wt);
     if (deps.length) git("--literal-pathspecs", "clean", "-fdXq", "--", ...deps);
   }
   // assume-unchanged / skip-worktree hide edits from `git status` and from the diff gate while npm still reads them from disk.
@@ -111,13 +111,17 @@ function blobAt(wt: string, f: string, rev = "HEAD"): string {
 export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved" | "test_base" | "setup_ignored" | "setup_env">, base = t.base) =>
   verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved, t.test_base, t.setup_ignored, t.setup_env);
 
-const NODE_MODULES = /(^|\/)node_modules\//;
+// The ignored node_modules dirs git lists on their own (a symlink comes without the trailing slash); one nested in another ignored dir is not.
+function ignoredDeps(wt: string): string[] {
+  return safeGit(wt, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory").split("\0").filter((f) => /(^|\/)node_modules\/?$/.test(f));
+}
 
 // What setup left behind: ignored files npm or pip would run, as path@sha1. Verification tolerates exactly these and rejects anything new or edited.
 // With install, node_modules is rebuilt before every verification, so it is left out.
 export function setupSnapshot(wt: string, install = false): string[] {
+  const deps = install ? ignoredDeps(wt).map((d) => (d.endsWith("/") ? d : `${d}/`)) : [];
   return safeGit(wt, "ls-files", "-z", "--others", "--ignored", "--exclude-standard").split("\0")
-    .filter((f) => f && RUNS_ON_HOST.test(f) && !(install && NODE_MODULES.test(f)))
+    .filter((f) => f && RUNS_ON_HOST.test(f) && !deps.some((d) => f.startsWith(d)))
     .map((f) => {
       let sha = "unreadable";
       try {
@@ -137,6 +141,8 @@ export function installDeps(wt: string, install = DEFAULT_INSTALL, envNames: str
     } catch {
       throw new Error("install: the repo has no committed package-lock.json");
     }
+    // npm ci empties node_modules, and through a symlink or junction it would empty the target.
+    if (lstatSync(join(wt, "node_modules"), { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error("install: node_modules is a symlink");
   }
   const bin = install.split(" ")[0];
   if (shadowsBin(wt, bin)) throw new Error(`setup refused (${install}): ${bin} exists in the worktree and would shadow the binary`);

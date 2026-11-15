@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { adoptKeys, installDeps, testFailure, verifyEvidence } from "../src/guardrails.ts";
@@ -235,6 +235,36 @@ test("with install plus another setup, node_modules is rebuilt and the other set
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.deepEqual([planted, kept], [false, true]);
+});
+
+test("with install plus another setup, a host file in a node_modules nested in another ignored dir is still caught", () => {
+  const { d, base } = withCommit(true, { ".gitignore": "node_modules\n.venv\n" });
+  const snap = setupSnapshot(d, true);
+  mkdirSync(join(d, ".venv", "node_modules", "c"), { recursive: true });
+  writeFileSync(join(d, ".venv", "node_modules", "c", "package.json"), "{}");
+  const r = verifyEvidence(d, base, "node -e 0", true, [], null, snap);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /new or changed since setup \(\.venv\/node_modules\/c\/package\.json@/);
+});
+
+test("a node_modules symlink never lets npm ci empty its target", (t) => {
+  const { d, base } = withCommit(true);
+  const outside = mkdtempSync(join(tmpdir(), "ev-target-"));
+  writeFileSync(join(outside, "keep.txt"), "x");
+  try {
+    symlinkSync(outside, join(d, "node_modules"), "junction");
+  } catch {
+    rmSync(d, { recursive: true, force: true });
+    return t.skip("cannot create symlinks here");
+  }
+  assert.throws(() => installDeps(d), /node_modules is a symlink/);
+  const r = verifyEvidence(d, base, "node -e 0", true, [], null, []);
+  const kept = existsSync(join(outside, "keep.txt"));
+  rmSync(d, { recursive: true, force: true });
+  rmSync(outside, { recursive: true, force: true });
+  assert.equal(kept, true);
+  assert.equal(r.ok, true, JSON.stringify(r));
 });
 
 test("an npm.cmd in the worktree root stops the install at verification", { skip: process.platform !== "win32" }, () => {
