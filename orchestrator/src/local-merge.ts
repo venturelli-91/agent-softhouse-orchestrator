@@ -5,7 +5,7 @@ import type { T } from "./ticket.ts";
 function assertMergeable(repo: string, branch: string): void {
   if (branch === "HEAD" || safeGit(repo, "rev-parse", "--abbrev-ref", "HEAD") !== branch) throw new Error(`branch ${branch
     || "(none)"} is not checked out in the main checkout`);
-  if (safeGit(repo, "status", "--porcelain"))
+  if (safeGit(repo, "status", "--porcelain", "--untracked-files=no"))
     throw new Error('main checkout has uncommitted changes: ship them through a ticket with orch adopt --title "<what they do>", then approve again');
 }
 

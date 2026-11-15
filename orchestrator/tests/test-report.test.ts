@@ -11,6 +11,13 @@ test("parseCounts reads node --test, pytest and jest summaries and adds up sever
   assert.equal(parseCounts("all good\n"), null);
 });
 
+test("parseCounts reads unittest summaries, including no tests ran", () => {
+  assert.deepEqual(parseCounts("...\n----\nRan 3 tests in 0.001s\n\nOK\n"), { pass: 3, skip: 0, fail: 0 });
+  assert.deepEqual(parseCounts("Ran 4 tests in 0.1s\n\nOK (skipped=1)\n"), { pass: 3, skip: 1, fail: 0 });
+  assert.deepEqual(parseCounts("Ran 5 tests in 0.1s\n\nFAILED (failures=1, errors=1)\n"), { pass: 3, skip: 0, fail: 2 });
+  assert.deepEqual(parseCounts("Ran 0 tests in 0.000s\n\nNO TESTS RAN\n"), { pass: 0, skip: 0, fail: 0 });
+});
+
 const hunk = (...added: string[]) => [`@@ -0,0 +1,${added.length} @@`, ...added.map((l) => `+${l}`)];
 
 test("addedSkips flags unconditional skips added to test files only", () => {
@@ -53,4 +60,10 @@ test("skipAlerts warns only when more tests are skipped than at the base", () =>
   assert.deepEqual(skipAlerts({ pass: 3, skip: 1, fail: 0 }, { pass: 3, skip: 2, fail: 0 }), ["2 tests skipped, the base had 1"]);
   assert.deepEqual(skipAlerts({ pass: 3, skip: 1, fail: 0 }, { pass: 4, skip: 1, fail: 0 }), []);
   assert.deepEqual(skipAlerts(null, { pass: 3, skip: 9, fail: 0 }), []);
+});
+
+test("parseCounts reads unittest summaries with CRLF line endings", () => {
+  assert.deepEqual(parseCounts("Ran 3 tests in 0.001s\r\n\r\nOK\r\n"), { pass: 3, skip: 0, fail: 0 });
+  assert.deepEqual(parseCounts("Ran 4 tests in 0.1s\r\n\r\nFAILED (failures=1, errors=1)\r\n"), { pass: 2, skip: 0, fail: 2 });
+  assert.deepEqual(parseCounts("Ran 0 tests in 0.000s\r\n\r\nNO TESTS RAN\r\n"), { pass: 0, skip: 0, fail: 0 });
 });

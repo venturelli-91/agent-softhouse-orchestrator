@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { bareNodeTest, loadConventions } from "../src/repo-config.ts";
+import { bareNodeTest, loadConventions, loadPlaybooks } from "../src/repo-config.ts";
 
 test("the repo's CLAUDE.md comes from the base commit, capped", () => {
   const d = mkdtempSync(join(tmpdir(), "conv-"));
@@ -23,6 +23,27 @@ test("the repo's CLAUDE.md comes from the base commit, capped", () => {
   assert.equal(loadConventions(d, base), "Commits in Portuguese.");
   assert.equal(loadConventions(d, base, 7), "Commits");
   rmSync(d, { recursive: true, force: true });
+});
+
+test("committed playbooks are loaded newest first and capped; uncommitted ones are not", () => {
+  const d = mkdtempSync(join(tmpdir(), "conv-"));
+  const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd: d, encoding: "utf8" }).trim();
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(d, "a.txt"), "a");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  assert.equal(loadPlaybooks(d, "HEAD"), "");
+  mkdirSync(join(d, "playbooks"));
+  writeFileSync(join(d, "playbooks", "2026-01-01-old.md"), "old lesson");
+  writeFileSync(join(d, "playbooks", "2026-02-01-new.md"), "new lesson");
+  git("add", "-A");
+  git("commit", "-q", "-m", "playbooks");
+  writeFileSync(join(d, "playbooks", "2026-03-01-draft.md"), "draft postmortem");
+  const all = loadPlaybooks(d, "HEAD");
+  const capped = loadPlaybooks(d, "HEAD", 50);
+  rmSync(d, { recursive: true, force: true });
+  assert.ok(all.indexOf("new lesson") < all.indexOf("old lesson") && !all.includes("draft"));
+  assert.ok(capped.includes("new lesson") && !capped.includes("old lesson"));
 });
 
 test("the rules come from .claude/CLAUDE.md on disk first, then the committed root file", () => {

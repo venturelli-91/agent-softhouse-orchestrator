@@ -1,18 +1,19 @@
 // Commands that set up and tidy the orchestrator itself: init, status, clean.
-import { execFileSync } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
+import { DEFAULT_TEST } from "../../src/commands.ts";
+import { runShimmed, samePath } from "../../src/platform.ts";
 import { applyTeam, configJson, proposeTeam } from "../../src/team.ts";
 import { usedToday } from "../../src/daily-cap.ts";
 import { forgetDeploy } from "../../src/deploy.ts";
 import { ensureLocalOnly } from "../../src/docs.ts";
 import { deleteRemoteBranch } from "../../src/git-remote.ts";
-import { report } from "../../src/graph.ts";
+import { removeTicketResources, report } from "../../src/graph.ts";
 import { log } from "../../src/graph-kit.ts";
 import { landedOn } from "../../src/local-merge.ts";
-import { assertGitConfigUnchanged, repoOf, safeGit } from "../../src/guardrails.ts";
+import { assertGitConfigUnchanged, repoOf } from "../../src/guardrails.ts";
 import { listIncidents } from "../../src/incidents.ts";
 import { isManual, manualIds, readManual } from "../../src/manual.ts";
 import { recordMetrics } from "../../src/metrics.ts";
@@ -21,7 +22,7 @@ import { TEAMS } from "../../src/specialties.ts";
 import { runningPid, ticketFile, ticketIds } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 import { demandLines, showDemand } from "./demand.ts";
-import { isDemand } from "../../src/demand.ts";
+import { demandIds, forgetDemand, isDemand, readDemand } from "../../src/demand.ts";
 
 const DONE = ["simulated_deploy", "deployed", "aborted", "closed", "merged"];
 
@@ -33,7 +34,7 @@ export function init(c: Ctx) {
   if (existsSync(file)) console.log(`${file} already exists${team ? `: set "specialties" there by hand (${TEAMS[team].join(", ")})` : ""}`);
   else {
     const specialties = team && team !== "all" ? { specialties: TEAMS[team] } : {};
-    writeFileSync(file, configJson({ test: "npm test", merge: "pr", ...specialties }));
+    writeFileSync(file, configJson({ test: DEFAULT_TEST, merge: "pr", ...specialties }));
     console.log(`wrote ${file}: set "test" to the repo's test command, then commit it (it is read from the base commit)`);
     if (bareNodeTest(repo)) {
       console.warn(
@@ -51,8 +52,7 @@ export function init(c: Ctx) {
 // Copies this folder into another repo and prepares it. Never overwrites: an existing orchestrator/ there stops the command.
 const NOT_COPIED = new Set(["node_modules", ".env", ".state", ".git", ".github"]);
 // Fixed arguments only; on Windows npm and npx are .cmd shims, which need a shell and a single command line.
-const run = (bin: string, args: string[], cwd: string) =>
-  process.platform === "win32" ? execFileSync(`${bin} ${args.join(" ")}`, { cwd, stdio: "inherit", shell: true }) : execFileSync(bin, args, { cwd, stdio: "inherit" });
+const run = (bin: string, args: string[], cwd: string) => runShimmed(`${bin} ${args.join(" ")}`, bin, args, { cwd, stdio: "inherit", encoding: "utf8" });
 
 // The host's linter and typechecker would otherwise scan orchestrator/ (own style, stricter @types/node) and break the host's `verify`. Printed, never applied.
 const HOST_EXCLUDES = `add these by hand if the repo uses Biome or tsc, or its verify will fail on orchestrator/:
@@ -134,28 +134,75 @@ export async function status(c: Ctx) {
   if (process.env.TOKEN_CAP_DAILY) console.log(`tokens in the last 24h: ${usedToday()} / ${process.env.TOKEN_CAP_DAILY}`);
 }
 
+
+function step(item: string, fn: () => unknown): boolean {
+  try {
+    fn();
+    console.log(`ok   ${item}`);
+    return true;
+  } catch (e) {
+    console.log(`FAIL ${item}: ${(e as Error).message.split("\n", 1)[0]}`);
+    process.exitCode = 1;
+    return false;
+  }
+}
+
 export async function clean(c: Ctx) {
-  const ids = c.values.all ? ticketIds(c.home) : c.positionals[0] ? [c.positionals[0]] : die("usage: orch clean <id> | --all [--force] [--remote]");
+  const usage = "usage: orch clean <id> | --all [--repo <path>] [--force] [--remote]  (--all takes only this repo's tickets and demands; manual tickets are left alone; --force also removes open demands, even if their tickets were kept; --all skips tickets with no recorded repo: clean those by id)";
+  const all = c.values.all;
+  if (!all && !c.positionals[0]) die(usage);
+  const scope = resolve(c.values.repo ?? c.host);
+  const ids: string[] = [];
+  for (const id of all ? ticketIds(c.home) : [c.positionals[0]!]) {
+    if (!all) ids.push(id);
+    else {
+      try {
+        const { repo } = (await c.load(id)).ticket;
+        if (repo && samePath(repo, scope)) ids.push(id);
+      } catch (e) {
+        step(`${id} read`, () => { throw e; });
+      }
+    }
+  }
   for (const id of ids) {
     await c.locked(id, async () => {
       const { ticket: t } = await c.load(id);
       if (!DONE.includes(t.status) && !c.values.force) {
-        if (!c.values.all) die(`${id} is ${t.status}, not finished (use --force to discard it)`);
+        if (!all) die(`${id} is ${t.status}, not finished (use --force to discard it)`);
         return;
       }
-      if (existsSync(t.worktree)) {
-        const repo = t.repo || repoOf(t.worktree);
-        if (c.values.remote) {
+      let repo = t.repo;
+      if (!repo && !step(`${id} locate repo`, () => (repo = repoOf(t.worktree)))) return;
+      const results = [];
+      if (c.values.remote) {
+        results.push(step(`${id} remote branch`, () => {
           assertGitConfigUnchanged(repo, t.git_config_hash);
-          console.log(`${id}: remote branch ${deleteRemoteBranch(repo, t.push_remote, id)}`);
-        }
-        safeGit(repo, "worktree", "remove", "--force", t.worktree);
-        safeGit(repo, "branch", "-D", `ticket/${id}`);
+          return deleteRemoteBranch(repo, t.push_remote, id);
+        }));
       }
-      recordMetrics(c.home, t);
-      unlinkSync(ticketFile(c.home, id));
-      forgetDeploy(c.home, id);
-      console.log(`cleaned ${id} (${t.status})`);
+      for (const s of removeTicketResources(repo, t.worktree, id)) {
+        results.push(step(`${id} ${s.step}`, () => { if (!s.ok) throw new Error(s.reason); }));
+      }
+      if (results.includes(false)) return void console.log(`kept ${id}: its state stays so the clean can be retried`);
+      if (!step(`${id} state`, () => unlinkSync(ticketFile(c.home, id)))) return;
+      const metrics = step(`${id} metrics`, () => recordMetrics(c.home, t));
+      step(`${id} deploy record`, () => forgetDeploy(c.home, id));
+      step(`${id} deploy log`, () => rmSync(join(c.home, "deploy-logs", `${id}.txt`), { force: true }));
+      step(`${id} host diff`, () => rmSync(join(c.home, `host-diff-${id}.diff`), { force: true }));
+      console.log(metrics ? `cleaned ${id} (${t.status}${all ? "" : `, ${repo}`})` : `${id} removed, but its metrics line was lost`);
     });
+  }
+  if (!all) return;
+  for (const id of demandIds(c.home)) {
+    let d: ReturnType<typeof readDemand>;
+    try {
+      d = readDemand(c.home, id);
+    } catch (e) {
+      step(`demand ${id} read`, () => { throw e; });
+      continue;
+    }
+    if (!samePath(d.repo, scope)) continue;
+    if (d.status !== "closed" && !c.values.force) console.log(`skip demand ${id} (open, use --force)`);
+    else step(`demand ${id}`, () => forgetDemand(c.home, id));
   }
 }

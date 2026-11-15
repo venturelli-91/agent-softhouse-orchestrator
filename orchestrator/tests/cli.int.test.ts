@@ -151,6 +151,18 @@ test("orch setup copies the folder into a git repo without secrets or state, run
   }
 });
 
+test("orch run does not warn about uncommitted changes for untracked files only", () => {
+  const sb = sandbox();
+  try {
+    writeFileSync(join(sb.repo, "untracked.txt"), "x");
+    const r = sb.orch("run", "Change the checkout button label to Submit order", "--repo", sb.repo, "--id", "T-1");
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /uncommitted changes the ticket will not see/);
+  } finally {
+    sb.done();
+  }
+});
+
 test("orch adopt turns the dirty main checkout into a ticket the dev only commits, and leaves main clean", () => {
   const sb = sandbox();
   try {
@@ -255,7 +267,7 @@ test("orch demand groups a code and a manual ticket, shows the waiting decision 
     assert.match(sb.orch("status", "D-1").out, /task T-1 code approval\n {2}task M-1 manual open\n {2}#1 \S+ CEO \[T-1\]: Ship T-1 later\? -> waiting/);
     const home = join(sb.repo, "..", "home");
     writeFileSync(join(home, "backlog.jsonl"), `${JSON.stringify({ ticket: "T-1", from: "reviewer", caveat: "name it", time: "", status: "open" })}\n`);
-    writeFileSync(join(sb.repo, "stray.txt"), "x");
+    writeFileSync(join(sb.repo, "checkout.html"), "<button>Edited</button>\n");
     const refused = sb.orch("demand", "close", "D-1");
     assert.equal(refused.code, 1, refused.out);
     for (const p of [/FAIL tasks closed or decided: T-1 approval; M-1 open/, /FAIL decisions answered: #1 \(CEO\)/, /FAIL backlog reviewed.*T-1: name it/,
@@ -264,9 +276,10 @@ test("orch demand groups a code and a manual ticket, shows the waiting decision 
     assert.match(sb.orch("demand", "answer", "D-1", "1", "yes, next sprint").out, /decision #1 answered/);
     writeFileSync(join(sb.repo, "out.json"), "[]");
     assert.equal(sb.orch("evidence", "M-1", join(sb.repo, "out.json"), "--exit", "0").code, 0);
-    rmSync(join(sb.repo, "stray.txt"));
+    writeFileSync(join(sb.repo, "checkout.html"), "<button>Submit</button>\n");
     rmSync(join(sb.repo, "out.json"));
     sb.orch("backlog", "review", "1");
+    writeFileSync(join(sb.repo, "untracked.txt"), "x");
     const closed = sb.orch("demand", "close", "D-1");
     assert.equal(closed.code, 0, closed.out);
     assert.match(closed.out, /ok {3}tasks closed or decided: 2 task\(s\)[\s\S]*D-1: closed/);

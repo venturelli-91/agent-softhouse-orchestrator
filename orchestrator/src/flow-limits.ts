@@ -1,4 +1,5 @@
 // Flow rules between nodes: limits, token budget and the no-self-approval rule.
+import { NodeFailure } from "./node-failure.ts";
 import type { Usage } from "./run-agent.ts";
 
 export const MAX_REVISIONS = 3;
@@ -13,7 +14,7 @@ export const tokens = (c: Usage) => c.tokens_in + c.tokens_out + c.cache_read + 
 // never by the number of tasks a model declared.
 export function budgetExceeded(usages: (Usage | undefined)[], env: NodeJS.ProcessEnv = process.env, verifiedTasks = 0): string | null {
   const cap = Number(env.TOKEN_BUDGET_TICKET) * (1 + Math.min(Math.max(0, verifiedTasks), 7));
-  if (!Number(env.TOKEN_BUDGET_TICKET)) throw new Error("missing env: TOKEN_BUDGET_TICKET");
+  if (!Number(env.TOKEN_BUDGET_TICKET)) throw new NodeFailure("missing env: TOKEN_BUDGET_TICKET");
   const used = usages.reduce((a, c) => a + (c ? tokens(c) : 0), 0);
   return used > cap ? `token budget exceeded (${used} > ${cap})` : null;
 }

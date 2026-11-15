@@ -1,11 +1,13 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { DEFAULT_TEST, safeCommand, TestSpec } from "./commands.ts";
 import { orchHome } from "./daily-cap.ts";
 import { safeGit } from "./guardrails.ts";
 import { SPECIALTIES } from "./specialties.ts";
+import { ProposedAgents } from "./team.ts";
 
-const plain = z.string().regex(/^[\w ./:=@-]+$/, "must be a plain command without shell operators");
+const plain = safeCommand();
 // Real deploy commands run on the host with credentials, so this block is accepted only from the external config.
 export const DeployConfig = z.object({
   command: plain,
@@ -38,10 +40,9 @@ export type WebcheckConfig = z.infer<typeof WebcheckConfig>;
 
 // Per-repo settings: defaults < `repos[<abs path>]` in ~/.orchestrator/config.json < `.orchestrator.json` at the base
 // commit. The in-repo file is read from the base commit, never from the worktree: a ticket cannot rewrite its own rules.
-const command = z.string().regex(/^[\w ./:=@-]+$/, "test must be a plain command without shell operators");
-export const RepoConfig = z.object({
+export const RepoConfig = z.strictObject({
   // Plain command (no ;, &&, pipes, quotes or expansions): it runs on the host and goes into the dev's allowlist. A list runs every command.
-  test: z.union([command, z.array(command).min(1)]).default("npm test"),
+  test: TestSpec.default(DEFAULT_TEST),
   // "auto" squash-merges after the CEO approves and the CI checks are green; "pr" leaves the PR to the CEO; "local" merges in the local clone.
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.enum(["github", "none"]).optional(),
@@ -56,6 +57,7 @@ export const RepoConfig = z.object({
   specialties: z.array(z.enum(SPECIALTIES)).min(1).default([...SPECIALTIES]),
   // The stack the team decided (`orch team`); goes into every dev's context next to the repo conventions.
   stack: z.string().max(400).default(""),
+  proposed_agents: ProposedAgents.optional(),
   // Tracked docs of the repo (README, CHANGELOG...) the docs node may update on the ticket's branch, before review; exact relative .md paths.
   project_docs: z
     .array(z.string().regex(/^(?!.*(^|\/)\.\.?(\/|$))[\w.-]+(\/[\w.-]+)*\.md$/, "project_docs entries must be relative .md paths"))
@@ -67,7 +69,7 @@ export type RepoConfig = z.infer<typeof RepoConfig>;
 function check(source: string, raw: unknown): Record<string, unknown> {
   const parsed = RepoConfig.safeParse(raw);
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    const issues = parsed.error.issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message)).join("; ");
     throw new Error(`${source}: ${issues} (accepted keys: ${Object.keys(RepoConfig.shape).join(", ")}; \`orch init\` writes a valid file)`);
   }
   return raw as Record<string, unknown>;
@@ -141,4 +143,29 @@ export function loadConventions(repo: string, ref: string, max = 8000): string {
   } catch {
     return "";
   }
+}
+
+// Learning loop: the playbooks the CEO committed (postmortems, decisions, recurring failures) reach the dev and the reviewer, newest
+// first, from the base commit only (an uncommitted postmortem is still under CEO review; a ticket cannot plant lessons).
+// ponytail: newest-first under a cap; rank by relevance to the request if playbooks outgrow it.
+export function loadPlaybooks(repo: string, ref: string, max = 6000): string {
+  let blobs: string[];
+  try {
+    // Only blobs: a symlink or submodule entry named *.md is not a playbook.
+    blobs = safeGit(repo, "ls-tree", "-z", ref, "--", "playbooks/").split("\0")
+      .map((l) => l.split("\t"))
+      .filter(([meta, n]) => meta?.startsWith("100") && meta.includes(" blob ") && /^playbooks\/[^/]+\.md$/i.test(n ?? ""))
+      .map(([meta, n]) => `${n}\t${meta.split(" ")[2]}`);
+  } catch {
+    return "";
+  }
+  let out = "";
+  for (const entry of blobs.sort().reverse()) {
+    if (out.length >= max) break;
+    const [n, sha] = entry.split("\t");
+    try {
+      out += `--- ${n}\n${safeGit(repo, "cat-file", "blob", sha).slice(0, max).trim()}\n\n`;
+    } catch {}
+  }
+  return out.slice(0, max).trim();
 }

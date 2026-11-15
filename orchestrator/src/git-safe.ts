@@ -3,8 +3,9 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { devNullPath } from "./platform.ts";
 // On Windows, os.devNull (a \\.\nul path) is not valid for git; use NUL.
-export const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
+export const devNull = devNullPath();
 
 // Host-side git over a repo the agent touched: no fsmonitor, pager, system config or external diff.
 export function safeGit(cwd: string, ...args: string[]): string {
@@ -13,7 +14,7 @@ export function safeGit(cwd: string, ...args: string[]): string {
 
 const run = (cwd: string, extraEnv: NodeJS.ProcessEnv, args: string[]) =>
   execFileSync("git", ["-c", "core.fsmonitor=false", "-c", "core.pager=cat", "-c", `core.hooksPath=${devNull}`, ...args], {
-    cwd, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_EXTERNAL_DIFF: "", GIT_TERMINAL_PROMPT: "0", ...extraEnv }, encoding: "utf8",
+    cwd, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_EXTERNAL_DIFF: "", GIT_TERMINAL_PROMPT: "0", ...extraEnv }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024,
   }).trim();
 
 // Network git on the main checkout: no hooks, and plain `ssh` (env wins over a core.sshCommand an agent could have written).

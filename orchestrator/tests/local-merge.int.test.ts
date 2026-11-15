@@ -55,7 +55,15 @@ test("refuses when another branch is checked out", () => {
 
 test("repoOf returns the main checkout from a worktree", () => {
   const { repo, wt } = setup();
-  assert.equal(realpathSync(repoOf(wt)), realpathSync(repo));
+  // native: expands 8.3 short names (the Windows CI temp dir is C:\Users\RUNNER~1\...).
+  assert.equal(realpathSync.native(repoOf(wt)), realpathSync.native(repo));
+});
+
+test("an untracked file in main does not block the merge", () => {
+  const { repo, sha } = setup();
+  writeFileSync(join(repo, "scratch.txt"), "x");
+  assert.match(mergeLocal(repo, "main", sha), /^merged:local@/);
+  assert.equal(git(repo, "rev-parse", "main"), sha);
 });
 
 test("refuses to overwrite an ignored file in the main checkout", () => {

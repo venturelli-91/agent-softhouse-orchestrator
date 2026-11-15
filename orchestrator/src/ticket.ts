@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_TEST, TestSpec } from "./commands.ts";
 import { DeployConfig, WebcheckConfig } from "./repo-config.ts";
 import { TestCounts } from "./test-report.ts";
 import type { Usage } from "./run-agent.ts";
@@ -41,7 +42,7 @@ export const Ticket = z.object({
   base: z.string(),
   repo: z.string().default(""),
   git_config_hash: z.string().default(""),
-  test: z.union([z.string(), z.array(z.string())]).default("npm test"),
+  test: TestSpec.default(DEFAULT_TEST),
   install: z.boolean().default(false),
   merge: z.enum(["pr", "auto", "local"]).default("pr"),
   publisher: z.string().default(""),

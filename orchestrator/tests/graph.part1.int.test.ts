@@ -197,6 +197,20 @@ test("more skipped tests than the base is a warning in the evidence, the approva
   assert.deepEqual((g.r as { test_last?: unknown }).test_last, { pass: 1, skip: 1, fail: 0 });
 });
 
+test("a run that collects no tests passes when the base had none and says so in the evidence and the alerts", async () => {
+  knobs.override.dev = (req) => (
+    commit(req.cwd, "agent-dev", "test/checkout.test.js", 'console.log("Ran 0 tests in 0.000s");'),
+    commit(req.cwd, "agent-dev"),
+    { summary: "ok", brief: BRIEF }
+  );
+  const g = await start("T-1", undefined, { test_base: { pass: 0, skip: 0, fail: 0 } });
+  const p = paused(g.r);
+  assert.equal(p?.type, "approval");
+  assert.deepEqual(p?.test_alerts, ["no tests collected"]);
+  assert.ok((p?.evidence as string[]).some((e) => /^tests:.* none collected$/.test(e)));
+  assert.ok(alerts([g.r as never]).includes("T-1 no tests collected"));
+});
+
 test("caveats of an approving reviewer become backlog items with the ticket, once per revision loop", async () => {
   knobs.override.reviewer = (req) => ({ ...(defaults.reviewer!(req) as object), caveats: ["name the magic number", " ", "name the magic number"] });
   const g = await start();

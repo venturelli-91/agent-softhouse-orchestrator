@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { workRoot } from "../../src/daily-cap.ts";
 import { behindBy } from "../../src/git-remote.ts";
 import { isBareApproval } from "../../src/ceo-node.ts";
-import { createWorktree, resume } from "../../src/graph.ts";
+import { createWorktree, removeTicketResources, resume } from "../../src/graph.ts";
 import { adoptKeys, runTests, safeGit, secretPaths } from "../../src/guardrails.ts";
 import { type Ctx, die } from "./ctx.ts";
 import { attach, demandOf } from "./demand.ts";
@@ -11,15 +11,15 @@ import { attach, demandOf } from "./demand.ts";
 export async function run(c: Ctx) {
   const request = c.positionals[0] ?? die('usage: orch run "<request>" [--repo <path>] [--id <id>] [--demand <id>]');
   c.needCap();
-  c.needPrompts();
   const id = c.values.id ?? `T-${Date.now().toString(36)}`;
   const repo = resolve(c.values.repo ?? c.host);
+  c.needPreflight(repo);
   const demand = demandOf(c);
-  if (safeGit(repo, "status", "--porcelain"))
+  if (safeGit(repo, "status", "--porcelain", "--untracked-files=no"))
     console.warn(`warning: ${repo} has uncommitted changes the ticket will not see; to ship them through a ticket: orch adopt --title "<what they do>"`);
   await c.locked(id, async () => {
     const wt = prepare(c, repo, id);
-    await attach(c, demand, id);
+    attachOrDrop(c, demand, repo, wt.worktree, id);
     await c.drive(id, { id, request, ...wt });
   });
 }
@@ -28,25 +28,44 @@ export async function run(c: Ctx) {
 function prepare(c: Ctx, repo: string, id: string, onFail = "") {
   const behind = behindBy(repo);
   if (behind) console.warn(`warning: ${repo} is ${behind} commit(s) behind its upstream; the ticket will branch from a stale base`);
-  const wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), c.home);
-  const { failure: red, counts: test_base } = runTests(wt.worktree, wt.test, true);
+  let wt: ReturnType<typeof createWorktree>;
+  try {
+    wt = createWorktree(repo, id, join(workRoot(), "worktrees", id), c.home);
+  } catch (e) {
+    return die(`${(e as Error).message}${onFail}`);
+  }
+  let tested: ReturnType<typeof runTests>;
+  try {
+    tested = runTests(wt.worktree, wt.test, true);
+  } catch (e) {
+    return drop(repo, wt.worktree, id, `setup failed: ${(e as Error).message}${onFail}`);
+  }
+  const { failure: red, counts, none } = tested;
+  const test_base = counts ?? (none ? { pass: 0, skip: 0, fail: 0 } : null);
   if (red) drop(repo, wt.worktree, id, `base is red before any agent ran (no tokens spent); fix it first: ${red}${onFail}`);
   return { ...wt, test_base };
 }
 
 const drop = (repo: string, worktree: string, id: string, msg: string): never => {
-  safeGit(repo, "worktree", "remove", "--force", worktree);
-  safeGit(repo, "branch", "-D", `ticket/${id}`);
+  for (const s of removeTicketResources(repo, worktree, id)) if (!s.ok) console.error(`cleanup: ${s.step} failed: ${s.reason}`);
   return die(msg);
 };
+
+function attachOrDrop(c: Ctx, demand: string | undefined, repo: string, worktree: string, id: string, onFail = "") {
+  try {
+    attach(c, demand, id);
+  } catch (e) {
+    drop(repo, worktree, id, `${(e as Error).message}${onFail}`);
+  }
+}
 
 // The CEO's uncommitted changes in the main checkout become a ticket: stashed there, applied in the ticket worktree, committed by the dev
 // without changing a byte, then reviewed, tested and approved like any other ticket. The main checkout ends clean.
 export async function adopt(c: Ctx) {
   c.needCap();
-  c.needPrompts();
   const id = c.values.id ?? `T-${Date.now().toString(36)}`;
   const repo = resolve(c.values.repo ?? c.host);
+  c.needPreflight(repo);
   const names = (...a: string[]) => safeGit(repo, "-c", "core.quotePath=false", ...a).split("\0").filter(Boolean);
   const changed = [...names("diff", "--name-only", "-z", "HEAD"), ...names("ls-files", "-z", "--others", "--exclude-standard")];
   if (!changed.length) die(`nothing to adopt: ${repo} has no uncommitted changes`);
@@ -68,10 +87,10 @@ export async function adopt(c: Ctx) {
     } catch (e) {
       drop(repo, wt.worktree, id, `adopt failed: ${(e as Error).message}${keep}`);
     }
+    attachOrDrop(c, demand, repo, wt.worktree, id, keep);
     if (safeGit(repo, "rev-parse", "stash@{0}") === stash) safeGit(repo, "stash", "drop", "-q");
     const request = `${title}\n\nAlready written by the CEO and left uncommitted in the worktree; the dev only commits it:\n` +
       safeGit(wt.worktree, "diff", "--stat", wt.base, tree);
-    await attach(c, demand, id);
     await c.drive(id, { id, request, ...wt, adopt_tree: tree, host_approved: adoptKeys(wt.worktree, wt.base, tree, wt.install) });
   });
 }

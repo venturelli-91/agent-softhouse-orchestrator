@@ -1,8 +1,8 @@
-import { spawn, spawnSync } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import { commandEnv } from "./deploy.ts";
 import { checkConfig, guarded, log } from "./graph-kit.ts";
 import { repoOf, verifyTicket } from "./guardrails.ts";
+import { killTree, spawnServe } from "./platform.ts";
 import { loadRepoConfig, type WebcheckConfig } from "./repo-config.ts";
 import { NodeFailure } from "./run-agent.ts";
 import { UI_SPECIALTIES } from "./specialties.ts";
@@ -44,10 +44,9 @@ export const playwrightCollector: Collector = async (cfg, cwd, ctx) => {
   const { chromium } = await import("playwright").catch((e: Error) => {
     throw new InfraError(`playwright is not installed (${e.message.split("\n")[0]})`);
   });
-  const [bin, ...args] = cfg.serve.split(" ").filter(Boolean);
   // Something already answering on the port would be checked in place of this ticket's app.
   if (await answers(cfg.base_url)) throw new NodeFailure(`${cfg.base_url} already answers: refusing to check a server this run did not start`);
-  const server = spawn(process.platform === "win32" ? cfg.serve : bin, process.platform === "win32" ? [] : args, { cwd, env: commandEnv(cfg.env, { ...ctx, previous: "" }), stdio: "ignore", detached: process.platform !== "win32", shell: process.platform === "win32", windowsHide: true });
+  const server = spawnServe(cfg.serve, cwd, commandEnv(cfg.env, { ...ctx, previous: "" }));
   let gone: string | undefined;
   server.on("exit", () => (gone ??= "exit"));
   server.on("error", (e) => (gone = e.message));
@@ -55,8 +54,7 @@ export const playwrightCollector: Collector = async (cfg, cwd, ctx) => {
   const stop = () => {
     try {
       if (server.pid === undefined) return;
-      if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(server.pid), "/t", "/f"]);
-      else process.kill(-server.pid, "SIGKILL");
+      killTree(server.pid);
     } catch {}
   };
   try {

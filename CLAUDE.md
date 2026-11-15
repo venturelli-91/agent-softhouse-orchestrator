@@ -7,6 +7,12 @@ flows (`.claude/commands/`) and rules (this file). It has no product code.
 the project's repository. The commands (`/demand`, `/ticket`, `/daily-brief`,
 `/daily-report`, `/watchdog-scan`) then run against that actual code.
 
+**Deterministic hooks** (`.claude/settings.json`, scripts in `.claude/hooks/`): `guard.mjs` blocks
+writes to secrets, git internals and Claude hooks/settings; `verify.mjs` keeps the turn open once
+when logic changed, asking for the missing test and for a test run through Bash. It never runs the
+suite itself: the tests are session-written code, so they stay behind the permission prompt. They hold in
+the interactive session the same rules `orch` enforces in code.
+
 The CEO is the human user. They set vision, priorities, budget and critical approvals.
 Each agent below organizes one part of the delivery, but no decision in the "Autonomy
 matrix" (section below) may be taken without them.

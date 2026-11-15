@@ -3,18 +3,18 @@ import { spawnSync } from "node:child_process";
 import { z } from "zod";
 import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
-import { DEFAULT_TEST } from "./permissions.ts";
+import { commands, DEFAULT_TEST, type Test } from "./commands.ts";
 
 export const TestCounts = z.object({ pass: z.number(), skip: z.number(), fail: z.number() });
 export type Counts = z.infer<typeof TestCounts>;
 
 const KIND: Record<string, keyof Counts> = {
   pass: "pass", passed: "pass", xpassed: "pass",
-  fail: "fail", failed: "fail", error: "fail", errors: "fail",
+  fail: "fail", failed: "fail", failures: "fail", error: "fail", errors: "fail",
   skipped: "skip", todo: "skip", pending: "skip", xfailed: "skip",
 };
 
-// node --test (spec `ℹ pass 3`, TAP `# pass 3`), pytest (`== 3 passed, 1 skipped in 0.2s ==`), jest (`Tests: 1 skipped, 3 passed, 4 total`).
+// unittest (`Ran 3 tests in 0.1s` then `OK (skipped=1)` or `FAILED (failures=1, errors=1)`), node --test (spec `ℹ pass 3`, TAP `# pass 3`), pytest (`== 3 passed, 1 skipped in 0.2s ==`), jest (`Tests: 1 skipped, 3 passed, 4 total`).
 // Several runs in one command (e.g. unit && int) add up; output in none of these formats gives null.
 export function parseCounts(out: string): Counts | null {
   const c: Counts = { pass: 0, skip: 0, fail: 0 };
@@ -26,6 +26,12 @@ export function parseCounts(out: string): Counts | null {
   for (const m of out.matchAll(/^[ℹ#] (pass|fail|skipped|todo) (\d+)\r?$/gm)) add(m[1], m[2]);
   for (const line of out.matchAll(/^=+ (.+?) in [\d.]+s\b.*=+\r?$|^Tests:\s+(.+ total)\r?$/gm))
     for (const m of (line[1] ?? line[2]).matchAll(/(\d+) (\w+)/g)) add(m[2], m[1]);
+  for (const m of out.matchAll(/^Ran (\d+) tests? in [\d.]+s(?:\r?\n)+(?:(?:OK|FAILED|NO TESTS RAN)(?: \((.*)\))?)?/gm)) {
+    const before = c.skip + c.fail;
+    for (const k of (m[2] ?? "").matchAll(/(skipped|failures|errors)=(\d+)/g)) add(k[1], k[2]);
+    c.pass += Number(m[1]) - (c.skip + c.fail - before);
+    found = true;
+  }
   return found ? c : null;
 }
 
@@ -35,23 +41,32 @@ export function parseCounts(out: string): Counts | null {
 // There, `noTestsOk` accepts a suite with no tests yet (pytest exits 5), which is not a red base.
 export const testFailure = (wt: string, test: Test = DEFAULT_TEST, noTestsOk = false) => runTests(wt, test, noTestsOk).failure;
 
-// `test` is one command or a list that must all pass (a matrix); an older ticket state may still hold a single string.
-export type Test = string | string[];
-export const commands = (test: Test) => [test].flat();
-
 // Commands run in order and stop at the first failure; the counts of the commands that ran add up.
-export function runTests(wt: string, test: Test = DEFAULT_TEST, noTestsOk = false): { failure: string; counts: Counts | null } {
+export function runTests(wt: string, test: Test = DEFAULT_TEST, noTestsOk = false): { failure: string; counts: Counts | null; none: boolean } {
   let out = "";
+  let none = false;
   for (const cmd of commands(test)) {
     const r = spawnSync(cmd, { cwd: wt, env: minimalEnv("dev"), shell: true, encoding: "utf8", timeout: NODE_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
     out += `${r.stdout ?? ""}\n${r.stderr ?? ""}\n`;
-    if (r.status === 0 || (noTestsOk && /\bpytest\b/.test(cmd) && r.status === 5)) continue;
-    return { failure: `${cmd} failed: ${r.error ? `${r.error.message} ` : ""}${String(r.stdout || r.stderr || "").slice(-400)}`, counts: parseCounts(out) };
+    if (r.status === 0) continue;
+    if (noTestsOk && /\b(pytest|unittest)\b/.test(cmd) && r.status === 5) {
+      none = true;
+      continue;
+    }
+    return { failure: `${cmd} failed: ${r.error ? `${r.error.message} ` : ""}${String(r.stdout || r.stderr || "").slice(-400)}`, counts: parseCounts(out), none };
   }
-  return { failure: "", counts: parseCounts(out) };
+  const counts = parseCounts(out);
+  return { failure: "", counts, none: none || (counts !== null && counts.pass + counts.skip + counts.fail === 0) };
 }
 
-const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*|[^/]*_test)\.py$/i;
+const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*|[^/]*_test)\.(py|go)$|Tests?\.(java|kt|cs|swift)$/i;
+// ponytail: extension heuristic; markup, styles, docs and *.config/*.d.ts files carry no logic a test must pin.
+const LOGIC_FILE = /\.(?:[cm]?[jt]sx?|py|go|rs|java|kt|swift|rb|php|cs|c|cpp)$/i;
+const NO_LOGIC = /\.d\.[cm]?ts$|(^|\/)[^/]*\.config\.[cm]?[jt]s$/i;
+
+// TDD gate: a diff that changes logic must also add or change a test. Returns the logic files left untested (empty = ok).
+export const untestedLogic = (files: string[]) =>
+  files.some((f) => TEST_FILE.test(f)) ? [] : files.filter((f) => LOGIC_FILE.test(f) && !NO_LOGIC.test(f));
 // Unconditional skips only: a `{ skip: <condition> }` or `skipif` stays allowed and shows up in the skipped count instead.
 const SKIP = new RegExp(
   [String.raw`\.(skip|todo)\s*\(`, String.raw`\bx(it|describe|test)\s*\(`, String.raw`\b(skip|todo)\s*:\s*true\b`,

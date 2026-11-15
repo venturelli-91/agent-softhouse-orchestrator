@@ -8,7 +8,7 @@ import {
 import { safeGit } from "../../src/guardrails.ts";
 import { isManual, readManual } from "../../src/manual.ts";
 import { loadRepoConfig } from "../../src/repo-config.ts";
-import { ticketFile } from "../../src/ticket-store.ts";
+import { lockTicket, ticketFile } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 
 const USAGE = `usage: orch demand new "<title>" [--repo <path>] [--id <id>]
@@ -46,7 +46,7 @@ export async function demand(c: Ctx) {
       console.log(`${id}: decision #${n} answered`);
     } else {
       const d = readDemand(c.home, id);
-      const checks = closingChecklist(d, await taskStates(c, d), readBacklog(c.home), safeGit(d.repo, "status", "--porcelain"),
+      const checks = closingChecklist(d, await taskStates(c, d), readBacklog(c.home), safeGit(d.repo, "status", "--porcelain", "--untracked-files=no"),
         projectDocs(d.repo));
       for (const k of checks) console.log(`${k.ok ? "ok  " : "FAIL"} ${k.item}${k.detail ? `: ${k.detail}` : ""}`);
       const closed = attempt(() => closeDemand(c.home, id, checks)).status === "closed";
@@ -91,8 +91,15 @@ export function demandOf(c: Ctx): string | undefined {
   return id;
 }
 
-export const attach = (c: Ctx, demandId: string | undefined, ticket: string) =>
-  demandId ? c.locked(demandId, async () => void attempt(() => addTask(c.home, demandId, ticket))) : Promise.resolve();
+export function attach(c: Ctx, demandId: string | undefined, ticket: string): void {
+  if (!demandId) return;
+  const unlock = lockTicket(c.home, demandId);
+  try {
+    addTask(c.home, demandId, ticket);
+  } finally {
+    unlock();
+  }
+}
 
 export function demandLines(home: string): string[] {
   return demandIds(home).map((id) => {

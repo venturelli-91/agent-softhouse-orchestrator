@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -48,6 +48,26 @@ test("a valid commit with passing tests yields verified evidence", () => {
   const r = verifyEvidence(d, base);
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, true);
+});
+
+test("a diff that changes logic needs a test in the same diff", () => {
+  const run = (files: string[]) => {
+    const { d, base } = repo();
+    for (const f of files) {
+      mkdirSync(dirname(join(d, f)), { recursive: true });
+      writeFileSync(join(d, f), "export const x = 1;\n");
+    }
+    git(d, "add", "-A");
+    git(d, "commit", "-qm", "x");
+    const r = verifyEvidence(d, base, GREEN);
+    rmSync(d, { recursive: true, force: true });
+    return r;
+  };
+  const untested = run(["src/total.ts"]);
+  assert.equal(untested.ok, false);
+  assert.match((untested as { reason: string }).reason, /without adding or changing a test \(src\/total\.ts\)/);
+  assert.equal(run(["src/total.ts", "tests/total.test.ts"]).ok, true);
+  assert.equal(run(["vite.config.ts", "types.d.ts", "page.html", "README.md"]).ok, true);
 });
 
 test("a diff that touches a forbidden path is refused", () => {
@@ -134,10 +154,10 @@ test("a test command that moves HEAD voids the verification", () => {
 
 test("a test command that dirties the worktree voids the verification", () => {
   const { d, base } = repo();
-  writeFileSync(join(d, "dirty.js"), "require('fs').writeFileSync('dirt.txt', 'x');");
+  writeFileSync(join(d, "dirty.test.js"), "require('fs').writeFileSync('fail.js', 'x');");
   git(d, "add", "-A");
   git(d, "commit", "-qm", "add dirty script");
-  const r = verifyEvidence(d, base, "node dirty.js");
+  const r = verifyEvidence(d, base, "node dirty.test.js");
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, false);
   assert.match((r as { reason: string }).reason, /worktree changed during verification/);
@@ -219,14 +239,14 @@ test("a host file passes only in the exact version the CEO approved", () => {
 test("an adopted protected file passes in the adopted version only; a secret is never protected-approvable", () => {
   const { d, base } = repo();
   mkdirSync(join(d, "orchestrator"));
-  writeFileSync(join(d, "orchestrator", "x.ts"), "export {};\n");
+  writeFileSync(join(d, "orchestrator", "x.test.ts"), "export {};\n");
   git(d, "add", "-A");
   const approved = adoptKeys(d, base, git(d, "write-tree"), false);
   git(d, "commit", "-qm", "adopted");
-  assert.deepEqual(approved, [`orchestrator/x.ts@${git(d, "rev-parse", "HEAD:orchestrator/x.ts")}`]);
+  assert.deepEqual(approved, [`orchestrator/x.test.ts@${git(d, "rev-parse", "HEAD:orchestrator/x.test.ts")}`]);
   assert.equal(verifyEvidence(d, base, GREEN).ok, false);
   assert.equal(verifyEvidence(d, base, GREEN, false, approved).ok, true);
-  writeFileSync(join(d, "orchestrator", "x.ts"), "export const x = 1;\n");
+  writeFileSync(join(d, "orchestrator", "x.test.ts"), "export const x = 1;\n");
   git(d, "commit", "-qam", "dev edit");
   const again = verifyEvidence(d, base, GREEN, false, approved);
   writeFileSync(join(d, ".env"), "K=v\n");
@@ -234,7 +254,7 @@ test("an adopted protected file passes in the adopted version only; a secret is 
   git(d, "commit", "-qm", "env");
   const env = verifyEvidence(d, base, GREEN, false, [...approved, `.env@${git(d, "rev-parse", "HEAD:.env")}`]);
   rmSync(d, { recursive: true, force: true });
-  assert.match((again as { reason: string }).reason, /forbidden path \(orchestrator\/x\.ts\)/);
+  assert.match((again as { reason: string }).reason, /forbidden path \(orchestrator\/x\.test\.ts\)/);
   assert.match((env as { reason: string }).reason, /forbidden path .*\.env/);
 });
 
@@ -255,9 +275,9 @@ test("a file hidden with assume-unchanged or skip-worktree voids the verificatio
 
 test("touched source files over the modularity limits are refused; untouched or non-source files are not", () => {
   const cases: [string, string, boolean][] = [
-    ["a.ts", "x\n".repeat(301), false],
-    ["b.ts", `${"x".repeat(161)}\n`, false],
-    ["c.ts", "x\n".repeat(300), true],
+    ["a.test.ts", "x\n".repeat(301), false],
+    ["b.test.ts", `${"x".repeat(161)}\n`, false],
+    ["c.test.ts", "x\n".repeat(300), true],
     ["d.json", "x\n".repeat(500), true],
   ];
   for (const [f, body, ok] of cases) {
@@ -280,10 +300,88 @@ test("modularity check reads the committed blob: a dangling symlink and a delete
   const base = git(d, "rev-parse", "HEAD");
   git(d, "rm", "-q", "big.ts");
   const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: "/nonexistent", encoding: "utf8" }).trim();
-  git(d, "update-index", "--add", "--cacheinfo", `120000,${blob},link.ts`);
+  git(d, "update-index", "--add", "--cacheinfo", `120000,${blob},link.test.ts`);
   git(d, "commit", "-qm", "delete big, add dangling symlink");
   git(d, "reset", "-q", "--hard");
   const r = verifyEvidence(d, base, GREEN);
   rmSync(d, { recursive: true, force: true });
   assert.equal(r.ok, true);
+});
+
+function linkedWorktree(d: string, file: string, content: string) {
+  const wt = `${d}-wt`;
+  git(d, "worktree", "add", "-q", "-b", "ticket/T-1", wt);
+  writeFileSync(join(wt, file), content);
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "dev");
+  return wt;
+}
+
+const cleanup = (...dirs: string[]) => dirs.forEach((x) => rmSync(x, { recursive: true, force: true }));
+
+test("in a linked worktree, files the test run leaves untracked (e.g. __pycache__) are cleaned and do not void the verification", () => {
+  const { d, base } = repo();
+  const wt = linkedWorktree(d, "leave.test.js", "require('fs').mkdirSync('__pycache__');require('fs').writeFileSync('__pycache__/m.pyc','x');");
+  const r = verifyEvidence(wt, base, "node leave.test.js");
+  const left = existsSync(join(wt, "__pycache__"));
+  cleanup(wt, d);
+  assert.equal(r.ok, true);
+  assert.equal(left, false);
+});
+
+test("in a main checkout nothing is deleted: leftovers still void the verification and user files survive", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "leave.test.js"), "require('fs').writeFileSync('leftover.txt','x');");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "dev");
+  const r = verifyEvidence(d, base, "node leave.test.js");
+  const kept = existsSync(join(d, "leftover.txt"));
+  cleanup(d);
+  assert.ok(!r.ok && /worktree changed during verification/.test(r.reason));
+  assert.equal(kept, true);
+});
+
+const NONE = `node -e "console.log('Ran 0 tests in 0.000s')"`;
+const zeros = { pass: 0, skip: 0, fail: 0 };
+const some = { pass: 3, skip: 0, fail: 0 };
+
+test("no tests collected: accepted and labelled only when the base positively had none; unknown or non-empty base rejects it", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "a.txt"), "x");
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "change");
+  const free = verifyEvidence(d, base, NONE, false, [], zeros);
+  const unknown = verifyEvidence(d, base, NONE, false, [], null);
+  const had = verifyEvidence(d, base, NONE, false, [], some);
+  cleanup(d);
+  assert.ok(free.ok && free.none && free.evidence.some((e) => e.endsWith("none collected")));
+  assert.ok(!unknown.ok && /no tests collected/.test(unknown.reason));
+  assert.ok(!had.ok && /no tests collected/.test(had.reason));
+});
+
+const PYS = ["python", "python3"].filter((x) => spawnSync(x, ["--version"]).status === 0);
+
+function pyRepo(body: string) {
+  const { d, base } = repo();
+  mkdirSync(join(d, "tests"));
+  writeFileSync(join(d, "tests", "test_a.py"), body);
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "py");
+  return { d, base };
+}
+
+for (const py of PYS) test(`${py} unittest: pass, fail and none collected are three distinct outcomes`, () => {
+  const cmd = `${py} -m unittest discover -s tests`;
+  const pass = pyRepo("import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        pass\n");
+  const fail = pyRepo("import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        self.fail('x')\n");
+  const none = pyRepo("import unittest\n");
+  const rp = verifyEvidence(pass.d, pass.base, cmd, false, [], zeros);
+  const rf = verifyEvidence(fail.d, fail.base, cmd, false, [], zeros);
+  const rn = verifyEvidence(none.d, none.base, cmd, false, [], zeros);
+  const rnBad = verifyEvidence(none.d, none.base, cmd, false, [], some);
+  cleanup(pass.d, fail.d, none.d);
+  assert.ok(rp.ok && !rp.none && rp.counts?.pass === 1);
+  assert.ok(!rf.ok && /failed/.test(rf.reason));
+  assert.ok(rn.ok && rn.none);
+  assert.ok(!rnBad.ok);
 });

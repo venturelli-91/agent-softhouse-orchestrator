@@ -6,6 +6,7 @@ import { FileSaver } from "../../src/file-saver.ts";
 import { buildGraph, config, report, Ticket } from "../../src/graph.ts";
 import type { T } from "../../src/ticket.ts";
 import { notify } from "../../src/notify.ts";
+import { preflight } from "../../src/preflight.ts";
 import { loadPrompt } from "../../src/run-agent.ts";
 import { lockTicket, ticketFile } from "../../src/ticket-store.ts";
 
@@ -81,6 +82,14 @@ export function makeCtx(argv: string[], host: string) {
       die((e as Error).message);
     }
   };
+  const needPreflight = (repo: string) => {
+    needPrompts();
+    try {
+      preflight(repo, process.env, home);
+    } catch (e) {
+      die((e as Error).message);
+    }
+  };
   const needPending = async (id: string) => (await load(id)).pending ?? die(`${id} is not waiting for an answer`);
 
   // Takes the ticket's lock for the duration of one command; a second command on the same id refuses.
@@ -98,7 +107,7 @@ export function makeCtx(argv: string[], host: string) {
     }
   }
 
-  return { cmd, values, positionals, host, home, load, drive, mark, needCap, needPrompts, needPending, locked };
+  return { cmd, values, positionals, host, home, load, drive, mark, needCap, needPrompts, needPreflight, needPending, locked };
 }
 
 export type Ctx = ReturnType<typeof makeCtx>;

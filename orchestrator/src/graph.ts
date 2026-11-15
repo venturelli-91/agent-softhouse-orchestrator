@@ -1,12 +1,18 @@
+import { rmSync } from "node:fs";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Command, END, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { activeTickets, gitConfigHash, installDeps, MAX_ACTIVE_TICKETS, MAX_REVISIONS, RECURSION_LIMIT, tokens } from "./guardrails.ts";
 import { ceoApproval } from "./ceo-node.ts";
 import { dev, DEV_RULES, devRules, partialWork, taskBlock } from "./dev-node.ts";
 import { docsNode } from "./docs-node.ts";
 import { sh } from "./graph-kit.ts";
+import { samePath } from "./platform.ts";
 import { projectDocsNode } from "./project-docs.ts";
 import { planner, SPLIT_RULE, triage } from "./plan-nodes.ts";
-import { loadConventions, loadRepoConfig } from "./repo-config.ts";
+import { loadConventions, loadPlaybooks, loadRepoConfig } from "./repo-config.ts";
+
+const lessons = (playbooks: string) =>
+  playbooks && `Lessons recorded in this repo's playbooks (past failures and decisions; do not repeat them):\n${playbooks}`;
 import { DIFF_LIMIT, design, evidenceNote, qa, reviewer } from "./review-nodes.ts";
 import { deploy, deployTicket, mergeNode, publishNode } from "./ship-nodes.ts";
 import { webcheck } from "./webcheck.ts";
@@ -68,17 +74,51 @@ export function buildGraph(checkpointer = new MemorySaver()) {
 export const config = (id: string) => ({ configurable: { thread_id: id }, recursionLimit: RECURSION_LIMIT });
 export const resume = (answer: string) => new Command({ resume: answer });
 
+export type Cleanup = { step: string; ok: boolean; reason?: string };
+
+export function removeTicketResources(repo: string, worktree: string, id: string): Cleanup[] {
+  const up = relative(resolve(worktree), resolve(repo));
+  if (up === "" || !(up === ".." || up.startsWith(`..${sep}`) || isAbsolute(up)))
+    return [{ step: "guard", ok: false, reason: `refusing to remove ${worktree}: it is the repo or contains it` }];
+  const attempt = (step: string, fn: () => unknown): Cleanup => {
+    try {
+      fn();
+      return { step, ok: true };
+    } catch (e) {
+      return { step, ok: false, reason: (e as Error).message.split("\n", 1)[0] };
+    }
+  };
+  return [
+    attempt("worktree remove", () => {
+      const registered = sh(repo, "worktree", "list", "--porcelain").split("\n").some((l) => l.startsWith("worktree ") && samePath(l.slice(9), worktree));
+      if (registered) sh(repo, "worktree", "remove", "--force", worktree);
+    }),
+    attempt("remove directory", () => rmSync(worktree, { recursive: true, force: true })),
+    attempt("worktree prune", () => sh(repo, "worktree", "prune")),
+    attempt("branch delete", () => {
+      if (sh(repo, "branch", "--list", `ticket/${id}`)) sh(repo, "branch", "-D", `ticket/${id}`);
+    }),
+  ];
+}
+
 export function createWorktree(repo: string, id: string, dir: string, home?: string) {
   if (activeTickets(repo) >= MAX_ACTIVE_TICKETS) throw new Error(`limit of ${MAX_ACTIVE_TICKETS} active tickets reached`);
   const base_branch = sh(repo, "rev-parse", "--abbrev-ref", "HEAD");
-  sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
   const base = sh(repo, "rev-parse", "HEAD");
   const { test, merge, publisher, push_remote, base_repo, disclosure, deploy, install, specialties, stack, webcheck, project_docs } = loadRepoConfig(repo, base, home);
-  if (install) installDeps(dir);
+  const rules = [loadConventions(repo, base), stack && `Stack decided for this repo: ${stack}`, lessons(loadPlaybooks(repo, base))].filter(Boolean).join("\n\n");
+  const git_config_hash = gitConfigHash(repo);
+  sh(repo, "worktree", "add", "-q", "-b", `ticket/${id}`, dir);
+  try {
+    if (install) installDeps(dir);
+  } catch (e) {
+    removeTicketResources(repo, dir, id);
+    throw e;
+  }
   return {
     worktree: dir,
     repo,
-    git_config_hash: gitConfigHash(repo),
+    git_config_hash,
     base,
     test,
     install,
@@ -88,7 +128,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
     base_repo,
     disclosure,
     base_branch,
-    rules: [loadConventions(repo, base), stack && `Stack decided for this repo: ${stack}`].filter(Boolean).join("\n\n"),
+    rules,
     deploy_cfg: deploy,
     webcheck_cfg: webcheck,
     specialties,

@@ -1,11 +1,14 @@
 // Evidence verified by code (zero token cost): what the agent claims does not count.
 import { execSync } from "node:child_process";
+import { resolve } from "node:path";
 import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
 import { safeGit } from "./git-safe.ts";
 import { MAX_FILE_LINES, MAX_LINE_COLS, modularityViolations } from "./modularity.ts";
-import { DEFAULT_TEST } from "./permissions.ts";
-import { addedSkips, commands, type Counts, runTests, type Test } from "./test-report.ts";
+import { commands, DEFAULT_INSTALL, DEFAULT_TEST, type Test } from "./commands.ts";
+import { addedSkips, type Counts, runTests, untestedLogic } from "./test-report.ts";
+
+export const UNTESTED = "the diff changes logic without adding or changing a test";
 import type { T } from "./ticket.ts";
 
 // Paths no agent may change: secrets (never, not even adopted), and CI and the orchestrator itself (only in a version `orch adopt` took
@@ -19,9 +22,9 @@ const PROTECTED = /^\.github\/|^orchestrator\/|^\.orchestrator\.json$/i;
 // The CEO approves one content (path@blob at HEAD), so any later edit to the file asks again.
 const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc|conftest\.py|setup\.py|setup\.cfg|pyproject\.toml|pytest\.ini|tox\.ini|Makefile)$/i;
 
-type Verdict = { ok: true; author: string; sha: string; evidence: string[]; counts: Counts | null } | { ok: false; reason: string; host?: string[] };
+type Verdict = { ok: true; author: string; sha: string; evidence: string[]; counts: Counts | null; none: boolean } | { ok: false; reason: string; host?: string[] };
 
-export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TEST, install = false, hostApproved: string[] = []): Verdict {
+export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TEST, install = false, hostApproved: string[] = [], baseTests: Counts | null = null): Verdict {
   const git = (...a: string[]) => safeGit(wt, ...a);
   const sha = git("rev-parse", "HEAD");
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, reason: "no new commit in the worktree" };
@@ -52,15 +55,21 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   }
   const skips = addedSkips(git("-c", "core.quotePath=false", "diff", "-U0", "--text", "--no-color", "--no-ext-diff", "--no-textconv", `${base}..HEAD`));
   if (skips.length) return { ok: false, reason: `the diff skips tests instead of making them pass (${skips.slice(0, 5).join("; ")})` };
+  const untested = untestedLogic(diffFiles("--diff-filter=d"));
+  if (untested.length) return { ok: false, reason: `${UNTESTED} (${untested.slice(0, 5).join(", ")})` };
   if (install) installDeps(wt);
-  const { failure, counts } = runTests(wt, test);
+  const baseNone = !!baseTests && baseTests.pass + baseTests.skip + baseTests.fail === 0;
+  const { failure, counts, none } = runTests(wt, test, baseNone);
   if (failure) return { ok: false, reason: failure };
+  if (none && !baseNone) return { ok: false, reason: "no tests collected: the base suite had tests (or its count is unknown) and this run found none" };
   // npm test runs repo code: if it moved HEAD or dirtied the tree, the verification is void.
   if (git("rev-parse", "HEAD") !== sha) return { ok: false, reason: "HEAD changed during verification" };
-  if (git("status", "--porcelain", "--untracked-files=all").length) return { ok: false, reason: "worktree changed during verification" };
+  const linked = resolve(wt, git("rev-parse", "--git-dir")) !== resolve(wt, git("rev-parse", "--git-common-dir"));
+  if (linked) git("clean", "-fdq");
+  if (git("status", "--porcelain", linked ? "--untracked-files=no" : "--untracked-files=all").length) return { ok: false, reason: "worktree changed during verification" };
   const tally = counts ? ` (pass ${counts.pass}, skip ${counts.skip}, fail ${counts.fail})` : "";
-  const evidence = [`commit:${git("rev-parse", "--short", sha)}`, `tests:${commands(test).join(" + ")} ok${tally}`];
-  return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence, counts };
+  const evidence = [`commit:${git("rev-parse", "--short", sha)}`, `tests:${commands(test).join(" + ")} ${none ? "none collected" : `ok${tally}`}`];
+  return { ok: true, sha, author: git("log", "-1", "--format=%an", sha), evidence, counts, none };
 }
 
 const runsOnHost = (f: string, install: boolean) => RUNS_ON_HOST.test(f) || (install && /(^|\/)(package-lock|npm-shrinkwrap)\.json$/i.test(f));
@@ -84,19 +93,19 @@ function blobAt(wt: string, f: string, rev = "HEAD"): string {
   return meta.split(" ")[2];
 }
 
-export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved">, base = t.base) =>
-  verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved);
+export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved" | "test_base">, base = t.base) =>
+  verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved, t.test_base);
 
 
 // Host-side install for repos that opt in (`install` in the repo config): the lockfile comes from the base commit and no package script runs.
-export function installDeps(wt: string): void {
+export function installDeps(wt: string, install = DEFAULT_INSTALL): void {
   try {
     safeGit(wt, "cat-file", "-e", "HEAD:package-lock.json");
   } catch {
     throw new Error("install: the repo has no committed package-lock.json");
   }
   try {
-    execSync("npm ci --ignore-scripts --no-audit --no-fund", { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
+    execSync(install, { cwd: wt, env: minimalEnv("dev"), stdio: "pipe", timeout: NODE_TIMEOUT_MS });
   } catch (e) {
     throw new Error(`install failed: ${String((e as { stderr?: Buffer }).stderr ?? "").slice(-400)}`);
   }

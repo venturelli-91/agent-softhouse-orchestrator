@@ -1,11 +1,13 @@
 // What a subprocess agent inherits: a whitelisted environment and a per-role git identity.
 import { devNull } from "./git-safe.ts";
+import { NodeFailure } from "./node-failure.ts";
+import { shellName } from "./platform.ts";
 
 // On Windows the shell of claude -p is PowerShell; on POSIX, Bash.
 // Not NodeJS.ProcessEnv: a host repo (Next.js) augments it with a required NODE_ENV, which breaks the typecheck of callers that pass a plain object.
 export type Env = Record<string, string | undefined>;
 
-export const SHELL = process.platform === "win32" ? "PowerShell" : "Bash";
+export const SHELL = shellName();
 
 export type Role = "triage" | "planner" | "dev" | "reviewer" | "design" | "qa" | "devops" | "watchdog" | "knowledge" | "docs";
 
@@ -34,6 +36,7 @@ export function minimalEnv(role: Role, src: Env = process.env): Record<string, s
     GIT_CONFIG_VALUE_2: "cat",
     GIT_EXTERNAL_DIFF: "",
     NPM_CONFIG_USERCONFIG: devNull,
+    PYTHONDONTWRITEBYTECODE: "1",
     GIT_TERMINAL_PROMPT: "0",
     GIT_AUTHOR_NAME: `agent-${role}`,
     GIT_AUTHOR_EMAIL: `${role}@orchestrator.local`,
@@ -45,6 +48,6 @@ export function minimalEnv(role: Role, src: Env = process.env): Record<string, s
 // MODEL, EFFORT, TURNS: <NAME>_<ROLE> overrides <NAME>_DEFAULT. Missing = failure (closed).
 export function readEnv(name: "MODEL" | "EFFORT" | "TURNS", role: Role, src: Env = process.env): string {
   const v = src[`${name}_${role.toUpperCase()}`] ?? src[`${name}_DEFAULT`];
-  if (!v) throw new Error(`missing env: ${name}_${role.toUpperCase()} or ${name}_DEFAULT`);
+  if (!v) throw new NodeFailure(`missing env: ${name}_${role.toUpperCase()} or ${name}_DEFAULT`);
   return v;
 }
