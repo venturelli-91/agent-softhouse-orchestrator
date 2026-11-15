@@ -9,7 +9,10 @@ import { sh } from "./graph-kit.ts";
 import { samePath } from "./platform.ts";
 import { projectDocsNode } from "./project-docs.ts";
 import { planner, SPLIT_RULE, triage } from "./plan-nodes.ts";
-import { loadConventions, loadRepoConfig } from "./repo-config.ts";
+import { loadConventions, loadPlaybooks, loadRepoConfig } from "./repo-config.ts";
+
+const lessons = (playbooks: string) =>
+  playbooks && `Lessons recorded in this repo's playbooks (past failures and decisions; do not repeat them):\n${playbooks}`;
 import { DIFF_LIMIT, design, evidenceNote, qa, reviewer } from "./review-nodes.ts";
 import { deploy, deployTicket, mergeNode, publishNode } from "./ship-nodes.ts";
 import { webcheck } from "./webcheck.ts";
@@ -125,7 +128,7 @@ export function createWorktree(repo: string, id: string, dir: string, home?: str
     base_repo,
     disclosure,
     base_branch,
-    rules: [loadConventions(repo, base), stack && `Stack decided for this repo: ${stack}`].filter(Boolean).join("\n\n"),
+    rules: [loadConventions(repo, base), stack && `Stack decided for this repo: ${stack}`, lessons(loadPlaybooks(repo, base))].filter(Boolean).join("\n\n"),
     deploy_cfg: deploy,
     webcheck_cfg: webcheck,
     specialties,

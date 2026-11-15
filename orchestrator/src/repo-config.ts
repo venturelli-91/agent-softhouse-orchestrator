@@ -144,3 +144,21 @@ export function loadConventions(repo: string, ref: string, max = 8000): string {
     return "";
   }
 }
+
+// Learning loop: the playbooks the CEO committed (postmortems, decisions, recurring failures) reach the dev and the reviewer, newest
+// first, from the base commit only (an uncommitted postmortem is still under CEO review; a ticket cannot plant lessons).
+// ponytail: newest-first under a cap; rank by relevance to the request if playbooks outgrow it.
+export function loadPlaybooks(repo: string, ref: string, max = 6000): string {
+  let names: string[];
+  try {
+    names = safeGit(repo, "ls-tree", "-z", "--name-only", ref, "--", "playbooks/").split("\0").filter((n) => /^playbooks\/[^/]+\.md$/i.test(n));
+  } catch {
+    return "";
+  }
+  let out = "";
+  for (const n of names.sort().reverse()) {
+    if (out.length >= max) break;
+    out += `--- ${n}\n${safeGit(repo, "show", `${ref}:${n}`).trim()}\n\n`;
+  }
+  return out.slice(0, max).trim();
+}
