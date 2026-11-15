@@ -22,17 +22,14 @@ export const DeployConfig = z.object({
 });
 export type DeployConfig = z.infer<typeof DeployConfig>;
 
-// Names a setup command may read: never credentials (URLs often embed them), never a loader or interpreter hook,
-// and never a key minimalEnv already sets or passes (the hardening must not be overridable).
+// Names a setup command may read: an allowlist, since a blocklist always misses a credential shape (DSN, URI, proxy URL with user:pass@).
+// Never a loader or tool hook prefix, and never a key minimalEnv already sets or passes (the hardening must not be overridable).
 const reserved = new Set([...ALLOWED_ENV, ...Object.keys(minimalEnv("dev", {}))]);
-const BLOCKED_ENV = new RegExp([
-  "^ANTHROPIC_", "^GIT_", "^NPM_CONFIG_", "_(TOKEN|KEY|SECRET|PASSWORD|ID|URL|PASS(WD)?|PWD|AUTH|CREDENTIALS)$", "^(TOKEN|SECRET|PASSWORD)$",
-  "^SSH_AUTH_SOCK$", "^AWS_", "^GOOGLE_APPLICATION_CREDENTIALS$", "^KUBECONFIG$", "^NODE_OPTIONS$", "^LD_", "^DYLD_", "^PYTHON",
-  "^BASH_ENV$", "^ENV$", "^PERL5OPT$", "^PIP_",
-].join("|"));
-const hostName = z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(
-  (n) => !reserved.has(n) && !BLOCKED_ENV.test(n),
-  "env must not name a credential or a variable the sandbox sets",
+const ALLOWED_NAME = /^(NO_PROXY|TZ|LC_[A-Z]+|[A-Z][A-Z0-9_]*_(HOST|PORT|VERSION))$/;
+const HOOK_PREFIX = /^(AWS_|GIT_|NPM_CONFIG_|PIP_|PYTHON|LD_|DYLD_|ANTHROPIC_)/;
+const hostName = z.string().refine(
+  (n) => !reserved.has(n) && ALLOWED_NAME.test(n) && !HOOK_PREFIX.test(n),
+  "env names must be a host, port or version setting (NAME_HOST, NAME_PORT, NAME_VERSION), NO_PROXY, TZ or LC_*",
 );
 
 const tagId = (prefix: string) => z.array(z.string().regex(new RegExp(`^${prefix}-[A-Z0-9]+$`))).default([]);

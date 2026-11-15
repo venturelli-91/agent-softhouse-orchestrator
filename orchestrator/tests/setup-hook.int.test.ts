@@ -47,9 +47,9 @@ test("an npm repo with install: true goes install, test and evidence to completi
 test("setup runs with a minimal env plus the listed names, hooks off and the worktree as cwd", () => {
   const out = join(mkdtempSync(join(tmpdir(), "sh-out-")), "env.json");
   const dump = `require("node:fs").writeFileSync(${JSON.stringify(out)}, JSON.stringify({ cwd: process.cwd(), env: process.env }));\n`;
-  const r = repoWith({ "dump.cjs": dump }, { setup: ["node dump.cjs"], env: ["LISTED_VAR"] });
-  const names = ["ANTHROPIC_API_KEY", "UNLISTED_SECRET", "LISTED_VAR"];
-  Object.assign(process.env, { ANTHROPIC_API_KEY: "sk-x", UNLISTED_SECRET: "u", LISTED_VAR: "l" });
+  const r = repoWith({ "dump.cjs": dump }, { setup: ["node dump.cjs"], env: ["LISTED_HOST"] });
+  const names = ["ANTHROPIC_API_KEY", "UNLISTED_SECRET", "LISTED_HOST"];
+  Object.assign(process.env, { ANTHROPIC_API_KEY: "sk-x", UNLISTED_SECRET: "u", LISTED_HOST: "l" });
   try {
     createWorktree(r.repo, "T-1", r.wt);
   } finally {
@@ -57,7 +57,7 @@ test("setup runs with a minimal env plus the listed names, hooks off and the wor
   }
   const { cwd, env } = JSON.parse(readFileSync(out, "utf8"));
   assert.equal(resolve(cwd), resolve(r.wt));
-  assert.equal(env.LISTED_VAR, "l");
+  assert.equal(env.LISTED_HOST, "l");
   assert.equal(env.UNLISTED_SECRET, undefined);
   assert.equal(Object.keys(env).some((k) => k.startsWith("ANTHROPIC_")), false);
   assert.equal(env.PIP_CONFIG_FILE, devNull);
@@ -88,9 +88,9 @@ test("a custom setup records the ignored host files it left, and a default insta
   assert.match(String(t.setup_ignored), /^\.venv\/lib\/setup\.py@[0-9a-f]{40}$/);
   const none = repoWith({}, { install: true }, true);
   assert.equal(createWorktree(none.repo, "T-2", none.wt).setup_ignored, null);
-  const both = repoWith({ "mk.cjs": mk, ".gitignore": ".venv\nnode_modules\n" }, { install: true, setup: ["node mk.cjs"], env: ["LISTED_VAR"] }, true);
+  const both = repoWith({ "mk.cjs": mk, ".gitignore": ".venv\nnode_modules\n" }, { install: true, setup: ["node mk.cjs"], env: ["LISTED_HOST"] }, true);
   const b = createWorktree(both.repo, "T-3", both.wt);
-  assert.deepEqual([b.install, b.setup_env], [true, ["LISTED_VAR"]]);
+  assert.deepEqual([b.install, b.setup_env], [true, ["LISTED_HOST"]]);
   assert.match(String(b.setup_ignored), /^\.venv\/lib\/setup\.py@[0-9a-f]{40}$/);
 });
 
