@@ -102,6 +102,8 @@ test("a worktree that cannot be removed (locked on Windows, read-only parent els
   const sb = sandbox();
   let holder: ReturnType<typeof spawn> | undefined;
   const parent = join(sb.work, "worktrees");
+  // The first clean may still remove part of the tree on some runners: restoring the mode tolerates a directory that is gone.
+  const unlock = () => existsSync(join(parent, "A-1")) && chmodSync(join(parent, "A-1"), 0o755);
   try {
     const a = sb.mkRepo("a");
     sb.ticket(a, "A-1");
@@ -121,18 +123,19 @@ test("a worktree that cannot be removed (locked on Windows, read-only parent els
     assert.equal(existsSync(join(sb.home, "tickets", "A-1.json")), true);
     assert.equal(existsSync(join(sb.home, "tickets", "A-2.json")), false);
     assert.equal(existsSync(join(a, "mine.txt")), true);
-    assert.equal(git(a, "branch", "--list", "ticket/A-1"), "");
+    // The branch may stay while git still lists the locked worktree (it refuses to delete a checked-out branch); the retry removes it.
     if (process.platform === "win32") {
       holder?.kill();
       await new Promise((r) => setTimeout(r, 500));
-    } else chmodSync(join(parent, "A-1"), 0o755);
+    } else unlock();
     const retry = sb.orch("clean", "--all", "--repo", a);
     assert.equal(retry.code, 0, retry.out);
     assert.match(retry.out, /cleaned A-1/);
     assert.equal(existsSync(join(sb.home, "tickets", "A-1.json")), false);
+    assert.equal(git(a, "branch", "--list", "ticket/A-1"), "");
   } finally {
     holder?.kill();
-    if (process.platform !== "win32") chmodSync(join(parent, "A-1"), 0o755);
+    if (process.platform !== "win32") unlock();
     await new Promise((r) => setTimeout(r, 200));
     sb.done();
   }
