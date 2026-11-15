@@ -2,7 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { isSafeCommand } from "./commands.ts";
 import { minimalEnv } from "./guardrails.ts";
-import { isWindows, runShimmed } from "./platform.ts";
+import { runShimmed, shadowsBin } from "./platform.ts";
 import { checkId } from "./ticket-store.ts";
 
 export type DeployTarget = {
@@ -54,18 +54,12 @@ export function commandEnv(names: string[], ctx: Ctx, src: NodeJS.ProcessEnv = p
   return { ...env, NoDefaultCurrentDirectoryInExePath: "1", ORCH_TICKET: ctx.id, ORCH_SHA: ctx.sha, ORCH_PREVIOUS: ctx.previous };
 }
 
-// Every extension cmd.exe may resolve: the live PATHEXT plus the Windows defaults and .ps1.
-const shadowExts = (): string[] => [...new Set([...(process.env.PATHEXT ?? "").split(";"), ".com", ".exe", ".bat", ".cmd", ".vbs", ".vbe", ".js",
-  ".jse", ".wsf", ".wsh", ".msc", ".ps1"].map((e) => e.toLowerCase()).filter(Boolean))];
-
 // Plain argv; on Windows the line goes through cmd.exe, which the regex makes safe. Listed env values are masked in whatever comes back.
 export function commandTarget(cfg: { command: string; rollback: string; env: string[]; timeout_s: number }, cwd: string, previous: string): DeployTarget {
   const run = (line: string, ctx: Ctx): string => {
     if (!isSafeCommand(line)) throw new Error("command must be a plain command without shell operators");
     const [bin, ...args] = line.split(" ").filter(Boolean);
-    const b = bin.toLowerCase();
-    if (isWindows() && readdirSync(cwd).some((f) => [b, ...shadowExts().map((e) => b
-      + e)].includes(f.toLowerCase()))) throw new Error(`${bin} exists in ${cwd}: refusing to run a binary the working tree could shadow`);
+    if (shadowsBin(cwd, bin)) throw new Error(`${bin} exists in ${cwd}: refusing to run a binary the working tree could shadow`);
     const env = commandEnv(cfg.env, ctx);
     const mask = (s: string) => cfg.env.reduce((a, k) => (env[k] ? a.split(env[k]).join("***") : a), s).trim().slice(-300);
     try {

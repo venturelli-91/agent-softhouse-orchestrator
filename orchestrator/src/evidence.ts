@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { minimalEnv } from "./agent-env.ts";
 import { NODE_TIMEOUT_MS } from "./flow-limits.ts";
+import { shadowsBin } from "./platform.ts";
 import { safeGit } from "./git-safe.ts";
 import { MAX_FILE_LINES, MAX_LINE_COLS, modularityViolations } from "./modularity.ts";
 import { commands, DEFAULT_INSTALL, DEFAULT_TEST, type Test } from "./commands.ts";
@@ -137,7 +138,10 @@ export function installDeps(wt: string, install = DEFAULT_INSTALL, envNames: str
       throw new Error("install: the repo has no committed package-lock.json");
     }
   }
+  const bin = install.split(" ")[0];
+  if (shadowsBin(wt, bin)) throw new Error(`setup refused (${install}): ${bin} exists in the worktree and would shadow the binary`);
   const env = minimalEnv("dev");
+  env.NoDefaultCurrentDirectoryInExePath = "1";
   for (const k of envNames) if (!(k in env) && process.env[k] !== undefined) env[k] = process.env[k];
   try {
     execSync(install, { cwd: wt, env, stdio: "pipe", timeout: NODE_TIMEOUT_MS });

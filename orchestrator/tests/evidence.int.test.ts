@@ -237,6 +237,16 @@ test("with install plus another setup, node_modules is rebuilt and the other set
   assert.deepEqual([planted, kept], [false, true]);
 });
 
+test("an npm.cmd in the worktree root stops the install at verification", { skip: process.platform !== "win32" }, () => {
+  const { d, base } = withCommit(true, { "npm.cmd": "@echo pwned > pwned.txt\r\n" });
+  const r = verifyEvidence(d, base, "node -e 0", true);
+  const ran = existsSync(join(d, "pwned.txt"));
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /npm exists in the worktree and would shadow the binary/);
+  assert.equal(ran, false);
+});
+
 test("an install that fails at verification gives the command and exit code, never its stderr", () => {
   const { d, base } = withCommit(true, { "package.json": JSON.stringify({ name: "x", dependencies: { "left-pad": "1.0.0" } }) });
   const r = verifyEvidence(d, base, "node -e 0", true);
