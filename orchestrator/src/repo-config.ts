@@ -149,16 +149,23 @@ export function loadConventions(repo: string, ref: string, max = 8000): string {
 // first, from the base commit only (an uncommitted postmortem is still under CEO review; a ticket cannot plant lessons).
 // ponytail: newest-first under a cap; rank by relevance to the request if playbooks outgrow it.
 export function loadPlaybooks(repo: string, ref: string, max = 6000): string {
-  let names: string[];
+  let blobs: string[];
   try {
-    names = safeGit(repo, "ls-tree", "-z", "--name-only", ref, "--", "playbooks/").split("\0").filter((n) => /^playbooks\/[^/]+\.md$/i.test(n));
+    // Only blobs: a symlink or submodule entry named *.md is not a playbook.
+    blobs = safeGit(repo, "ls-tree", "-z", ref, "--", "playbooks/").split("\0")
+      .map((l) => l.split("\t"))
+      .filter(([meta, n]) => meta?.startsWith("100") && meta.includes(" blob ") && /^playbooks\/[^/]+\.md$/i.test(n ?? ""))
+      .map(([meta, n]) => `${n}\t${meta.split(" ")[2]}`);
   } catch {
     return "";
   }
   let out = "";
-  for (const n of names.sort().reverse()) {
+  for (const entry of blobs.sort().reverse()) {
     if (out.length >= max) break;
-    out += `--- ${n}\n${safeGit(repo, "show", `${ref}:${n}`).trim()}\n\n`;
+    const [n, sha] = entry.split("\t");
+    try {
+      out += `--- ${n}\n${safeGit(repo, "cat-file", "blob", sha).slice(0, max).trim()}\n\n`;
+    } catch {}
   }
   return out.slice(0, max).trim();
 }
