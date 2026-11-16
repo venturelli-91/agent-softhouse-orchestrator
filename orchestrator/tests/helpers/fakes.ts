@@ -19,7 +19,8 @@ export const commit = (cwd: string, author: string, file = "checkout.html", cont
 
 export const defaults: Behavior = {
   triage: () => ({ title: "t", priority: "P2", specialty: "frontend", clear: true, flags: FLAGS, criteria: ["button says Submit order"], summary: "ok" }),
-  planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), question: "" }),
+  discovery: () => ({ problem: "the problem", assumptions: [], questions: [], ready: true, briefing: {} }),
+  planner: (req) => defaults.triage!(req),
   dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF }),
   reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   design: () => ({ verdict: "approved", comments: "", summary: "ok" }),

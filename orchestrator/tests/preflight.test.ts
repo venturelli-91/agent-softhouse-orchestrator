@@ -43,7 +43,7 @@ test("preflight names each missing variable", () => {
 
 test("a role-specific variable satisfies the check for that role only", () => {
   const { MODEL_DEFAULT: _, ...noDefault } = full;
-  const roles = ["TRIAGE", "PLANNER", "DEV", "REVIEWER", "DESIGN", "QA", "DOCS"];
+  const roles = ["TRIAGE", "DISCOVERY", "PLANNER", "DEV", "REVIEWER", "DESIGN", "QA", "DOCS"];
   const env = { ...noDefault, ...Object.fromEntries(roles.map((r) => [`MODEL_${r}`, "m"])) };
   preflight(repo(), env, home);
   assert.throws(() => preflight(repo(), { ...env, MODEL_QA: undefined }, home), /MODEL_QA or MODEL_DEFAULT/);

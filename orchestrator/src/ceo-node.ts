@@ -27,7 +27,8 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
             ? `the diff changes files that run code on the host (${t.host_pending.join(", ")}): approve allows exactly these versions`
             : `${t.status}: ${t.summary}`;
   const last = t.history.at(-1);
-  const r = interrupt({
+  const d = t.status === "discovery_questions" ? t.discovery_output : null;
+  const r = interrupt(d ? { type: "discovery", ticket: t.id, title: t.title, problem: d.problem, assumptions: d.assumptions, questions: d.questions } : {
     type: ["no_change", "host_review"].includes(t.status) ? t.status : reason ? "escalation" : "approval",
     reason,
     ticket: t.id,
@@ -52,6 +53,13 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
   }) as string;
   const h = (res: string) => log(t, "ceo_approval", res);
   if (/^abort(:|$)/.test(r)) return { status: "aborted", history: h(r === "abort" ? "aborted" : `aborted (${r.slice(6, 300).trim()})`) };
+  if (d)
+    return {
+      status: "rediscover",
+      discovery_round: t.discovery_round + 1,
+      discovery_answers: [...t.discovery_answers, isBareApproval(r) ? "accept every default" : r],
+      history: h("answered"),
+    };
   if (t.status === "host_review" && r === "approve")
     return {
       status: "reverify",
@@ -66,8 +74,6 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
   }
   // No change needed: approve closes the ticket; any other text is an instruction for the dev (below).
   if (t.status === "no_change" && r === "approve") return { status: "closed", history: h("closed: no change needed") };
-  // Missing information: the CEO's answer supplements the request and the planner tries again.
-  if (t.status === "ambiguous") return { status: "replan", request: `${t.request}\n\nCEO clarification: ${r}`, history: h("clarified") };
   // A failed merge (CI red, PR moved): "retry" runs it again, anything else is an instruction for the dev.
   if (t.history.at(-1)?.node === "merge_pr" && r === "retry") return { status: "approved", history: h("merge retry") };
   // A node that stopped on an error or timeout: "retry" runs just that node again, not the dev.
@@ -107,5 +113,5 @@ const hostDiff = (t: T) => {
   return `${diff.slice(0, HOST_DIFF_CHARS)}\n[TRUNCATED: the full diff is in ${file}]`;
 };
 
-const RETRYABLE = ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy"];
+const RETRYABLE = ["triage", "discovery", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy"];
 const POST_DEV = ["reviewer", "design", "qa", "webcheck", "load", "publish", "deploy"];

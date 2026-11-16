@@ -31,7 +31,6 @@ const Plan = z.object({
   specialty: z.enum(["frontend", "backend", "fullstack", "mobile", "integrations", "ai", "data"]),
   clear: z.boolean(), flags: Flags, criteria: z.array(z.string()), summary: z.string().describe("at most 10 lines"),
 });
-const PlanQ = Plan.extend({ question: z.string() });
 const Dev = z.object({ summary: z.string().describe("at most 10 lines") });
 
 type Exp = { clear: boolean; priority?: string; specialty?: string; flag?: keyof z.infer<typeof Flags> };
@@ -73,21 +72,17 @@ for (const model of values.models.split(",")) {
         for (let i = 0; i < reps; i++) {
           const planner = stage === "planner";
           const res = await runAgent({
-            role: stage, cwd: repo, schema: planner ? PlanQ : Plan,
+            role: stage, cwd: repo, schema: Plan,
             files: planner ? ["demand-analyst", "product-manager", "tech-lead"] : ["triage"],
             context: `CEO request: ${r.text}\n\n` + (planner
-              ? "If missing information prevents verifiable acceptance criteria, set clear=false and put what is missing in `question`.\n\n"
+              ? "If missing information prevents verifiable acceptance criteria, set clear=false.\n\n"
               : "") + "Answer only in the structured format. `summary`: up to 10 lines.",
           });
           if ("failed" in res) { lines.push(`FAIL "${r.text.slice(0, 40)}": ${res.failed}`); continue; }
           const { output, usage } = res;
           // The planner is only judged on routing and on having criteria when it says clear.
-          // Planner: a vague request must come back unclear with a question; a well-specified one may either close the criteria (>= 2) or ask.
-          const ok = planner
-            ? r.exp.clear
-              ? (output.clear && output.criteria.length >= 2) || (!output.clear && (output as z.infer<typeof PlanQ>).question.length > 0)
-              : !output.clear && (output as z.infer<typeof PlanQ>).question.length > 0
-            : check(output, r.exp);
+          // Planner: a vague request must come back unclear; a well-specified one must close the criteria (>= 2).
+          const ok = planner ? (r.exp.clear ? output.clear && output.criteria.length >= 2 : !output.clear) : check(output, r.exp);
           hits += +ok;
           tokens += sum(usage);
           usd += usage.cost_usd;

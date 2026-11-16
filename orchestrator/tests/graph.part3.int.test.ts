@@ -101,7 +101,7 @@ test("the planner's briefing and stories land on the ticket and in the dev conte
   let devCtx = "";
   knobs.override = {
     triage: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), clear: false, criteria: [] }),
-    planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), question: "", briefing: "B-CANARY", stories: ["As a buyer I want X so that Y"] }),
+    planner: () => ({ ...(defaults.triage!({} as Req<unknown>) as object), briefing: "B-CANARY", stories: ["As a buyer I want X so that Y"] }),
     dev: (req) => ((devCtx = req.context), commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF }),
   };
   const g = await start();

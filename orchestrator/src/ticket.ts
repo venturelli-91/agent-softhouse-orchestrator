@@ -107,7 +107,8 @@ export const Ticket = z.object({
   briefing: z.string().default(""),
   discovery_round: z.number().default(0),
   discovery_answers: z.array(z.string()).default([]),
-  discovery: DiscoveryOutput.nullable().default(null),
+  // Not `discovery`: LangGraph refuses a state channel with the same name as a node.
+  discovery_output: DiscoveryOutput.nullable().default(null),
   stories: z.array(z.string()).default([]),
   incident: z.string().default(""),
   deploy_target: z.string().default("simulated"),

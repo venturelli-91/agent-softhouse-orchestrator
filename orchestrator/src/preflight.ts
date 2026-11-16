@@ -3,7 +3,7 @@ import { effectivePublisher } from "./publish.ts";
 import { loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure } from "./node-failure.ts";
 
-const GRAPH_ROLES: Role[] = ["triage", "planner", "dev", "reviewer", "design", "qa", "docs"];
+const GRAPH_ROLES: Role[] = ["triage", "discovery", "planner", "dev", "reviewer", "design", "qa", "docs"];
 
 export function preflight(repo: string, env: Env = process.env, home?: string): void {
   const config = loadRepoConfig(repo, "HEAD", home);
