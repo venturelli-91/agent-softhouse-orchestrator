@@ -19,6 +19,7 @@ const GIT_INTERNALS = [
 // Bash with an allowlist is inherently weak: the real barrier is a worktree without .env + an env without credentials.
 export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny: string[] }> = {
   triage: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
+  discovery: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   planner: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   reviewer: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   design: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },

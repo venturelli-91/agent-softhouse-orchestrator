@@ -9,7 +9,7 @@ export type Env = Record<string, string | undefined>;
 
 export const SHELL = shellName();
 
-export type Role = "triage" | "planner" | "dev" | "reviewer" | "design" | "qa" | "devops" | "knowledge" | "docs";
+export type Role = "triage" | "discovery" | "planner" | "dev" | "reviewer" | "design" | "qa" | "devops" | "knowledge" | "docs";
 
 export const ALLOWED_ENV = [
   "PATH", "PATHEXT", "SystemRoot", "windir", "COMSPEC", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH",
