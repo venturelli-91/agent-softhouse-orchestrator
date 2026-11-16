@@ -21,9 +21,8 @@
 //   orch approve <id> [text]    approve; for an escalation, text is the answer (e.g. retry, a clarification)
 //   orch reject <id> [reason]   close the ticket, whatever it is waiting for (the reason goes into its history)
 //   orch request-changes <id> "<reason>"   send it back to the dev with the reason as its instruction
-//   orch watch                  one monitor pass over deployed tickets (HTTP health check for command deploys, simulated probe otherwise):
+//   orch watch                  one monitor pass over deployed tickets (HTTP health check for command deploys):
 //                               opens one P0 hotfix ticket per failure and proposes a rollback
-//   orch chaos <id> <scenario>|--clear   inject (or clear) a failure on a ticket deployed to a sandbox target
 //   orch rollback <incident-id> [--config-reviewed]  approve the proposed rollback of an incident;
 //                               --config-reviewed accepts a changed .git/config after you looked at it
 //   orch resolve <incident-id>  close an incident by hand (the service is back, or you handled it elsewhere)
@@ -38,7 +37,7 @@ import { type Ctx, die, makeCtx } from "./orch/ctx.ts";
 import { backlog } from "./orch/backlog.ts";
 import { demand } from "./orch/demand.ts";
 import { evidence, manual } from "./orch/manual.ts";
-import { chaos, resolveByHand, rollback, watchDeployed } from "./orch/ops.ts";
+import { resolveByHand, rollback, watchDeployed } from "./orch/ops.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
@@ -46,13 +45,13 @@ process.env.AGENTS_DIR = resolve(ROOT, process.env.AGENTS_DIR ?? "agents");
 
 const commands: Record<string, (c: Ctx) => void | Promise<void>> = {
   init, setup, team, run, adopt, status, continue: resumeRun, approve, reject, "request-changes": requestChanges, clean,
-  watch: watchDeployed, resolve: resolveByHand, chaos, rollback, manual, evidence, backlog, demand,
+  watch: watchDeployed, resolve: resolveByHand, rollback, manual, evidence, backlog, demand,
 };
 
 const ctx = makeCtx(process.argv.slice(2), resolve(ROOT, ".."));
 const command = ctx.cmd !== undefined && Object.hasOwn(commands, ctx.cmd) ? commands[ctx.cmd] : undefined;
 if (command) await command(ctx);
 else {
-  die("usage: orch init | setup | team | run | adopt | status | continue | approve | reject | request-changes | clean | watch | chaos | rollback"
+  die("usage: orch init | setup | team | run | adopt | status | continue | approve | reject | request-changes | clean | watch | rollback"
     + " | resolve | manual | evidence | backlog | demand");
 }

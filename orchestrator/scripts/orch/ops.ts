@@ -1,6 +1,5 @@
-// Commands for what is already deployed: watch, resolve, chaos, rollback.
+// Commands for what is already deployed: watch, resolve, rollback.
 import { join } from "node:path";
-import { clearFailure, injectFailure, SCENARIOS } from "../../src/chaos.ts";
 import { workRoot } from "../../src/daily-cap.ts";
 import { deployedIds } from "../../src/deploy.ts";
 import { createWorktree } from "../../src/graph.ts";
@@ -38,19 +37,6 @@ export function resolveByHand(c: Ctx) {
   const incidentId = c.positionals[0] ?? die("usage: orch resolve <incident-id>");
   resolveIncident(c.home, incidentId);
   console.log(`${incidentId} closed`);
-}
-
-export async function chaos(c: Ctx) {
-  const id = c.positionals[0];
-  const scenario = c.positionals[1];
-  if (!id || (!scenario && !c.values.clear)) {
-    die(`usage: orch chaos <ticket-id> <scenario> | orch chaos <ticket-id> --clear\nscenarios: ${Object.keys(SCENARIOS).join(", ")}`);
-  }
-  await c.locked(id, async () => {
-    if (c.values.clear) clearFailure(c.home, id);
-    else injectFailure(c.home, id, scenario);
-    console.log(c.values.clear ? `${id}: failure cleared` : `${id}: injected ${scenario}`);
-  });
 }
 
 export async function rollback(c: Ctx) {

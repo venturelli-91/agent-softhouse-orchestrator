@@ -8,13 +8,13 @@ import { runShimmed, samePath } from "../../src/platform.ts";
 import { applyTeam, configJson, proposeTeam } from "../../src/team.ts";
 import { usedToday } from "../../src/daily-cap.ts";
 import { forgetDeploy } from "../../src/deploy.ts";
-import { ensureLocalOnly } from "../../src/docs.ts";
 import { deleteRemoteBranch } from "../../src/git-remote.ts";
 import { removeTicketResources, report } from "../../src/graph.ts";
 import { log } from "../../src/graph-kit.ts";
 import { landedOn } from "../../src/local-merge.ts";
 import { assertGitConfigUnchanged, repoOf } from "../../src/guardrails.ts";
 import { listIncidents } from "../../src/incidents.ts";
+import { unmonitored } from "../../src/probe.ts";
 import { isManual, manualIds, readManual } from "../../src/manual.ts";
 import { recordMetrics } from "../../src/metrics.ts";
 import { bareNodeTest } from "../../src/repo-config.ts";
@@ -44,7 +44,6 @@ export function init(c: Ctx) {
   if (!existsSync(join(repo, ".claude", "CLAUDE.md")) && !existsSync(join(repo, "CLAUDE.md"))) {
     console.log("no .claude/CLAUDE.md: the dev will have no repo conventions (commit format, style)");
   }
-  console.log(ensureLocalOnly(repo) ?? `${join(repo, ".claude", "docs")} ready and ignored by git: the graph writes the project docs there`);
 }
 
 // Copies this folder into another repo and prepares it. Never overwrites: an existing orchestrator/ there stops the command.
@@ -128,6 +127,7 @@ export async function status(c: Ctx) {
     for (const i of listIncidents(c.home)) {
       console.log(`${i.id.padEnd(16)} ${i.status.padEnd(8)} ${i.ticket} hotfix=${i.hotfix || "-"} rollback=${i.rollback}  ${i.symptom}`);
     }
+    for (const id of unmonitored(c.home)) console.log(`${id.padEnd(16)} deployed without a health check: not monitored`);
   }
   if (process.env.TOKEN_CAP_DAILY) console.log(`tokens in the last 24h: ${usedToday()} / ${process.env.TOKEN_CAP_DAILY}`);
 }

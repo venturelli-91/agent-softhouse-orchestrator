@@ -6,7 +6,6 @@ import { setupSnapshot } from "./evidence.ts";
 import { activeTickets, gitConfigHash, installDeps, MAX_ACTIVE_TICKETS, MAX_REVISIONS, RECURSION_LIMIT, tokens } from "./guardrails.ts";
 import { ceoApproval } from "./ceo-node.ts";
 import { dev, DEV_RULES, devRules, partialWork, taskBlock } from "./dev-node.ts";
-import { docsNode } from "./docs-node.ts";
 import { sh } from "./graph-kit.ts";
 import { samePath } from "./platform.ts";
 import { projectDocsNode } from "./project-docs.ts";
@@ -23,14 +22,12 @@ import { Brief, briefMarkdown, Ticket, type T } from "./ticket.ts";
 
 export { Brief, briefMarkdown, Ticket, DEV_RULES, devRules, partialWork, taskBlock, SPLIT_RULE, DIFF_LIMIT, evidenceNote, deployTicket };
 
-// Review loop: above the cap, or on any escalation/ambiguity, the ticket goes to the CEO, through docs_mid so the progress is recorded.
+// Review loop: above the cap, or on any escalation/ambiguity, the ticket goes to the CEO.
 const route = (ok: string, node: string) => (t: T) =>
-  t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "docs_mid";
+  t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval";
 const afterReview = (t: T) => (t.status === "design" ? "design" : route("qa", "qa")(t));
 // Adopted changes are already written: an ambiguous triage has nothing left to plan.
-const afterTriage = (t: T) => (t.status === "dev" || (t.adopt_tree && t.status === "ambiguous") ? "dev" : t.status === "ambiguous" ? "planner" : "docs_mid");
-// docs_mid changes no status: a passed QA goes on to publish, anything else is an escalation.
-const afterMid = (t: T) => (t.status === "publish" ? "publish" : "ceo_approval");
+const afterTriage = (t: T) => (t.status === "dev" || (t.adopt_tree && t.status === "ambiguous") ? "dev" : t.status === "ambiguous" ? "planner" : "ceo_approval");
 
 const toDev = ["dev_failed", "reverify"];
 const afterCeo = (t: T) =>
@@ -52,24 +49,18 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addNode("ceo_approval", ceoApproval)
     .addNode("merge_pr", mergeNode)
     .addNode("deploy", deploy)
-    .addNode("docs_start", docsNode("start"))
-    .addNode("docs_mid", docsNode("mid"))
-    .addNode("docs_end", docsNode("end"))
     .addNode("docs_pre", projectDocsNode)
-    .addEdge(START, "docs_start")
-    .addEdge("docs_start", "triage")
-    .addConditionalEdges("triage", afterTriage, ["dev", "planner", "docs_mid"])
-    .addConditionalEdges("planner", route("dev", "dev"), ["dev", "docs_mid"])
-    .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "docs_pre")(t)), ["docs_pre", "dev", "docs_mid"])
+    .addEdge(START, "triage")
+    .addConditionalEdges("triage", afterTriage, ["dev", "planner", "ceo_approval"])
+    .addConditionalEdges("planner", route("dev", "dev"), ["dev", "ceo_approval"])
+    .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "docs_pre")(t)), ["docs_pre", "dev", "ceo_approval"])
     .addEdge("docs_pre", "reviewer")
-    .addConditionalEdges("reviewer", afterReview, ["design", "qa", "dev", "docs_mid"])
-    .addConditionalEdges("design", route("qa", "qa"), ["qa", "dev", "docs_mid"])
-    .addConditionalEdges("qa", route("webcheck", "webcheck"), ["webcheck", "dev", "docs_mid"])
-    .addConditionalEdges("webcheck", route("publish", "load"), ["load", "dev", "docs_mid"])
-    .addConditionalEdges("load", route("publish", "docs_mid"), ["docs_mid", "dev"])
-    .addConditionalEdges("publish", route("approval", "docs_end"), ["docs_end", "dev", "docs_mid"])
-    .addConditionalEdges("docs_mid", afterMid, ["publish", "ceo_approval"])
-    .addEdge("docs_end", "ceo_approval")
+    .addConditionalEdges("reviewer", afterReview, ["design", "qa", "dev", "ceo_approval"])
+    .addConditionalEdges("design", route("qa", "qa"), ["qa", "dev", "ceo_approval"])
+    .addConditionalEdges("qa", route("webcheck", "webcheck"), ["webcheck", "dev", "ceo_approval"])
+    .addConditionalEdges("webcheck", route("publish", "load"), ["load", "dev", "ceo_approval"])
+    .addConditionalEdges("load", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
+    .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval", "dev"])
     .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["deploy", "dev", "ceo_approval"])
     .addEdge("deploy", END)

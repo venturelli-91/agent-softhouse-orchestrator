@@ -146,7 +146,6 @@ test("the docs role is read-only, keeps the secrets deny list, and its prompt ca
   assert.ok(!PERMISSIONS.docs.tools.some((t) => t === "Write" || t === "Edit"));
   assert.ok(PERMISSIONS.docs.deny.includes("Read(**/.env*)"));
   const prompt = loadPrompt(["docs"], join(import.meta.dirname, "..", "agents"));
-  for (const word of ["150", "CLAUDE.md", "not_applicable", "arquitetura", "backlog", "checklist", "design-patterns", "features", "testes",
-    "trade-offs", "comunicacao", "aprendizados"])
+  for (const word of ["project_docs", "not_applicable", "notes", "full new content", "only the ones the delivery made stale"])
     assert.ok(prompt.includes(word), word);
 });

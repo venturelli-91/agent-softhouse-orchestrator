@@ -6,14 +6,15 @@ import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { git } from "../scripts/fixture.ts";
 import { DEV_RULES } from "../src/graph.ts";
-import { alerts, watchdog } from "../src/watchdog.ts";
+import { alerts } from "../src/watchdog.ts";
 import { ambiguous, BRIEF, commit, defaults, start, paused, answer, approved, knobs } from "./helpers/graph-harness.ts";
 
-test("the watchdog reads the state and returns alerts without writing", async () => {
+test("a clear ticket runs triage through ceo_approval with zero docs calls", async () => {
   const g = await start();
-  const r = await watchdog([g.r], g.root);
-  assert.deepEqual(r.alerts, ["T-1 stalled"]);
-  assert.equal(knobs.calls.at(-1), "watchdog");
+  assert.equal(paused(g.r)?.type, "approval");
+  assert.equal(knobs.docsCalls.length, 0);
+  assert.ok(knobs.calls.includes("triage"));
+  assert.ok(!knobs.calls.includes("planner"));
 });
 
 test("dev gets the shell rules and qa gets the code-verified evidence", async () => {

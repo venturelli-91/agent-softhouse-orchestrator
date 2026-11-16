@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recordDeploy } from "../src/deploy.ts";
-import { defaultProbe, httpProbe } from "../src/probe.ts";
+import { defaultProbe, httpProbe, unmonitored } from "../src/probe.ts";
 
 let server: Server;
 let handler: (res: import("node:http").ServerResponse) => void = (res) => res.end("ok");
@@ -46,10 +46,11 @@ test("a closed port reports unreachable", async () => {
   assert.match((await httpProbe(url, opts))!, /^unreachable: /);
 });
 
-test("defaultProbe uses the simulated probe when the record has no health_url", async () => {
+test("defaultProbe returns null (not monitored) when the record has no health_url", async () => {
   const home = mkdtempSync(join(tmpdir(), "pr-"));
   recordDeploy(home, { id: "T-1", repo: "/r", sha: "a", previous: "b", target: "simulated", sandbox: true });
   assert.equal(await defaultProbe(home, "T-1"), null);
+  assert.deepEqual(unmonitored(home), ["T-1"]);
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -60,6 +61,7 @@ test("defaultProbe checks the health url of a command deploy", async () => {
   assert.equal(await defaultProbe(home, "T-1"), null);
   handler = (res) => (res.statusCode = 500, res.end());
   assert.equal(await defaultProbe(home, "T-1"), "http 500");
+  assert.deepEqual(unmonitored(home), []);
   rmSync(home, { recursive: true, force: true });
 });
 

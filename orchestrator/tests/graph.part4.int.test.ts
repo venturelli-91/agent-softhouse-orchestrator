@@ -7,9 +7,8 @@ import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { git } from "../scripts/fixture.ts";
 import { readDeploy } from "../src/deploy.ts";
-import { config, report, deployTicket, Ticket } from "../src/graph.ts";
-import { NodeFailure } from "../src/run-agent.ts";
-import { BRIEF, FLAGS, commit, start, paused, answer, approved, CMD_CFG, writeExternal, commandTicket, DOC_FILE, knobs, FAST_TEST } from "./helpers/graph-harness.ts";
+import { deployTicket, Ticket } from "../src/graph.ts";
+import { BRIEF, FLAGS, commit, start, paused, answer, approved, CMD_CFG, writeExternal, commandTicket, knobs } from "./helpers/graph-harness.ts";
 
 test("after approval the deploy node runs the ticket's target and ends in simulated_deploy", async () => {
   const g = await start();
@@ -161,74 +160,4 @@ test("the token budget grows only with verified tasks, up to a fixed ceiling", a
   assert.match(String(budgetExceeded([u, u, u], env, 1)), /budget exceeded \(450 > 200\)/);
   assert.match(String(budgetExceeded([u], env, -3)), /budget exceeded \(150 > 100\)/);
   assert.match(String(budgetExceeded(Array(100).fill(u), env, 999)), /> 800\)/);
-});
-
-test("docs run first, in the middle and last, land in .claude/docs of the main checkout and never dirty it", async () => {
-  knobs.override = { docs: () => DOC_FILE };
-  const g = await start();
-  assert.equal(paused(g.r)?.type, "approval");
-  assert.equal(readFileSync(join(g.repo, ".claude", "docs", "arquitetura", "visao.md"), "utf8"), "# Visao\n");
-  assert.equal(git(g.repo, "status", "--porcelain"), "");
-  assert.equal(knobs.docsCalls.length, 3);
-  assert.match(knobs.docsContexts[0], /Mode: scan/);
-  assert.match(knobs.docsContexts[1], /Phase: mid/);
-  assert.match(knobs.docsContexts[1], /Revisions: 0/);
-  assert.match(knobs.docsContexts[2], /Phase: end/);
-  assert.match(knobs.docsContexts[2], /commit:[0-9a-f]+/);
-  assert.match(knobs.docsContexts[2], new RegExp(`tests:${FAST_TEST.replaceAll(".", "\\.")} ok`));
-  assert.ok((g.r.history as { node: string }[]).filter((h) => h.node === "docs").length === 3);
-});
-
-test("a ticket that escalates still gets its progress recorded by docs_mid, and docs_end does not run", async () => {
-  knobs.override = { docs: () => DOC_FILE };
-  knobs.override.dev = (req) => (commit(req.cwd, "agent-dev"), commit(req.cwd, "agent-dev", "big.txt", "x".repeat(70_000)), { summary: "ok", brief: BRIEF });
-  const g = await start();
-  assert.equal(paused(g.r)?.type, "escalation");
-  assert.equal(knobs.docsCalls.length, 2);
-  assert.match(knobs.docsContexts[1], /Phase: mid/);
-  assert.match(knobs.docsContexts[1], /diff too large/);
-});
-
-test("docs_mid receives the full text of a reviewer rejection, not only the short history", async () => {
-  let n = 0;
-  knobs.override = {
-    docs: () => DOC_FILE,
-    reviewer: () => (++n === 1 ? { verdict: "rejected", comments: "REJECT-WHY: login skips the csrf check", summary: "x" } : { verdict: "approved", comments: "", summary: "ok" }),
-  };
-  const g = await start();
-  assert.equal(paused(g.r)?.type, "approval");
-  assert.match(knobs.docsContexts[1], /Phase: mid[\s\S]*Rejections[\s\S]*reviewer: REJECT-WHY: login skips the csrf check/);
-});
-
-test("a failing or invalid docs agent only adds warnings; the ticket still reaches approval", async () => {
-  for (const docs of [() => { throw new NodeFailure("boom"); }, () => ({ files: "nope" })]) {
-    knobs.override = { docs };
-    const g = await start();
-    assert.equal(paused(g.r)?.type, "approval");
-    const w = g.r.docs_warnings as string[];
-    assert.ok(["start: ", "mid: ", "end: "].every((p) => w.some((x) => x.startsWith(p))), w.join("|"));
-    assert.match(report(Ticket.parse(g.r)), /docs/);
-  }
-});
-
-test("docs are not written when git would not ignore .claude", async () => {
-  knobs.afterFixture = (repo) => {
-    writeFileSync(join(repo, ".gitignore"), "!.claude/\n");
-    git(repo, "add", "-A");
-    git(repo, "commit", "-q", "-m", "unignore");
-  };
-  knobs.override = { docs: () => DOC_FILE };
-  const g = await start();
-  assert.equal(paused(g.r)?.type, "approval");
-  assert.equal(existsSync(join(g.repo, ".claude", "docs", "arquitetura", "visao.md")), false);
-  assert.ok((g.r.docs_warnings as string[]).some((x) => /not ignored/.test(x)));
-  assert.equal(knobs.docsCalls.length, 0);
-});
-
-test("docs usage does not count against the ticket token budget", async () => {
-  knobs.tokensPerCall = 20;
-  process.env.TOKEN_BUDGET_TICKET = "110";
-  const g = await start();
-  assert.equal(paused(g.r)?.type, "approval");
-  assert.equal(g.r.status, "approval");
 });
