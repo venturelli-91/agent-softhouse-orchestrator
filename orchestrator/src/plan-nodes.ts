@@ -68,7 +68,7 @@ export const discovery = guarded("discovery", async (t) => {
     status: "planned_input",
     discovery_output: output,
     briefing: briefingMarkdown(output.briefing, output.ready ? [] : output.questions),
-    history: log(t, "discovery", output.ready ? "ready" : "defaults assumed", usage),
+    history: log(t, "discovery", output.ready ? "ready" : output.questions.length ? "defaults assumed" : "nothing to ask", usage),
   };
 });
 
@@ -82,6 +82,7 @@ export const planner = guarded("planner", async (t) => {
     schema: PlanOutput.extend({ specialty: only(t) }),
     context: context(
       `CEO request: ${t.request}`,
+      `Triage: ${t.summary}`,
       ...(t.briefing ? [`Briefing:\n${t.briefing}`] : []),
       "Acceptance criteria must trace back to the briefing's success and scope.",
       ...teamNote(t),

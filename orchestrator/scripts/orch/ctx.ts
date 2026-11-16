@@ -15,7 +15,20 @@ export const die = (msg: string): never => {
   process.exit(1);
 };
 
-type Pending = { type: "approval" | "escalation" | "no_change" | "host_review" | "discovery"; reason?: string | null; title: string; summary?: string; problem?: string };
+type Pending = {
+  type: "approval" | "escalation" | "no_change" | "host_review" | "discovery";
+  reason?: string | null;
+  title: string;
+  summary?: string;
+  problem?: string;
+  questions?: { question: string; default: string }[];
+};
+
+// A discovery pause lists its questions numbered, so the CEO can answer "1: ... 2: ..." from the notification alone.
+export const pendingDetail = (p: Pending) =>
+  p.type === "discovery"
+    ? [p.problem, ...(p.questions ?? []).map((q, i) => `${i + 1}. ${q.question} (default: ${q.default})`)].join("\n")
+    : (p.reason ?? p.summary);
 
 export function makeCtx(argv: string[], host: string) {
   const [cmd, ...rest] = argv;
@@ -61,7 +74,7 @@ export function makeCtx(argv: string[], host: string) {
         host_review: `orch approve ${id} (allow these versions of the host files)  |  orch request-changes ${id} "<what to change>"  |  orch reject ${id}`,
         discovery: `orch approve ${id} "1: ... 2: ..."  |  orch approve ${id} (accept every default)  |  orch reject ${id} (close)`,
       }[pending.type];
-      await notify(`${id} waiting for you (${pending.type}): ${pending.title}\n${pending.reason ?? pending.summary ?? pending.problem}\n${next}`);
+      await notify(`${id} waiting for you (${pending.type}): ${pending.title}\n${pendingDetail(pending)}\n${next}`);
     } else {
       const done = ["simulated_deploy", "aborted", "closed", "merged"].includes(ticket.status);
       console.log(`${id}: ${ticket.status}${done ? "" : ` - ${ticket.summary}`}`);

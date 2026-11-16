@@ -144,6 +144,8 @@ test("discovery with nothing to ask goes to the planner", async () => {
   const g = await start();
   assert.notEqual(paused(g.r)?.type, "discovery");
   assert.ok(knobs.calls.includes("planner"));
+  const s = await g.graph.getState(g.cfg);
+  assert.ok(s.values.history.some((h: { node: string; result: string }) => h.node === "discovery" && h.result === "nothing to ask"));
 });
 
 test("the CEO can abort at the discovery questions", async () => {
@@ -164,9 +166,11 @@ test("a planner that still cannot close the criteria escalates and aborts", asyn
 });
 
 test("an unclear incident ticket skips discovery", async () => {
-  knobs.override.triage = ambiguous;
+  knobs.override.triage = () => ({ ...(ambiguous() as object), summary: "TRIAGE-CANARY" });
+  let plannerCtx = "";
+  knobs.override.planner = (req) => ((plannerCtx = req.context), defaults.planner!(req));
   await start("T-1", new MemorySaver(), { incident: "inc-1" });
-  assert.ok(knobs.calls.includes("planner"));
+  assert.match(plannerCtx, /Triage: TRIAGE-CANARY/);
   assert.ok(!knobs.calls.includes("discovery"));
 });
 
