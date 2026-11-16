@@ -26,9 +26,8 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 | `orch watch` | One monitor pass over deployed tickets; incidents and hotfixes in [12-operations.md](12-operations.md). |
 | `orch resolve <incident-id>` | Closes an incident by hand (the service is back, or you handled it elsewhere). |
 | `orch rollback <incident-id> [--config-reviewed]` | Your approval of the proposed rollback; `--config-reviewed` accepts a changed `.git/config` after review. |
-| `orch chaos <ticket-id> <scenario>\|--clear` | Injects (or clears) a failure on a sandbox deploy; scenarios in [12-operations.md](12-operations.md). |
 | `npm run tracer -- --clean` | End-to-end ticket on the Claude Code login, no key: `echo approve \| npm run tracer -- --clean`. Real repo: `--repo <path> --id T-1 "request"`. Approve later from another process: add `--db state.json`, rerun with `--resume`. |
-| `npm run watchdog -- --db state.json` | Free, rule-based sweep for stalled, looping or over-budget tickets; `--llm` adds the Watchdog agent. |
+| `npm run watchdog -- --db state.json` | Free, rule-based sweep for stalled, looping or over-budget tickets. |
 | `npm run eval:review\|eval:stages\|eval:dev -- --models a,b --reps 3` | Scores a model per stage on cases with known answers (dev uses hidden acceptance tests). Matrix in [08](08-real-repo-validation.md); `.env.example` ships what it supports. |
 | `npm run typecheck` | `tsc --noEmit`. |
 | `npm run test:unit`, `npm run test:int`, `npm test` | Unit tests, integration tests, both. |
@@ -92,6 +91,7 @@ graph TD;
 	triage(triage)
 	planner(planner)
 	dev(dev)
+	docs_pre(docs_pre)
 	reviewer(reviewer)
 	design(design)
 	qa(qa)
@@ -101,41 +101,36 @@ graph TD;
 	ceo_approval(ceo_approval)
 	merge_pr(merge_pr)
 	deploy(deploy)
-	docs_start(docs_start)
-	docs_mid(docs_mid)
-	docs_end(docs_end)
 	__end__([<p>__end__</p>]):::last
-	__start__ --> docs_start;
+	__start__ --> triage;
+	docs_pre --> reviewer;
 	deploy --> __end__;
-	docs_end --> ceo_approval;
-	docs_start --> triage;
 	triage -.-> dev;
 	triage -.-> planner;
-	triage -.-> docs_mid;
+	triage -.-> ceo_approval;
 	planner -.-> dev;
-	planner -.-> docs_mid;
-	dev -.-> reviewer;
-	dev -.-> docs_mid;
+	planner -.-> ceo_approval;
+	dev -.-> docs_pre;
+	dev -.-> dev;
+	dev -.-> ceo_approval;
 	reviewer -.-> design;
 	reviewer -.-> qa;
 	reviewer -.-> dev;
-	reviewer -.-> docs_mid;
+	reviewer -.-> ceo_approval;
 	design -.-> qa;
 	design -.-> dev;
-	design -.-> docs_mid;
+	design -.-> ceo_approval;
 	qa -.-> webcheck;
 	qa -.-> dev;
-	qa -.-> docs_mid;
+	qa -.-> ceo_approval;
 	webcheck -.-> load;
-	webcheck -.-> docs_mid;
 	webcheck -.-> dev;
-	load -.-> docs_mid;
+	webcheck -.-> ceo_approval;
+	load -.-> publish;
 	load -.-> dev;
-	publish -.-> docs_end;
+	load -.-> ceo_approval;
+	publish -.-> ceo_approval;
 	publish -.-> dev;
-	publish -.-> docs_mid;
-	docs_mid -.-> publish;
-	docs_mid -.-> ceo_approval;
 	ceo_approval -.-> triage;
 	ceo_approval -.-> planner;
 	ceo_approval -.-> dev;
@@ -149,8 +144,8 @@ graph TD;
 	ceo_approval -.-> merge_pr;
 	ceo_approval -.-> __end__;
 	merge_pr -.-> deploy;
+	merge_pr -.-> dev;
 	merge_pr -.-> ceo_approval;
-	dev -.-> dev;
 	classDef default fill:#f2f0ff,line-height:1.2;
 	classDef first fill-opacity:0;
 	classDef last fill:#bfb6fc;

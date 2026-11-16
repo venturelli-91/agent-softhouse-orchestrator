@@ -1,4 +1,4 @@
-# Operations: deploy, watch, probe, chaos, webcheck
+# Operations: deploy, watch, probe, webcheck
 
 Commands and variables are in [11-reference.md](11-reference.md).
 
@@ -51,14 +51,8 @@ and a failed rollback stays proposed so you can retry.
 
 For command deploys `orch watch` requests `health_url` and reports `http <status>` (redirects are not followed, so a
 3xx is a symptom), `timeout after <n>ms`, `latency over <m>ms` or `unreachable: <code>`; the URL may not carry
-credentials and never appears in a symptom; `orch chaos` still works only on the simulated target.
-
-## Chaos (sandbox only)
-
-`orch chaos <ticket-id> <scenario>` injects a failure that the simulated probe reports; `orch chaos <ticket-id> --clear`
-removes it. It refuses any deploy whose target is not a sandbox and writes nothing. Scenarios: `broken-build`,
-`missing-env`, `failed-migration`, `http-500`, `latency-spike`, `memory-growth`, `cert-expired`, `api-down`,
-`api-timeout`, `rate-limit`, `db-down`, `regression`.
+credentials and never appears in a symptom. A command deploy without `health_url` has no health check and is not
+monitored.
 
 ## Design and webcheck nodes
 
@@ -80,7 +74,7 @@ ids load from Google hosts, plus LCP/CLS budgets. Config, external only like `de
 
 A failed check, or an app that does not start or load (serve exits, no answer, page timeout), goes back to the dev; a
 port that already answers escalates to you; no `webcheck` configured, or Playwright or Chromium missing, skips with a
-warning in the docs record. INP needs real interaction, so there is no INP budget. Ads, Analytics and GTM are checked
+warning. INP needs real interaction, so there is no INP budget. Ads, Analytics and GTM are checked
 only through the browser: no account APIs or credentials.
 
 ## Load and concurrency stage
@@ -106,7 +100,7 @@ as "dependency not reached".
 A breach (error rate, fast path stalled while the dependency is slow, no recovery, service died) goes back to the dev as
 `load: ...`; a failed phase is re-run once before it counts. A pass puts one summary line in the PR body and in the
 approval request, and the JSON report is saved as `ORCH_HOME/load-<id>.json`. A port that already answers or a runner
-that crashes escalates to you; a runner or proxy that cannot start skips with a warning in the docs record.
+that crashes escalates to you; a runner or proxy that cannot start skips with a warning.
 
 ## Merge permission outside the orchestrator
 
@@ -114,6 +108,6 @@ With `merge: pr` the orchestrator publishes the PR and stops; the merge is yours
 
 ## See also
 
-- Project docs written by the `docs_*` nodes: [10-project-docs.md](10-project-docs.md).
+- Project docs (`project_docs`) updated by the `docs_pre` node: [10-project-docs.md](10-project-docs.md).
 - Defenses and limits: [09-hardening.md](09-hardening.md).
 - Removing the orchestrator (back to the old flow): [README.md](../README.md).

@@ -29,10 +29,9 @@ observability; it does not run a deploy or a merge. A node failure ends in
 
 ## watchdog — `src/watchdog.ts`
 
-`watchdog(tickets, cwd)`: outside the graph, per call. Receives one line per ticket (id,
-priority, status, revisions, tokens, last node), read-only role, returns
-`{alerts, summary}`. There is no script/CLI: the state lives in the in-memory
-checkpointer; the command arrives when there is a persistent checkpointer.
+`alerts(tickets)`: outside the graph, per call, rule-based and free. Receives the ticket
+states and flags stalled (24 h, P0 1 h), review-loop, over-budget and escalated tickets,
+without a model.
 
 ## Tests (fake nodes and publisher)
 

@@ -14,9 +14,9 @@ One roster, one prompt source. The prompt of every role lives in `orchestrator/a
 | Quality | `code-reviewer` | every ticket |
 | Quality | `qa-automation` | every ticket, after the reviewer |
 | Quality | `security`, `performance`, `evals-engineer` | added to the review when the ticket flags `touches_security`, `touches_performance`, `touches_ai` |
-| Operate | `docs` | after QA, writes the project docs |
+| Operate | `docs` | before review, updates the repo's `project_docs` (only when the config lists them) |
 | Operate | `knowledge-manager` | postmortem of an incident |
-| Operate | `watchdog` | `orch` watchdog pass over tickets |
+| Operate | `watchdog` | `/daily-brief` and `/watchdog-scan` ritual; the rule-based sweep is `alerts()` in code, no model |
 | Operate | `devops-sre` | interactive flow only: deploy in the graph is done by code, after the CEO |
 
 Nobody approves their own delivery: the reviewer and QA cannot be the commit author (checked in code).
