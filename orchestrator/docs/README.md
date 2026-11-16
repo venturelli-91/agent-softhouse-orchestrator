@@ -13,7 +13,7 @@ the real barriers are code, CLI permissions, an isolated worktree and a minimal 
 | [01-executor.md](01-executor.md) | `run-agent.ts`, `guardrails.ts` (Section 2), real `claude -p` flags, measurements |
 | [02-tracer-bullet-graph.md](02-tracer-bullet-graph.md) | `graph.ts`, state, nodes, edges, tracer with a real model, consumption baseline, bugs |
 | [03-flow-guardrails.md](03-flow-guardrails.md) | `guardrails.ts` Section 1, escalation to the CEO, tests with fake nodes, CI, live regression |
-| [04-planner.md](04-planner.md) | planner node, scope clarification with the CEO |
+| [04-planner.md](04-planner.md) | planner node (closes criteria after discovery) |
 | [05-publish-devops-watchdog.md](05-publish-devops-watchdog.md) | push/PR by code, post-CEO devops, watchdog |
 | [06-phase-3-and-final-report.md](06-phase-3-and-final-report.md) | publishing, live regression, final report |
 | [07-metrics.md](07-metrics.md) | consolidated metrics for consumption, tests, code and process |

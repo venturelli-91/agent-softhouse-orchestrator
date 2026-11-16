@@ -79,6 +79,8 @@ Target repo rules: the dev receives the repo's `CLAUDE.md` (from the base commit
 
 ## Graph
 
+Incident tickets go from triage straight to the planner and adopted trees straight to the dev, never through `discovery`.
+
 Generated from `src/graph.ts`; regenerate with `buildGraph().getGraphAsync()` then `.drawMermaid()` (needs `TOKEN_BUDGET_TICKET` set).
 `ceo_approval` is the only human gate: every merge, deploy, escalation and "no change needed" passes through it.
 The pending payload (`orch status <id>`) carries `revisions` and `last_node`, plus the dev's `explanation` and `brief` even when verification failed.

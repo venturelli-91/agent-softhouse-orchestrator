@@ -10,7 +10,7 @@ One roster, one prompt source. The prompt of every role lives in `orchestrator/a
 |---|---|---|
 | Intake | `triage` | every request: area, priority, flags, clear or ambiguous |
 | Intake | `discovery` | only when triage says the request is unclear: asks the CEO up to 5 problem-first questions before the planner |
-| Intake | `demand-analyst`, `product-manager`, `tech-lead` | only when triage says the request is ambiguous (planner node) |
+| Intake | `demand-analyst`, `product-manager`, `tech-lead` | only when triage says the request is ambiguous (planner node); incident tickets go straight to the planner and adopted trees to the dev, never through discovery |
 | Build | `dev-frontend`, `dev-backend`, `dev-fullstack`, `dev-mobile`, `dev-integrations`, `ai-engineer`, `data-engineer` | one per ticket, chosen by triage `specialty` |
 | Quality | `code-reviewer` | every ticket |
 | Quality | `qa-automation` | every ticket, after the reviewer |

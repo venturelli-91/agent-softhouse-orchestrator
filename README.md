@@ -10,8 +10,8 @@ from a plain-English request to a draft PR, then to merge and deploy after a hum
 ## The ticket graph
 
 Derived from [`orchestrator/src/graph.ts`](orchestrator/src/graph.ts).
-Left out for readability: the `docs_pre` node (project docs), the gate's retry and replan routes
-(back to `triage`, `planner` or the failed node) and its abort route to the end.
+Left out for readability: the `docs_pre` node (project docs), the gate's retry and rediscover routes
+(back to the failed node or to `discovery`) and its abort route to the end.
 Any agent failure, timeout, exceeded budget or the revision cap sends the ticket to the human gate instead of crashing.
 
 ```mermaid
