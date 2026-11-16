@@ -24,7 +24,6 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
   design: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   qa: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   devops: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
-  watchdog: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   knowledge: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   docs: { tools: READ_ONLY, allow: READ_ONLY, deny: SECRETS },
   dev: {

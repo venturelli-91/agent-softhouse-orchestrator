@@ -26,7 +26,7 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
           : t.status === "host_review"
             ? `the diff changes files that run code on the host (${t.host_pending.join(", ")}): approve allows exactly these versions`
             : `${t.status}: ${t.summary}`;
-  const last = t.history.filter((h) => h.node !== "docs").at(-1);
+  const last = t.history.at(-1);
   const r = interrupt({
     type: ["no_change", "host_review"].includes(t.status) ? t.status : reason ? "escalation" : "approval",
     reason,

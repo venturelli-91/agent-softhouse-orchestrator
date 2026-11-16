@@ -23,7 +23,7 @@ export function makeCtx(argv: string[], host: string) {
     args: rest, allowPositionals: true,
     options: {
       repo: { type: "string" }, id: { type: "string" }, all: { type: "boolean" }, force: { type: "boolean" },
-      remote: { type: "boolean" }, title: { type: "string" }, clear: { type: "boolean" },
+      remote: { type: "boolean" }, title: { type: "string" },
       "config-reviewed": { type: "boolean" }, team: { type: "string" }, yes: { type: "boolean" }, "no-install": { type: "boolean" },
       command: { type: "string" }, criteria: { type: "string", multiple: true }, expect: { type: "string" }, exit: { type: "string" },
       owner: { type: "string" }, task: { type: "string" }, demand: { type: "string" },
