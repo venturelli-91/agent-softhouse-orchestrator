@@ -42,9 +42,9 @@ export const DiscoveryQuestion = z.object({
   why: z.string().min(5),
   default: z.string().min(1),
 });
-const text = z.string().default("");
+const briefingText = z.string().default("");
 export const BriefingFields = z.object({
-  problem: text, success: text, users: text, scope_in: text, scope_out: text, constraints: text, example: text,
+  problem: briefingText, success: briefingText, users: briefingText, scope_in: briefingText, scope_out: briefingText, constraints: briefingText, example: briefingText,
 });
 export const DiscoveryOutput = z.object({
   problem: z.string().min(5),
@@ -59,8 +59,8 @@ const BRIEFING_HEADINGS: [keyof z.infer<typeof BriefingFields>, string][] = [
 ];
 export const briefingMarkdown = (b: z.infer<typeof BriefingFields>, assumed: z.infer<typeof DiscoveryQuestion>[]) =>
   [
-    ...BRIEFING_HEADINGS.filter(([k]) => b[k]).map(([k, h]) => `## ${h}\n${b[k]}`),
-    ...(assumed.length ? [`## Assumed defaults\n${assumed.map((a) => `- ${a.question} → ${a.default}`).join("\n")}`] : []),
+    ...BRIEFING_HEADINGS.filter(([k]) => b[k]).map(([k, h]) => `## ${h}\n${plain(b[k])}`),
+    ...(assumed.length ? [`## Assumed defaults\n${assumed.map((a) => `- ${plain(a.question)} → ${plain(a.default)}`).join("\n")}`] : []),
   ].join("\n\n");
 
 export const Ticket = z.object({
