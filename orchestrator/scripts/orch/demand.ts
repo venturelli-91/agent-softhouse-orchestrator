@@ -1,13 +1,12 @@
 // `orch demand`: a demand's tasks, its decision log and the blocking checklist that closes it.
-import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { readBacklog } from "../../src/backlog.ts";
 import {
   addTask, answer, ask, closeDemand, closingChecklist, createDemand, type Demand, demandIds, isDemand, pending, readDemand, type TaskState, waitingDays,
 } from "../../src/demand.ts";
 import { safeGit } from "../../src/guardrails.ts";
 import { isManual, readManual } from "../../src/manual.ts";
-import { loadRepoConfig } from "../../src/repo-config.ts";
 import { lockTicket, ticketFile } from "../../src/ticket-store.ts";
 import { type Ctx, die } from "./ctx.ts";
 
@@ -46,8 +45,7 @@ export async function demand(c: Ctx) {
       console.log(`${id}: decision #${n} answered`);
     } else {
       const d = readDemand(c.home, id);
-      const checks = closingChecklist(d, await taskStates(c, d), readBacklog(c.home), safeGit(d.repo, "status", "--porcelain", "--untracked-files=no"),
-        projectDocs(d.repo));
+      const checks = closingChecklist(d, await taskStates(c, d), readBacklog(c.home), safeGit(d.repo, "status", "--porcelain", "--untracked-files=no"));
       for (const k of checks) console.log(`${k.ok ? "ok  " : "FAIL"} ${k.item}${k.detail ? `: ${k.detail}` : ""}`);
       const closed = attempt(() => closeDemand(c.home, id, checks)).status === "closed";
       console.log(closed ? `${id}: closed` : `${id}: not closed`);
@@ -68,18 +66,6 @@ async function taskStates(c: Ctx, d: Demand): Promise<TaskState[]> {
     } else out.push({ id, kind: null });
   }
   return out;
-}
-
-// The repo's project_docs as they are on disk now (the demand closes after the merge); a missing file or a symlink is simply not read.
-function projectDocs(repo: string): Record<string, string> {
-  const docs: Record<string, string> = {};
-  for (const p of loadRepoConfig(repo, "HEAD").project_docs) {
-    try {
-      const file = join(repo, p);
-      if (lstatSync(file).isFile()) docs[p] = readFileSync(file, "utf8");
-    } catch {}
-  }
-  return docs;
 }
 
 // `--demand` on run, adopt and manual: checked before anything is created, attached once the ticket exists.

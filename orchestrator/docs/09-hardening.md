@@ -15,7 +15,7 @@ What the evals in `08-real-repo-validation.md` turned into, and what was left ou
   are denied by the `dontAsk` allowlist and the dev used to give up without committing.
 - **Rule-based watchdog** (`alerts` in `watchdog.ts`, `npm run watchdog -- --db state.json`):
   flags tickets stalled (24 h, P0 1 h), in a review loop, at 80% of the token budget, or
-  escalated. No model, no tokens; `--llm` adds the Watchdog agent.
+  escalated. No model, no tokens.
 - **Model choice per stage** is data now: `npm run eval:review|eval:stages|eval:dev`.
 
 ## Daily use on real repos

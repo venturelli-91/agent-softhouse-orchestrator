@@ -7,7 +7,7 @@ import { DEV_FILE, SPECIALTIES } from "../src/ticket.ts";
 const AGENTS = resolve(import.meta.dirname, "..", "agents");
 const prompt = (role: string) => join(AGENTS, `${role}.md`);
 
-// Roles the graph loads by name besides the devs (plan-nodes, review-nodes, docs-node, postmortem, watchdog).
+// Roles the graph loads by name besides the devs (plan-nodes, review-nodes, project-docs, postmortem), plus the /watchdog-scan ritual agent.
 const GRAPH_ROLES = [
   "triage", "demand-analyst", "product-manager", "tech-lead", "code-reviewer", "qa-automation",
   "security", "performance", "evals-engineer", "docs", "knowledge-manager", "watchdog",

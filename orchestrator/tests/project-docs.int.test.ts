@@ -88,3 +88,12 @@ test("docs that would push the diff over the review limit are rolled back with a
   assert.equal(git(wt(g.r), "status", "--porcelain"), "");
   assert.ok(!existsSync(join(wt(g.r), "README.md")));
 });
+
+test("docs_pre usage does not count against the ticket token budget", async () => {
+  knobs.override.docs = docs([{ path: "README.md", content: "# Fixture\n" }]);
+  knobs.tokensPerCall = 20;
+  process.env.TOKEN_BUDGET_TICKET = "110";
+  const g = await start("T-1", undefined, { project_docs: ["README.md"] });
+  assert.equal(preCalls().length, 1);
+  assert.equal(paused(g.r)?.type, "approval");
+});

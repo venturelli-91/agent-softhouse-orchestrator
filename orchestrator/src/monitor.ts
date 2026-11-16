@@ -1,4 +1,4 @@
-import type { Probe } from "./chaos.ts";
+import type { Probe } from "./probe.ts";
 import { assertGitConfigUnchanged, gitConfigHash } from "./guardrails.ts";
 import { commandTarget, deployedIds, getDeployTarget, readDeploy, recordDeploy } from "./deploy.ts";
 import { type Incident, listIncidents, openIncident, updateIncident } from "./incidents.ts";

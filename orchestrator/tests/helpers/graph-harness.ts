@@ -9,7 +9,6 @@ import { gitConfigHash } from "../../src/guardrails.ts";
 import { config, createWorktree, buildGraph, resume, Ticket } from "../../src/graph.ts";
 import { registerPublisher } from "../../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../../src/run-agent.ts";
-import { alerts, watchdog } from "../../src/watchdog.ts";
 import { BRIEF, type Behavior, commit, defaults, FLAGS } from "./fakes.ts";
 
 export { BRIEF, type Behavior, commit, defaults, FLAGS };
@@ -121,5 +120,3 @@ export async function commandTicket(cfgOver: object = {}) {
     deploy_target: "command", deploy_cfg: cfg });
   return { t, repo, root, sha };
 }
-
-export const DOC_FILE = { files: [{ path: "arquitetura/visao.md", content: "# Visao\n" }], not_applicable: [], notes: "" };
