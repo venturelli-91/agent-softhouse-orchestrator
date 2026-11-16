@@ -41,7 +41,7 @@ matrix" (section below) may be taken without them.
 ```
 CEO request → Triage
             → [clear]     → Specialized dev → Code Review → QA Automation
-            → [ambiguous] → Demand Analyst → Product Manager → Tech Lead
+            → [ambiguous] → Discovery → Demand Analyst → Product Manager → Tech Lead
                             → Evals Engineer
                             → Specialized dev → Code Review → QA Automation
         → Security / Performance / AI (when applicable)

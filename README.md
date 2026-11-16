@@ -18,7 +18,8 @@ Any agent failure, timeout, exceeded budget or the revision cap sends the ticket
 flowchart TD
     S([request]) --> triage
     triage -->|clear| dev
-    triage -->|ambiguous| planner
+    triage -->|ambiguous| discovery
+    discovery --> planner
     planner --> dev
     dev --> reviewer
     reviewer -->|routed| design

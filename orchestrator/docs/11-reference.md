@@ -89,6 +89,7 @@ A request that needs no code (a check or review) ends with the dev committing no
 graph TD;
 	__start__([<p>__start__</p>]):::first
 	triage(triage)
+	discovery(discovery)
 	planner(planner)
 	dev(dev)
 	docs_pre(docs_pre)
@@ -106,7 +107,10 @@ graph TD;
 	docs_pre --> reviewer;
 	deploy --> __end__;
 	triage -.-> dev;
+	triage -.-> discovery;
 	triage -.-> planner;
+	discovery -.-> planner;
+	discovery -.-> ceo_approval;
 	triage -.-> ceo_approval;
 	planner -.-> dev;
 	planner -.-> ceo_approval;
@@ -132,6 +136,7 @@ graph TD;
 	publish -.-> ceo_approval;
 	publish -.-> dev;
 	ceo_approval -.-> triage;
+	ceo_approval -.-> discovery;
 	ceo_approval -.-> planner;
 	ceo_approval -.-> dev;
 	ceo_approval -.-> reviewer;
