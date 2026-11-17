@@ -17,28 +17,27 @@ export async function httpProbe(url: string, opts: ProbeOpts): Promise<string | 
     if (opts.expect_status === undefined ? !res.ok : res.status !== opts.expect_status) return `http ${res.status}`;
     return ms > opts.max_latency_ms ? `latency over ${opts.max_latency_ms}ms` : null;
   } catch (e) {
-    const err = e as { name?: string; cause?: { code?: string } };
-    if (err.name === "TimeoutError") return `timeout after ${opts.timeout_ms}ms`;
-    return `unreachable: ${err.cause?.code ?? err.name ?? "error"}`;
+    return fetchSymptom(e, opts.timeout_ms);
   }
+}
+
+function fetchSymptom(e: unknown, timeout_ms: number): string {
+  const err = e as { name?: string; cause?: { code?: string } };
+  if (err.name === "TimeoutError") return `timeout after ${timeout_ms}ms`;
+  return `unreachable: ${err.cause?.code ?? err.name ?? "error"}`;
 }
 
 const Metrics = z.object({ requests: z.number().nonnegative(), errors_5xx: z.number().nonnegative() });
 
 export async function errorRate(home: string, id: string, url: string, max: number): Promise<string | null> {
-  let res: Response;
-  try {
-    res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
-  } catch (e) {
-    const err = e as { name?: string; cause?: { code?: string } };
-    return `${err.name === "TimeoutError" ? "timeout after 10000ms" : `unreachable: ${err.cause?.code ?? err.name ?? "error"}`} on metrics`;
-  }
-  if (!res.ok) return `http ${res.status} on metrics`;
+  const timeout_ms = 10_000;
   let parsed;
   try {
-    parsed = Metrics.safeParse(await res.json());
-  } catch {
-    return "metrics: invalid payload";
+    const res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(timeout_ms) });
+    if (!res.ok) return `http ${res.status} on metrics`;
+    parsed = Metrics.safeParse(await res.json().catch((e) => (e as Error).name === "TimeoutError" ? Promise.reject(e) : null));
+  } catch (e) {
+    return `${fetchSymptom(e, timeout_ms)} on metrics`;
   }
   if (!parsed.success) return "metrics: invalid payload";
   const { requests, errors_5xx } = parsed.data;

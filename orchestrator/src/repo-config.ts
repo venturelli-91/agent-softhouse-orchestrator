@@ -18,7 +18,7 @@ export const DeployCheck = z.object({
   path: urlPath,
   expect_status: z.number().int().min(100).max(599),
   body: jsonBody.optional(),
-});
+}).refine((c) => c.body === undefined || !["GET", "HEAD"].includes(c.method), { message: "GET and HEAD checks cannot carry a body", path: ["body"] });
 export type DeployCheck = z.infer<typeof DeployCheck>;
 // Real deploy commands run on the host with credentials, so this block is accepted only from the external config.
 export const DeployConfig = z.object({

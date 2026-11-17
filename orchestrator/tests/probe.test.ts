@@ -191,3 +191,9 @@ test("forgetDeploy removes the counters", () => withHome(async (home) => {
   forgetDeploy(home, "T-1");
   assert.equal(readCounters(home, "T-1"), null);
 }));
+
+test("a check that times out keeps the timeout prefix", () => withHome(async (home) => {
+  deployWith(home, { checks: [{ method: "GET", path: "/slow", expect_status: 200 }] });
+  handler = (res, req) => req.url === "/slow" ? void 0 : res.end("ok");
+  assert.match((await defaultProbe(home, "T-1"))!, /^timeout after \d+ms on GET \/slow$/);
+}));

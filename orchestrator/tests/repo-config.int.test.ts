@@ -275,12 +275,18 @@ test("deploy checks, metrics_url and max_error_rate are optional and kept as giv
   t.done();
 });
 
-test("production checks accept only GET or HEAD without a body", () => {
-  for (const check of [{ method: "POST", path: "/x", expect_status: 200 }, { method: "GET", path: "/x", expect_status: 200, body: "{}" }]) {
-    const t = withDeploy({ ...okDeploy, environment: "production", checks: [check] });
-    assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /checks: production checks must be GET or HEAD without a body/);
+test("a GET or HEAD check with a body is rejected in every environment", () => {
+  for (const environment of ["staging", "production"]) for (const method of ["GET", "HEAD"]) {
+    const t = withDeploy({ ...okDeploy, environment, checks: [{ method, path: "/x", expect_status: 200, body: "{}" }] });
+    assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /cannot carry a body/);
     t.done();
   }
+});
+
+test("production checks accept only GET or HEAD without a body", () => {
+  const p = withDeploy({ ...okDeploy, environment: "production", checks: [{ method: "POST", path: "/x", expect_status: 200 }] });
+  assert.throws(() => loadRepoConfig(p.d, p.base, p.h), /checks: production checks must be GET or HEAD without a body/);
+  p.done();
   const t = withDeploy({ ...okDeploy, environment: "production", checks: [{ method: "HEAD", path: "/", expect_status: 200 }] });
   assert.equal(loadRepoConfig(t.d, t.base, t.h).deploy?.checks?.length, 1);
   t.done();
