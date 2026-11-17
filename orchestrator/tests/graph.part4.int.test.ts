@@ -161,3 +161,13 @@ test("the token budget grows only with verified tasks, up to a fixed ceiling", a
   assert.match(String(budgetExceeded([u], env, -3)), /budget exceeded \(150 > 100\)/);
   assert.match(String(budgetExceeded(Array(100).fill(u), env, 999)), /> 800\)/);
 });
+
+test("checks, metrics_url and max_error_rate are snapshotted into the record and shown in the approval", async () => {
+  const extra = { checks: [{ method: "GET" as const, path: "/login", expect_status: 200 }], metrics_url: "http://127.0.0.1:1/metrics", max_error_rate: 0.05 };
+  const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: { ...CMD_CFG, ...extra } });
+  assert.deepEqual(paused(g.r)?.deploy, { target: "command", environment: "staging", command: "node --version", rollback: "node --version",
+    env: [], health_url: CMD_CFG.health_url, ...extra });
+  const end = await answer(g, "approve");
+  assert.deepEqual(readDeploy(process.env.ORCH_HOME!, "T-1").cmd, { rollback: "node --version", health_url: CMD_CFG.health_url, env: [], timeout_s: 30,
+    max_latency_ms: 2000, environment: "staging", git_config_hash: end.git_config_hash, ...extra });
+});

@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isSafeCommand } from "./commands.ts";
+import type { DeployCheck } from "./repo-config.ts";
 import { minimalEnv } from "./guardrails.ts";
 import { runShimmed, shadowsBin } from "./platform.ts";
 import { checkId } from "./ticket-store.ts";
@@ -13,6 +14,7 @@ export type DeployTarget = {
 export type CommandSettings = {
   rollback: string; health_url: string; env: string[]; timeout_s: number; max_latency_ms: number;
   environment: "staging" | "production"; git_config_hash: string;
+  checks?: DeployCheck[]; metrics_url?: string; max_error_rate?: number;
 };
 export type DeployRecord = { id: string; repo: string; sha: string; previous: string; target: string; sandbox: boolean; cmd?: CommandSettings };
 
