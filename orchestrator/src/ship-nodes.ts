@@ -7,7 +7,7 @@ import { repoOf, safeGit, verifyTicket } from "./guardrails.ts";
 import { checkConfig, guarded, log } from "./graph-kit.ts";
 import { handRebased, mergeLocalTicket } from "./local-merge.ts";
 import { mergePr, publish } from "./publish.ts";
-import { verifyDeploy, verifyMinutes } from "./monitor.ts";
+import { isLimit, verifyDeploy, verifyMinutes } from "./monitor.ts";
 import { notify } from "./notify.ts";
 import { defaultProbe } from "./probe.ts";
 import { loadRepoConfig } from "./repo-config.ts";
@@ -139,7 +139,7 @@ export const verifyDeployNode = guarded("verify_deploy", async (t) => {
     if (r.outcome === "degraded") summary = `deploy degraded: ${r.symptom}; incident ${r.incident} opened, rollback proposed -> orch rollback ${r.incident}`;
     else summary = r.outcome === "healthy" ? `deploy verified: healthy for ${minutes} min` : "deploy not verified: no health check configured";
   } catch (e) {
-    if (/limit/.test((e as Error).message)) throw new NodeFailure("deploy degraded but the open incident limit is reached");
+    if (isLimit(e)) throw new NodeFailure("deploy degraded but the open incident limit is reached");
     throw e;
   }
   return { summary, history: log(t, "verify_deploy", summary) };

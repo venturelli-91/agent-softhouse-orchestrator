@@ -19,7 +19,7 @@ const liveIncident = (home: string, id: string, symptom: string) => {
   return live ? { incident: live.symptom === symptom ? live : updateIncident(home, live.id, { symptom }), created: false } : openIncident(home, id,
     symptom);
 };
-const isLimit = (e: unknown) => e instanceof Error && /limit/.test(e.message);
+export const isLimit = (e: unknown) => e instanceof Error && /limit/.test(e.message);
 
 export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> {
   for (const id of deployedIds(home)) {

@@ -8,7 +8,7 @@ import { MemorySaver } from "@langchain/langgraph";
 import { git } from "../scripts/fixture.ts";
 import { createServer } from "node:http";
 import { readDeploy } from "../src/deploy.ts";
-import { listIncidents } from "../src/incidents.ts";
+import { listIncidents, MAX_OPEN_INCIDENTS, openIncident } from "../src/incidents.ts";
 import { deployTicket, Ticket } from "../src/graph.ts";
 import { BRIEF, FLAGS, commit, start, paused, answer, approved, CMD_CFG, writeExternal, commandTicket, knobs } from "./helpers/graph-harness.ts";
 
@@ -202,4 +202,12 @@ test("a degraded command deploy opens an incident with the rollback proposed", a
   assert.equal(end.status, "deployed");
   assert.equal(inc.rollback, "proposed");
   assert.match(end.summary, new RegExp(`^deploy degraded: unreachable: .*; incident ${inc.id} opened, rollback proposed -> orch rollback ${inc.id}$`));
+});
+
+test("a degraded deploy with the open incident limit reached escalates from verify_deploy", async () => {
+  for (let i = 0; i < MAX_OPEN_INCIDENTS; i++) openIncident(process.env.ORCH_HOME!, `OTHER-${i}`, "http 500");
+  const end = await answer(await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: CMD_CFG }), "approve");
+  assert.equal(end.status, "escalated");
+  assert.equal(end.failed_node, "verify_deploy");
+  assert.match(end.summary, /open incident limit is reached/);
 });
