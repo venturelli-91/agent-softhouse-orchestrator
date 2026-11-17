@@ -7,6 +7,9 @@ import { repoOf, safeGit, verifyTicket } from "./guardrails.ts";
 import { checkConfig, guarded, log } from "./graph-kit.ts";
 import { handRebased, mergeLocalTicket } from "./local-merge.ts";
 import { mergePr, publish } from "./publish.ts";
+import { isLimit, verifyDeploy, verifyMinutes } from "./monitor.ts";
+import { notify } from "./notify.ts";
+import { defaultProbe } from "./probe.ts";
 import { loadRepoConfig } from "./repo-config.ts";
 import { NodeFailure } from "./run-agent.ts";
 import { briefMarkdown, type T } from "./ticket.ts";
@@ -125,6 +128,21 @@ export const deploy = guarded("deploy", async (t) => {
     } catch {}
   }
   return done;
+});
+
+// A degraded deploy opens the incident and proposes the rollback now, not at the next `orch watch`; the status stays as deploy set it.
+export const verifyDeployNode = guarded("verify_deploy", async (t) => {
+  const minutes = verifyMinutes();
+  let summary: string;
+  try {
+    const r = await verifyDeploy(orchHome(), t.id, { probe: defaultProbe, notify, minutes });
+    if (r.outcome === "degraded") summary = `deploy degraded: ${r.symptom}; incident ${r.incident} opened, rollback proposed -> orch rollback ${r.incident}`;
+    else summary = r.outcome === "healthy" ? `deploy verified: healthy for ${minutes} min` : "deploy not verified: no health check configured";
+  } catch (e) {
+    if (isLimit(e)) throw new NodeFailure((e as Error).message);
+    throw e;
+  }
+  return { summary, history: log(t, "verify_deploy", summary) };
 });
 
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.

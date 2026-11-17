@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type { Probe } from "./probe.ts";
 import { assertGitConfigUnchanged, gitConfigHash } from "./guardrails.ts";
 import { commandTarget, deployedIds, getDeployTarget, readDeploy, recordDeploy } from "./deploy.ts";
@@ -13,7 +14,12 @@ export type WatchDeps = {
 const INFRA_ONLY = /^(unreachable|timeout)\b/;
 // a finished rollback is never reopened: the one-shot guard in approveRollback depends on it
 const proposal = (i: Incident): Partial<Incident> => (i.rollback === "none" ? { rollback: "proposed" } : {});
-const isLimit = (e: unknown) => e instanceof Error && /limit/.test(e.message);
+const liveIncident = (home: string, id: string, symptom: string) => {
+  const live = listIncidents(home).find((i) => i.ticket === id && i.status !== "closed");
+  return live ? { incident: live.symptom === symptom ? live : updateIncident(home, live.id, { symptom }), created: false } : openIncident(home, id,
+    symptom);
+};
+export const isLimit = (e: unknown) => e instanceof Error && /limit/.test(e.message);
 
 export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> {
   for (const id of deployedIds(home)) {
@@ -24,9 +30,7 @@ export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> 
     }
     let opened: { incident: Incident; created: boolean };
     try {
-      const live = listIncidents(home).find((i) => i.ticket === id && i.status !== "closed");
-      opened = live ? { incident: live.symptom === symptom ? live : updateIncident(home, live.id, { symptom }), created: false } : openIncident(home,
-        id, symptom);
+      opened = liveIncident(home, id, symptom);
     } catch (e) {
       if (isLimit(e)) continue;
       throw e;
@@ -47,6 +51,39 @@ export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> 
     }
   }
   return listIncidents(home);
+}
+
+const VERIFY_POLL_MS = 30_000;
+
+export const verifyMinutes = (env: NodeJS.ProcessEnv = process.env): number => {
+  const n = Number(env.VERIFY_MINUTES?.trim() || 5);
+  return Number.isFinite(n) && n >= 0 ? n : 5;
+};
+
+type VerifyResult = { outcome: "healthy" | "skipped" } | { outcome: "degraded"; symptom: string; incident: string };
+
+export async function verifyDeploy(home: string, id: string, deps: { probe: Probe; notify: (text: string) => Promise<void>; minutes: number;
+  sleep?: (ms: number) => Promise<unknown> }): Promise<VerifyResult> {
+  if (!readDeploy(home, id).cmd?.health_url) return { outcome: "skipped" };
+  const sleep = deps.sleep ?? delay;
+  const polls = Math.floor((deps.minutes * 60_000) / VERIFY_POLL_MS) + 1;
+  for (let n = 0; n < polls; n++) {
+    if (n) await sleep(VERIFY_POLL_MS);
+    const symptom = await deps.probe(home, id);
+    if (symptom === null) continue;
+    let live: ReturnType<typeof liveIncident>;
+    try {
+      live = liveIncident(home, id, symptom);
+    } catch (e) {
+      if (isLimit(e)) throw new Error(`deploy degraded (${symptom}) but the open incident limit is reached`);
+      throw e;
+    }
+    const { incident, created } = live;
+    updateIncident(home, incident.id, proposal(incident));
+    if (created) await deps.notify(`Incident ${incident.id} on ${id}: ${symptom} -> orch rollback ${incident.id}`);
+    return { outcome: "degraded", symptom, incident: incident.id };
+  }
+  return { outcome: "healthy" };
 }
 
 export function resolveIncident(home: string, incidentId: string): void {

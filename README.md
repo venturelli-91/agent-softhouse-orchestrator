@@ -34,7 +34,8 @@ flowchart TD
     gate -->|rejected, up to 2 attempts| dev
     gate -->|approved| merge_pr
     merge_pr --> deploy
-    deploy --> E([done])
+    deploy --> verify_deploy
+    verify_deploy --> E([done])
     merge_pr -.->|merge failed| gate
 ```
 

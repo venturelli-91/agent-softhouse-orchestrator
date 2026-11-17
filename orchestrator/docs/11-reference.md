@@ -46,6 +46,7 @@ Every `orch <command>` is `npm run orch -- <command>`, run from `orchestrator/`.
 | `RETRY_DELAYS_MS` | Waits between retries of a busy API, default `5000,20000`; a usage limit is never retried; empty disables retries. |
 | `STALE_HOURS` | Watchdog: hours without movement before a ticket is flagged (default 24; a P0 waits 1h). |
 | `MERGE_WAIT_MS` | How long `merge: auto` waits for CI (default 600000); no checks at all means no automatic merge. |
+| `VERIFY_MINUTES` | How long `verify_deploy` probes after a deploy, every 30 s (default 5; 0 probes once; invalid → 5). |
 | `ORCH_HOME` | State and external config (default `orchestrator/.state`): `tickets/<id>.json`, plus `tickets/<id>.lock` while a command runs (a second command refuses with "already running"; a lock from a dead process is replaced); `backlog.jsonl`, one line per caveat an approving reviewer, design or QA left, with the origin ticket, and one more per review (append-only, last line wins); `manual/<id>.json`, one per manual ticket; `demands/<id>.json`, one per demand. |
 | `ORCH_WORK` | Ticket worktrees and deploy checkouts (default `~/.orchestrator/work`), outside the repo so the agent cannot reach its `.env` with `../`. |
 
@@ -106,14 +107,17 @@ graph TD;
 	ceo_approval(ceo_approval)
 	merge_pr(merge_pr)
 	deploy(deploy)
+	verify_deploy(verify_deploy)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> triage;
 	docs_pre --> reviewer;
-	deploy --> __end__;
+	verify_deploy --> __end__;
 	triage -.-> dev;
 	triage -.-> discovery;
 	triage -.-> planner;
 	discovery -.-> planner;
+	deploy -.-> verify_deploy;
+	deploy -.-> __end__;
 	discovery -.-> ceo_approval;
 	triage -.-> ceo_approval;
 	planner -.-> dev;
