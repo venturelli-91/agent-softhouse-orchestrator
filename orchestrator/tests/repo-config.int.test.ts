@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { permissionArgs, SHELL, verifyEvidence } from "../src/guardrails.ts";
-import { LoadConfig, loadRepoConfig, WebcheckConfig } from "../src/repo-config.ts";
+import { type DeployConfig, LoadConfig, loadRepoConfig, promotes, stageOf, WebcheckConfig } from "../src/repo-config.ts";
 
 process.env.ORCH_HOME = mkdtempSync(join(tmpdir(), "rc-home-"));
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
@@ -187,7 +187,7 @@ const okDeploy = { command: "vercel deploy", rollback: "vercel rollback", health
 test("a deploy block in the external config is loaded with defaults", () => {
   const t = withDeploy(okDeploy);
   const c = loadRepoConfig(t.d, t.base, t.h);
-  assert.deepEqual(c.deploy, { ...okDeploy, environment: "staging", env: [], timeout_s: 300, max_latency_ms: 2000 });
+  assert.deepEqual(c.deploy, { ...okDeploy, environment: "staging", env: [], timeout_s: 300, max_latency_ms: 2000, verify_minutes: 5 });
   assert.equal(loadRepoConfig(repo().d, repo().base).deploy, null);
   t.done();
 });
@@ -271,7 +271,7 @@ test("project_docs accepts relative .md paths only", () => {
 test("deploy checks, metrics_url and max_error_rate are optional and kept as given", () => {
   const extra = { checks: [{ method: "POST", path: "/items", expect_status: 201, body: '{"a":1}' }], metrics_url: "https://x.example/metrics", max_error_rate: 0.05 };
   const t = withDeploy({ ...okDeploy, ...extra });
-  assert.deepEqual(loadRepoConfig(t.d, t.base, t.h).deploy, { ...okDeploy, ...extra, environment: "staging", env: [], timeout_s: 300, max_latency_ms: 2000 });
+  assert.deepEqual(loadRepoConfig(t.d, t.base, t.h).deploy, { ...okDeploy, ...extra, environment: "staging", env: [], timeout_s: 300, max_latency_ms: 2000, verify_minutes: 5 });
   t.done();
 });
 
@@ -288,7 +288,7 @@ test("production checks accept only GET or HEAD", () => {
   assert.throws(() => loadRepoConfig(p.d, p.base, p.h), /checks: production checks must be GET or HEAD/);
   p.done();
   const t = withDeploy({ ...okDeploy, environment: "production", checks: [{ method: "HEAD", path: "/", expect_status: 200 }] });
-  assert.equal(loadRepoConfig(t.d, t.base, t.h).deploy?.checks?.length, 1);
+  assert.equal((loadRepoConfig(t.d, t.base, t.h).deploy as DeployConfig).checks?.length, 1);
   t.done();
 });
 
@@ -303,6 +303,44 @@ test("bad checks and metrics_url are rejected", () => {
   ]) {
     const t = withDeploy({ ...okDeploy, ...bad });
     assert.throws(() => loadRepoConfig(t.d, t.base, t.h), Error, JSON.stringify(bad));
+    t.done();
+  }
+});
+
+test("the flat deploy block defaults verify_minutes to 5", () => {
+  const t = withDeploy(okDeploy);
+  assert.equal((loadRepoConfig(t.d, t.base, t.h).deploy as DeployConfig).verify_minutes, 5);
+  t.done();
+});
+
+test("a staging and production pair is loaded with defaults per target", () => {
+  const t = withDeploy({ staging: { ...okDeploy, verify_minutes: 2 }, production: okDeploy });
+  const d = loadRepoConfig(t.d, t.base, t.h).deploy!;
+  assert.deepEqual(stageOf(d, false), { ...okDeploy, verify_minutes: 2, environment: "staging", env: [], timeout_s: 300, max_latency_ms: 2000 });
+  assert.deepEqual(stageOf(d, true), { ...okDeploy, verify_minutes: 5, environment: "production", env: [], timeout_s: 300, max_latency_ms: 2000 });
+  assert.ok(promotes(d));
+  t.done();
+});
+
+test("a deploy pair is rejected without production, with environment inside a target, or with an unknown key", () => {
+  for (const deploy of [{ staging: okDeploy }, { staging: { ...okDeploy, environment: "staging" }, production: okDeploy },
+    { staging: okDeploy, production: okDeploy, extra: 1 }]) {
+    const t = withDeploy(deploy);
+    assert.throws(() => loadRepoConfig(t.d, t.base, t.h));
+    t.done();
+  }
+});
+
+test("production target checks in a pair accept only GET or HEAD", () => {
+  const t = withDeploy({ staging: okDeploy, production: { ...okDeploy, checks: [{ method: "POST", path: "/x", expect_status: 200 }] } });
+  assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /production checks must be GET or HEAD/);
+  t.done();
+});
+
+test("verify_minutes must be between 0 and 60", () => {
+  for (const verify_minutes of [-1, 61]) {
+    const t = withDeploy({ ...okDeploy, verify_minutes });
+    assert.throws(() => loadRepoConfig(t.d, t.base, t.h));
     t.done();
   }
 });

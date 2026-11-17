@@ -21,20 +21,34 @@ export const DeployCheck = z.object({
 }).refine((c) => c.body === undefined || !["GET", "HEAD"].includes(c.method), { message: "GET and HEAD checks cannot carry a body", path: ["body"] });
 export type DeployCheck = z.infer<typeof DeployCheck>;
 // Real deploy commands run on the host with credentials, so this block is accepted only from the external config.
-export const DeployConfig = z.object({
+const DeploySettings = z.object({
   command: plain,
   rollback: plain,
   health_url: httpUrl("health_url"),
-  environment: z.enum(["staging", "production"]).default("staging"),
   env: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
   timeout_s: z.number().positive().max(3600).default(300),
   max_latency_ms: z.number().positive().default(2000),
   checks: z.array(DeployCheck).min(1).max(10).optional(),
   metrics_url: httpUrl("metrics_url").optional(),
   max_error_rate: z.number().min(0).max(1).optional(),
-}).refine((c) => c.environment !== "production" || (c.checks ?? []).every((k) => k.method === "GET" || k.method === "HEAD"),
-  { message: "production checks must be GET or HEAD", path: ["checks"] });
+  verify_minutes: z.number().min(0).max(60).default(5),
+});
+const readOnlyChecks = (c: { checks?: DeployCheck[] }) => (c.checks ?? []).every((k) => k.method === "GET" || k.method === "HEAD");
+const PRODUCTION_CHECKS = { message: "production checks must be GET or HEAD", path: ["checks"] };
+export const DeployConfig = DeploySettings.extend({ environment: z.enum(["staging", "production"]).default("staging") })
+  .refine((c) => c.environment !== "production" || readOnlyChecks(c), PRODUCTION_CHECKS);
 export type DeployConfig = z.infer<typeof DeployConfig>;
+// Pair form: staging runs first, production only after a promotion; a target never names its own environment.
+export const PromotedDeploy = z.strictObject({
+  staging: DeploySettings.strict(),
+  production: DeploySettings.strict().refine(readOnlyChecks, PRODUCTION_CHECKS),
+});
+export type PromotedDeploy = z.infer<typeof PromotedDeploy>;
+export const RepoDeploy = z.union([PromotedDeploy, DeployConfig]);
+export type RepoDeploy = z.infer<typeof RepoDeploy>;
+export const promotes = (c: RepoDeploy | null): c is PromotedDeploy => !!c && "staging" in c;
+export const stageOf = (c: RepoDeploy, promoted: boolean): DeployConfig =>
+  promotes(c) ? { ...(promoted ? c.production : c.staging), environment: promoted ? "production" : "staging" } : c;
 
 // Names a setup command may read: an allowlist, since a blocklist always misses a credential shape (DSN, URI, proxy URL with user:pass@).
 // Never a loader or tool hook prefix, and never a key minimalEnv already sets or passes (the hardening must not be overridable).
@@ -112,7 +126,7 @@ export const RepoConfig = z.strictObject({
   setup: z.array(safeCommand("setup")).default([]),
   // Host variable names the setup commands may read; nothing else leaks from the operator's environment.
   env: z.array(hostName).default([]),
-  deploy: DeployConfig.nullable().default(null),
+  deploy: RepoDeploy.nullable().default(null),
   webcheck: WebcheckConfig.nullable().default(null),
   load: LoadConfig.nullable().default(null),
   // The dev specialties triage may route to in this repo; the whole team by default.

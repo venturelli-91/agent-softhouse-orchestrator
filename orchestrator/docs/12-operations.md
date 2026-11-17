@@ -35,6 +35,9 @@ In `ORCH_HOME/config.json` (`.state/config.json` by default), under `repos["<abs
 | `checks` | Optional, at most 10 `{method, path, expect_status, body?}`. `path` is relative to the origin of `health_url` (no query string). `expect_status` must match exactly (redirects are not followed). `body` is a JSON string. With `environment: "production"`, only GET/HEAD and no body. |
 | `metrics_url` | Optional, http or https without credentials. It returns `{"requests": n, "errors_5xx": n}` (cumulative counters). |
 | `max_error_rate` | Optional, 0 to 1, default 0.02. |
+| `verify_minutes` | How long `verify_deploy` probes after the deploy, 0 to 60, default 5. |
+
+Instead of these keys, `deploy` may hold `{ "staging": {...}, "production": {...} }`, each with the keys above except `environment` (set by the target; unknown keys are rejected). Only staging is used for now.
 
 It is read only from this external file: a `deploy` key in the repo's `.orchestrator.json` is an error, because these
 commands run on your machine with your credentials. A repo with a `deploy` block gets `deploy_target: command`; the
@@ -51,7 +54,7 @@ saved to `ORCH_HOME/deploy-logs/<id>.txt`, never sent to `NOTIFY_URL`); `orch ro
 and a failed rollback stays proposed so you can retry.
 
 After a deploy, the `verify_deploy` node probes the deployed service (same probe as `orch watch`) every 30 s for
-`VERIFY_MINUTES` minutes (default 5; `0` probes once). If it stays healthy the summary says so. On the first symptom it
+`verify_minutes` minutes (default 5; `0` probes once). If it stays healthy the summary says so. On the first symptom it
 opens the incident, proposes the rollback and notifies you, so you can run `orch rollback <incident-id>` right away; the
 ticket stays `deployed`. Without a `health_url` the deploy is reported as not verified. This holds `orch approve` for that
 long. If the open incident limit is reached, the ticket escalates with the symptom (status `escalated`; the deploy record stays, so `orch watch` keeps probing it). The hotfix still comes from `orch watch`.
@@ -66,7 +69,7 @@ monitored.
 After health, each `checks` entry runs against the origin of `health_url` with the same timeout and latency limit. A
 wrong status reads `http <status> on <METHOD> <path>`. Then `metrics_url` is read. The first probe after the deploy (normally verify_deploy's first poll) only records the
 counters; later probes (the next polls and `orch watch`) compare against the last recorded counters (stored in `ORCH_HOME/deployed/metrics/<id>.json`), and
-a 5xx share of the new requests above `max_error_rate` reads `error rate X% over Y%`. The error rate needs at least two polls (`VERIFY_MINUTES=0` never checks it during verification). A counter reset skips one run. No
+a 5xx share of the new requests above `max_error_rate` reads `error rate X% over Y%`. The error rate needs at least two polls (`verify_minutes: 0` never checks it during verification). A counter reset skips one run. No
 new requests counts as healthy. An invalid payload reads `metrics: invalid payload`. The metrics endpoint can also read `http <status> on metrics`,
 `unreachable: <code> on metrics` or `timeout after <n>ms on metrics`. The first failure is the symptom.
 Unreachable/timeout symptoms (including on metrics) still propose only the rollback, like health, and the others also open the hotfix ticket.

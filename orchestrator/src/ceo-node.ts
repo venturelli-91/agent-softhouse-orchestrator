@@ -4,6 +4,7 @@ import { interrupt } from "@langchain/langgraph";
 import { orchHome } from "./daily-cap.ts";
 import { MAX_REVISIONS, safeGit, verifyTicket } from "./guardrails.ts";
 import { log } from "./graph-kit.ts";
+import { stageOf } from "./repo-config.ts";
 import type { T } from "./ticket.ts";
 
 // On an escalation these words are not an answer: they would reach the dev as its instruction.
@@ -28,6 +29,7 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
             : `${t.status}: ${t.summary}`;
   const last = t.history.at(-1);
   const d = t.status === "discovery_questions" ? t.discovery_output : null;
+  const stage = t.deploy_cfg ? stageOf(t.deploy_cfg, false) : null;
   const r = interrupt(d ? { type: "discovery", ticket: t.id, title: t.title, problem: d.problem, assumptions: d.assumptions, questions: d.questions } : {
     type: ["no_change", "host_review"].includes(t.status) ? t.status : reason ? "escalation" : "approval",
     reason,
@@ -44,11 +46,11 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
     ...(t.test_alerts.length ? { test_alerts: t.test_alerts } : {}),
     deploy: {
       target: t.deploy_target,
-      environment: t.deploy_cfg?.environment ?? "simulated",
-      ...(t.deploy_cfg ? { command: t.deploy_cfg.command, rollback: t.deploy_cfg.rollback, env: t.deploy_cfg.env, health_url: t.deploy_cfg.health_url,
-        ...(t.deploy_cfg.checks && { checks: t.deploy_cfg.checks }),
-        ...(t.deploy_cfg.metrics_url && { metrics_url: t.deploy_cfg.metrics_url }),
-        ...(t.deploy_cfg.max_error_rate !== undefined && { max_error_rate: t.deploy_cfg.max_error_rate }) } : {}),
+      environment: stage?.environment ?? "simulated",
+      ...(stage ? { command: stage.command, rollback: stage.rollback, env: stage.env, health_url: stage.health_url,
+        ...(stage.checks && { checks: stage.checks }),
+        ...(stage.metrics_url && { metrics_url: stage.metrics_url }),
+        ...(stage.max_error_rate !== undefined && { max_error_rate: stage.max_error_rate }) } : {}),
     },
     active_flags: Object.entries(t.flags)
       .filter(([, active]) => active)

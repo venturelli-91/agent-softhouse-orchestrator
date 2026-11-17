@@ -7,10 +7,10 @@ import { repoOf, safeGit, verifyTicket } from "./guardrails.ts";
 import { checkConfig, guarded, log } from "./graph-kit.ts";
 import { handRebased, mergeLocalTicket } from "./local-merge.ts";
 import { mergePr, publish } from "./publish.ts";
-import { isLimit, verifyDeploy, verifyMinutes } from "./monitor.ts";
+import { isLimit, verifyDeploy } from "./monitor.ts";
 import { notify } from "./notify.ts";
 import { defaultProbe } from "./probe.ts";
-import { loadRepoConfig } from "./repo-config.ts";
+import { loadRepoConfig, stageOf } from "./repo-config.ts";
 import { NodeFailure } from "./run-agent.ts";
 import { briefMarkdown, type T } from "./ticket.ts";
 
@@ -54,7 +54,7 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
     checkConfig(t);
     if (!isDeepStrictEqual(loadRepoConfig(repo, t.base).deploy, t.deploy_cfg))
       throw new NodeFailure("deploy settings changed since the ticket started; re-run the ticket");
-    const c = t.deploy_cfg;
+    const c = stageOf(t.deploy_cfg, false);
     cmd = {
       rollback: c.rollback,
       health_url: c.health_url,
@@ -132,7 +132,7 @@ export const deploy = guarded("deploy", async (t) => {
 
 // A degraded deploy opens the incident and proposes the rollback now, not at the next `orch watch`; the status stays as deploy set it.
 export const verifyDeployNode = guarded("verify_deploy", async (t) => {
-  const minutes = verifyMinutes();
+  const minutes = t.deploy_cfg ? stageOf(t.deploy_cfg, false).verify_minutes : 0;
   let summary: string;
   try {
     const r = await verifyDeploy(orchHome(), t.id, { probe: defaultProbe, notify, minutes });

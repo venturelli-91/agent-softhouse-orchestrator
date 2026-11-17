@@ -59,7 +59,6 @@ beforeEach(() => {
   process.env.ORCH_HOME = orchRoot;
   process.env.ORCH_WORK = join(orchRoot, "work");
   process.env.PUBLISHER = "fake";
-  process.env.VERIFY_MINUTES = "0";
   process.env.NOTIFY_URL = "";
   knobs.publications = [];
   knobs.merges = [];
@@ -106,7 +105,7 @@ export const reviewerFailsOnce = () => {
 };
 
 export const CMD_CFG = { command: "node --version", rollback: "node --version", health_url: "http://127.0.0.1:1/health", environment: "staging",
-  env: [], timeout_s: 30, max_latency_ms: 2000 };
+  env: [], timeout_s: 30, max_latency_ms: 2000, verify_minutes: 0 };
 
 export const writeExternal = (repo: string, deploy: object) => writeFileSync(join(process.env.ORCH_HOME!, "config.json"),
   JSON.stringify({ repos: { [resolve(repo)]: { deploy } } }));

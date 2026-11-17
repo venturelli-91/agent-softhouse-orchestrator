@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { forgetDeploy, recordDeploy, registerDeployTarget } from "../src/deploy.ts";
 import { MAX_OPEN_INCIDENTS, listIncidents, openIncident } from "../src/incidents.ts";
-import { approveRollback, resolveIncident, verifyDeploy, verifyMinutes, watch } from "../src/monitor.ts";
+import { approveRollback, resolveIncident, verifyDeploy, watch } from "../src/monitor.ts";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { gitConfigHash } from "../src/guardrails.ts";
 
@@ -215,15 +215,6 @@ test("a degradation opens one incident with the rollback proposed and notifies o
   assert.deepEqual(again, { outcome: "degraded", symptom: "http 500", incident: inc.id });
   assert.equal(listIncidents(home).length, 1);
   assert.equal(notes.length, 1);
-});
-
-test("verifyMinutes falls back to 5 for unset or invalid values", () => {
-  assert.equal(verifyMinutes({}), 5);
-  assert.equal(verifyMinutes({ VERIFY_MINUTES: " " }), 5);
-  assert.equal(verifyMinutes({ VERIFY_MINUTES: "abc" }), 5);
-  assert.equal(verifyMinutes({ VERIFY_MINUTES: "-1" }), 5);
-  assert.equal(verifyMinutes({ VERIFY_MINUTES: "0" }), 0);
-  assert.equal(verifyMinutes({ VERIFY_MINUTES: "0.5" }), 0.5);
 });
 
 test("a degradation at the open incident limit throws a limit error", async () => {
