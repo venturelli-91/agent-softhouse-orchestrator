@@ -6,7 +6,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { git } from "../scripts/fixture.ts";
+import { createServer } from "node:http";
 import { readDeploy } from "../src/deploy.ts";
+import { listIncidents } from "../src/incidents.ts";
 import { deployTicket, Ticket } from "../src/graph.ts";
 import { BRIEF, FLAGS, commit, start, paused, answer, approved, CMD_CFG, writeExternal, commandTicket, knobs } from "./helpers/graph-harness.ts";
 
@@ -46,6 +48,7 @@ test("a failing deploy command escalates and writes no record", async () => {
   assert.ok(!end.summary.includes("nonexistent-flag"), "command output must not reach the escalation text");
   assert.match(readFileSync(join(process.env.ORCH_HOME!, "deploy-logs", "T-1.txt"), "utf8"), /nonexistent-flag/);
   assert.throws(() => readDeploy(process.env.ORCH_HOME!, "T-1"));
+  assert.ok(!end.history.some((h: { node: string }) => h.node === "verify_deploy"));
 });
 
 test("the deploy command is not run when the approved commit cannot be checked out", async () => {
@@ -170,4 +173,33 @@ test("checks, metrics_url and max_error_rate are snapshotted into the record and
   const end = await answer(g, "approve");
   assert.deepEqual(readDeploy(process.env.ORCH_HOME!, "T-1").cmd, { rollback: "node --version", health_url: CMD_CFG.health_url, env: [], timeout_s: 30,
     max_latency_ms: 2000, environment: "staging", git_config_hash: end.git_config_hash, ...extra });
+});
+
+test("a simulated deploy is not verified and says so", async () => {
+  const end = await answer(await start(), "approve");
+  assert.equal(end.status, "simulated_deploy");
+  assert.equal(end.summary, "deploy not verified: no health check configured");
+  assert.equal(end.history.at(-1)?.node, "verify_deploy");
+});
+
+test("a healthy command deploy is verified and opens no incident", async () => {
+  const server = createServer((_, res) => res.end("ok"));
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  try {
+    const cfg = { ...CMD_CFG, health_url: `http://127.0.0.1:${(server.address() as { port: number }).port}/health` };
+    const end = await answer(await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: cfg }), "approve");
+    assert.equal(end.status, "deployed");
+    assert.equal(end.summary, "deploy verified: healthy for 0 min");
+    assert.deepEqual(listIncidents(process.env.ORCH_HOME!), []);
+  } finally {
+    server.close();
+  }
+});
+
+test("a degraded command deploy opens an incident with the rollback proposed", async () => {
+  const end = await answer(await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: CMD_CFG }), "approve");
+  const [inc] = listIncidents(process.env.ORCH_HOME!);
+  assert.equal(end.status, "deployed");
+  assert.equal(inc.rollback, "proposed");
+  assert.match(end.summary, new RegExp(`^deploy degraded: unreachable: .*; incident ${inc.id} opened, rollback proposed -> orch rollback ${inc.id}$`));
 });

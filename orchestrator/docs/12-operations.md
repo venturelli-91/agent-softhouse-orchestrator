@@ -50,6 +50,12 @@ changes (the symptom is updated). A failing or timed-out command escalates and r
 saved to `ORCH_HOME/deploy-logs/<id>.txt`, never sent to `NOTIFY_URL`); `orch rollback` runs the `rollback` command,
 and a failed rollback stays proposed so you can retry.
 
+After a deploy, the `verify_deploy` node probes the deployed service (same probe as `orch watch`) every 30 s for
+`VERIFY_MINUTES` minutes (default 5; `0` probes once). If it stays healthy the summary says so. On the first symptom it
+opens the incident, proposes the rollback and notifies you, so you can run `orch rollback <incident-id>` right away; the
+ticket stays `deployed`. Without a `health_url` the deploy is reported as not verified. This holds `orch run` for that
+long. The hotfix still comes from `orch watch`.
+
 ## HTTP probe
 
 For command deploys `orch watch` requests `health_url` and reports `http <status>` (redirects are not followed, so a

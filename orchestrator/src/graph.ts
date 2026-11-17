@@ -15,7 +15,7 @@ import { loadConventions, loadPlaybooks, loadRepoConfig } from "./repo-config.ts
 const lessons = (playbooks: string) =>
   playbooks && `Lessons recorded in this repo's playbooks (past failures and decisions; do not repeat them):\n${playbooks}`;
 import { DIFF_LIMIT, design, evidenceNote, qa, reviewer } from "./review-nodes.ts";
-import { deploy, deployTicket, mergeNode, publishNode } from "./ship-nodes.ts";
+import { deploy, deployTicket, mergeNode, publishNode, verifyDeployNode } from "./ship-nodes.ts";
 import { load } from "./load.ts";
 import { webcheck } from "./webcheck.ts";
 import { Brief, briefMarkdown, Ticket, type T } from "./ticket.ts";
@@ -57,6 +57,7 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addNode("ceo_approval", ceoApproval)
     .addNode("merge_pr", mergeNode)
     .addNode("deploy", deploy)
+    .addNode("verify_deploy", verifyDeployNode)
     .addNode("docs_pre", projectDocsNode)
     .addEdge(START, "triage")
     .addConditionalEdges("triage", afterTriage, ["dev", "discovery", "planner", "ceo_approval"])
@@ -72,7 +73,8 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval", "dev"])
     .addConditionalEdges("ceo_approval", afterCeo, ["triage", "discovery", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["deploy", "dev", "ceo_approval"])
-    .addEdge("deploy", END)
+    .addConditionalEdges("deploy", (t: T) => (["deployed", "simulated_deploy"].includes(t.status) ? "verify_deploy" : END), ["verify_deploy", END])
+    .addEdge("verify_deploy", END)
     .compile({ checkpointer });
 }
 
