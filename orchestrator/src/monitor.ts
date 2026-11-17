@@ -14,6 +14,11 @@ export type WatchDeps = {
 const INFRA_ONLY = /^(unreachable|timeout)\b/;
 // a finished rollback is never reopened: the one-shot guard in approveRollback depends on it
 const proposal = (i: Incident): Partial<Incident> => (i.rollback === "none" ? { rollback: "proposed" } : {});
+const liveIncident = (home: string, id: string, symptom: string) => {
+  const live = listIncidents(home).find((i) => i.ticket === id && i.status !== "closed");
+  return live ? { incident: live.symptom === symptom ? live : updateIncident(home, live.id, { symptom }), created: false } : openIncident(home, id,
+    symptom);
+};
 const isLimit = (e: unknown) => e instanceof Error && /limit/.test(e.message);
 
 export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> {
@@ -25,9 +30,7 @@ export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> 
     }
     let opened: { incident: Incident; created: boolean };
     try {
-      const live = listIncidents(home).find((i) => i.ticket === id && i.status !== "closed");
-      opened = live ? { incident: live.symptom === symptom ? live : updateIncident(home, live.id, { symptom }), created: false } : openIncident(home,
-        id, symptom);
+      opened = liveIncident(home, id, symptom);
     } catch (e) {
       if (isLimit(e)) continue;
       throw e;
@@ -53,7 +56,7 @@ export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> 
 const VERIFY_POLL_MS = 30_000;
 
 export const verifyMinutes = (env: NodeJS.ProcessEnv = process.env): number => {
-  const n = Number(env.VERIFY_MINUTES || 5);
+  const n = Number(env.VERIFY_MINUTES?.trim() || 5);
   return Number.isFinite(n) && n >= 0 ? n : 5;
 };
 
@@ -68,9 +71,7 @@ export async function verifyDeploy(home: string, id: string, deps: { probe: Prob
     if (n) await sleep(VERIFY_POLL_MS);
     const symptom = await deps.probe(home, id);
     if (symptom === null) continue;
-    const live = listIncidents(home).find((i) => i.ticket === id && i.status !== "closed");
-    const { incident, created } = live ? { incident: live.symptom === symptom ? live : updateIncident(home, live.id, { symptom }), created: false }
-      : openIncident(home, id, symptom);
+    const { incident, created } = liveIncident(home, id, symptom);
     updateIncident(home, incident.id, proposal(incident));
     if (created) await deps.notify(`Incident ${incident.id} on ${id}: ${symptom} -> orch rollback ${incident.id}`);
     return { outcome: "degraded", symptom, incident: incident.id };

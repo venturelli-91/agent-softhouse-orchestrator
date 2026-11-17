@@ -219,6 +219,7 @@ test("a degradation opens one incident with the rollback proposed and notifies o
 
 test("verifyMinutes falls back to 5 for unset or invalid values", () => {
   assert.equal(verifyMinutes({}), 5);
+  assert.equal(verifyMinutes({ VERIFY_MINUTES: " " }), 5);
   assert.equal(verifyMinutes({ VERIFY_MINUTES: "abc" }), 5);
   assert.equal(verifyMinutes({ VERIFY_MINUTES: "-1" }), 5);
   assert.equal(verifyMinutes({ VERIFY_MINUTES: "0" }), 0);
