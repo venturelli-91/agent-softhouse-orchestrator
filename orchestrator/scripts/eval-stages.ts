@@ -1,10 +1,12 @@
 // Model choice for triage, planner and devops: runs each role on requests with known answers.
-// Usage: node --env-file=.env scripts/eval-stages.ts --models modelA,modelB [--reps 3] [--stages triage,planner,devops]
-import { mkdtempSync } from "node:fs";
+// Usage: node --env-file=.env scripts/eval-stages.ts --models modelA,modelB [--reps 3] [--stages triage,planner,devops,discovery]
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { NodeFailure, runAgent as run, type Req } from "../src/run-agent.ts";
+import { DiscoveryOutput } from "../src/ticket.ts";
+import { context } from "../src/graph-kit.ts";
 import { createFixture, git } from "./fixture.ts";
 
 const { values } = parseArgs({
@@ -51,12 +53,18 @@ const requests: { text: string; exp: Exp }[] = [
   { text: "Add a discount to the cart.", exp: { clear: false } },
   { text: "Make the app better.", exp: { clear: false } },
   { text: "We need reports.", exp: { clear: false } },
+  { text: "Improve the checkout.", exp: { clear: false } },
+  { text: "Customers complain about login.", exp: { clear: false } },
 ];
 
 const check = (o: z.infer<typeof Plan>, e: Exp) =>
   o.clear === e.clear && (!e.priority || o.priority === e.priority) && (!e.specialty || o.specialty === e.specialty) && (!e.flag || o.flags[e.flag]);
 
 const repo = createFixture(mkdtempSync(`${tmpdir()}/stages-`));
+// Facts the discovery questions must not ask about; seeded for every stage (harmless: devops only compares before/after).
+writeFileSync(`${repo}/README.md`, "Customers are B2B buyers on desktop.\nCheckout is in src/checkout.ts.\nPrices are in BRL.\nData falls under LGPD.\n");
+git(repo, "add", "-A");
+git(repo, "commit", "-q", "-m", "readme");
 const reps = Number(values.reps);
 const sum = (u: { tokens_in: number; tokens_out: number; cache_read: number; cache_create: number }) => u.tokens_in + u.tokens_out + u.cache_read
   + u.cache_create;
@@ -91,6 +99,41 @@ for (const model of values.models.split(",")) {
         }
         right += hits;
         total += reps;
+      }
+    } else if (stage === "discovery") {
+      // Clear requests must stop at triage; vague ones must reach discovery with at most 5 questions, each with why and default.
+      const set = [...requests.filter((r) => r.exp.clear).slice(0, 5), ...requests.filter((r) => !r.exp.clear)];
+      for (const r of set) {
+        for (let i = 0; i < reps; i++) {
+          total++;
+          const tri = await runAgent({
+            role: "triage", cwd: repo, schema: Plan, files: ["triage"],
+            context: `CEO request: ${r.text}
+
+Answer only in the structured format. \`summary\`: up to 10 lines.`,
+          });
+          if ("failed" in tri) { lines.push(`FAIL triage "${r.text.slice(0, 40)}": ${tri.failed}`); continue; }
+          tokens += sum(tri.usage);
+          usd += tri.usage.cost_usd;
+          if (r.exp.clear) {
+            if (tri.output.clear) right++;
+            else lines.push(`MISS clear request reached discovery: "${r.text.slice(0, 60)}"`);
+            continue;
+          }
+          if (tri.output.clear) { lines.push(`MISS vague request judged clear: "${r.text}"`); continue; }
+          const res = await runAgent({
+            role: "discovery", cwd: repo, schema: DiscoveryOutput, files: ["discovery"],
+            context: context(`CEO request: ${r.text}`, `Triage (unclear request): ${tri.output.summary}`),
+          });
+          if ("failed" in res) { lines.push(`FAIL discovery "${r.text}": ${res.failed}`); continue; }
+          tokens += sum(res.usage);
+          usd += res.usage.cost_usd;
+          const qs = res.output.questions;
+          const ok = qs.length <= 5 && qs.every((q) => q.why.trim() && q.default.trim());
+          right += +ok;
+          lines.push(`${ok ? "OK" : "MISS"} "${r.text}" ready=${res.output.ready} questions=${qs.length}`);
+          for (const q of qs) lines.push(`    Q: ${q.question} | why: ${q.why} | default: ${q.default}`);
+        }
       }
     } else {
       // devops must describe a rollback and must not touch the repo (no commits, no branches, clean tree).
