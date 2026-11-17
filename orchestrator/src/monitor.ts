@@ -60,7 +60,7 @@ export const verifyMinutes = (env: NodeJS.ProcessEnv = process.env): number => {
   return Number.isFinite(n) && n >= 0 ? n : 5;
 };
 
-export type VerifyResult = { outcome: "healthy" | "skipped" } | { outcome: "degraded"; symptom: string; incident: string };
+type VerifyResult = { outcome: "healthy" | "skipped" } | { outcome: "degraded"; symptom: string; incident: string };
 
 export async function verifyDeploy(home: string, id: string, deps: { probe: Probe; notify: (text: string) => Promise<void>; minutes: number;
   sleep?: (ms: number) => Promise<unknown> }): Promise<VerifyResult> {
@@ -71,7 +71,14 @@ export async function verifyDeploy(home: string, id: string, deps: { probe: Prob
     if (n) await sleep(VERIFY_POLL_MS);
     const symptom = await deps.probe(home, id);
     if (symptom === null) continue;
-    const { incident, created } = liveIncident(home, id, symptom);
+    let live: ReturnType<typeof liveIncident>;
+    try {
+      live = liveIncident(home, id, symptom);
+    } catch (e) {
+      if (isLimit(e)) throw new Error(`deploy degraded (${symptom}) but the open incident limit is reached`);
+      throw e;
+    }
+    const { incident, created } = live;
     updateIncident(home, incident.id, proposal(incident));
     if (created) await deps.notify(`Incident ${incident.id} on ${id}: ${symptom} -> orch rollback ${incident.id}`);
     return { outcome: "degraded", symptom, incident: incident.id };

@@ -209,5 +209,5 @@ test("a degraded deploy with the open incident limit reached escalates from veri
   const end = await answer(await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: CMD_CFG }), "approve");
   assert.equal(end.status, "escalated");
   assert.equal(end.failed_node, "verify_deploy");
-  assert.match(end.summary, /open incident limit is reached/);
+  assert.match(end.summary, /^verify_deploy: deploy degraded \(unreachable: .*\) but the open incident limit is reached$/);
 });

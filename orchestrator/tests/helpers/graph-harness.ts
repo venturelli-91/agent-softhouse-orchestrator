@@ -60,6 +60,7 @@ beforeEach(() => {
   process.env.ORCH_WORK = join(orchRoot, "work");
   process.env.PUBLISHER = "fake";
   process.env.VERIFY_MINUTES = "0";
+  process.env.NOTIFY_URL = "";
   knobs.publications = [];
   knobs.merges = [];
   knobs.mergeError = null;

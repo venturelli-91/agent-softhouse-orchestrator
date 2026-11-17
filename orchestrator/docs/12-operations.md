@@ -53,8 +53,8 @@ and a failed rollback stays proposed so you can retry.
 After a deploy, the `verify_deploy` node probes the deployed service (same probe as `orch watch`) every 30 s for
 `VERIFY_MINUTES` minutes (default 5; `0` probes once). If it stays healthy the summary says so. On the first symptom it
 opens the incident, proposes the rollback and notifies you, so you can run `orch rollback <incident-id>` right away; the
-ticket stays `deployed`. Without a `health_url` the deploy is reported as not verified. This holds `orch run` for that
-long. The hotfix still comes from `orch watch`.
+ticket stays `deployed`. Without a `health_url` the deploy is reported as not verified. This holds `orch approve` for that
+long. If the open incident limit is reached, the ticket escalates with the symptom (status `escalated`; the deploy record stays, so `orch watch` keeps probing it). The hotfix still comes from `orch watch`.
 
 ## HTTP probe
 
@@ -64,9 +64,9 @@ credentials and never appears in a symptom. A command deploy without `health_url
 monitored.
 
 After health, each `checks` entry runs against the origin of `health_url` with the same timeout and latency limit. A
-wrong status reads `http <status> on <METHOD> <path>`. Then `metrics_url` is read. The first `watch` only records the
-counters. Later runs compare against the last recorded counters (stored in `ORCH_HOME/deployed/metrics/<id>.json`), and
-a 5xx share of the new requests above `max_error_rate` reads `error rate X% over Y%`. A counter reset skips one run. No
+wrong status reads `http <status> on <METHOD> <path>`. Then `metrics_url` is read. The first probe after the deploy (normally verify_deploy's first poll) only records the
+counters; later probes (the next polls and `orch watch`) compare against the last recorded counters (stored in `ORCH_HOME/deployed/metrics/<id>.json`), and
+a 5xx share of the new requests above `max_error_rate` reads `error rate X% over Y%`. The error rate needs at least two polls (`VERIFY_MINUTES=0` never checks it during verification). A counter reset skips one run. No
 new requests counts as healthy. An invalid payload reads `metrics: invalid payload`. The metrics endpoint can also read `http <status> on metrics`,
 `unreachable: <code> on metrics` or `timeout after <n>ms on metrics`. The first failure is the symptom.
 Unreachable/timeout symptoms (including on metrics) still propose only the rollback, like health, and the others also open the hotfix ticket.

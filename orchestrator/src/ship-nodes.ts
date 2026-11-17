@@ -130,7 +130,7 @@ export const deploy = guarded("deploy", async (t) => {
   return done;
 });
 
-// The deploy is only done once it stays healthy: a degraded one opens the incident and proposes the rollback right away.
+// A degraded deploy opens the incident and proposes the rollback now, not at the next `orch watch`; the status stays as deploy set it.
 export const verifyDeployNode = guarded("verify_deploy", async (t) => {
   const minutes = verifyMinutes();
   let summary: string;
@@ -139,7 +139,7 @@ export const verifyDeployNode = guarded("verify_deploy", async (t) => {
     if (r.outcome === "degraded") summary = `deploy degraded: ${r.symptom}; incident ${r.incident} opened, rollback proposed -> orch rollback ${r.incident}`;
     else summary = r.outcome === "healthy" ? `deploy verified: healthy for ${minutes} min` : "deploy not verified: no health check configured";
   } catch (e) {
-    if (isLimit(e)) throw new NodeFailure("deploy degraded but the open incident limit is reached");
+    if (isLimit(e)) throw new NodeFailure((e as Error).message);
     throw e;
   }
   return { summary, history: log(t, "verify_deploy", summary) };
