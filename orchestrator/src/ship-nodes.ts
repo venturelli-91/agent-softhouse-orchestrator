@@ -60,6 +60,9 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
       max_latency_ms: c.max_latency_ms,
       environment: c.environment,
       git_config_hash: t.git_config_hash,
+      ...(c.checks && { checks: c.checks }),
+      ...(c.metrics_url && { metrics_url: c.metrics_url }),
+      ...(c.max_error_rate !== undefined && { max_error_rate: c.max_error_rate }),
     };
     const parent = join(workRoot(), "deploy-work");
     mkdirSync(parent, { recursive: true });

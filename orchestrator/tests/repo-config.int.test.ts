@@ -267,3 +267,42 @@ test("project_docs accepts relative .md paths only", () => {
   }
   rmSync(ok.d, { recursive: true, force: true });
 });
+
+test("deploy checks, metrics_url and max_error_rate are optional and kept as given", () => {
+  const extra = { checks: [{ method: "POST", path: "/items", expect_status: 201, body: '{"a":1}' }], metrics_url: "https://x.example/metrics", max_error_rate: 0.05 };
+  const t = withDeploy({ ...okDeploy, ...extra });
+  assert.deepEqual(loadRepoConfig(t.d, t.base, t.h).deploy, { ...okDeploy, ...extra, environment: "staging", env: [], timeout_s: 300, max_latency_ms: 2000 });
+  t.done();
+});
+
+test("a GET or HEAD check with a body is rejected in every environment", () => {
+  for (const environment of ["staging", "production"]) for (const method of ["GET", "HEAD"]) {
+    const t = withDeploy({ ...okDeploy, environment, checks: [{ method, path: "/x", expect_status: 200, body: "{}" }] });
+    assert.throws(() => loadRepoConfig(t.d, t.base, t.h), /cannot carry a body/);
+    t.done();
+  }
+});
+
+test("production checks accept only GET or HEAD", () => {
+  const p = withDeploy({ ...okDeploy, environment: "production", checks: [{ method: "POST", path: "/x", expect_status: 200 }] });
+  assert.throws(() => loadRepoConfig(p.d, p.base, p.h), /checks: production checks must be GET or HEAD/);
+  p.done();
+  const t = withDeploy({ ...okDeploy, environment: "production", checks: [{ method: "HEAD", path: "/", expect_status: 200 }] });
+  assert.equal(loadRepoConfig(t.d, t.base, t.h).deploy?.checks?.length, 1);
+  t.done();
+});
+
+test("bad checks and metrics_url are rejected", () => {
+  for (const bad of [
+    { checks: [{ method: "GET", path: "//evil.com", expect_status: 200 }] },
+    { checks: [{ method: "GET", path: "/x" }] },
+    { checks: [{ method: "GET", path: "/x", expect_status: 200, body: "not json" }] },
+    { metrics_url: "https://u:p@x.example/metrics" },
+    { metrics_url: "file:///etc/passwd" },
+    { max_error_rate: 2 },
+  ]) {
+    const t = withDeploy({ ...okDeploy, ...bad });
+    assert.throws(() => loadRepoConfig(t.d, t.base, t.h), Error, JSON.stringify(bad));
+    t.done();
+  }
+});

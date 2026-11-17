@@ -32,13 +32,16 @@ In `ORCH_HOME/config.json` (`.state/config.json` by default), under `repos["<abs
 | `env` | Names of host env vars the commands may read; values are never stored and are masked in the output. |
 | `timeout_s` | Default 300, max 3600. |
 | `max_latency_ms` | Default 2000. |
+| `checks` | Optional, at most 10 `{method, path, expect_status, body?}`. `path` is relative to the origin of `health_url` (no query string). `expect_status` must match exactly (redirects are not followed). `body` is a JSON string. With `environment: "production"`, only GET/HEAD and no body. |
+| `metrics_url` | Optional, http or https without credentials. It returns `{"requests": n, "errors_5xx": n}` (cumulative counters). |
+| `max_error_rate` | Optional, 0 to 1, default 0.02. |
 
 It is read only from this external file: a `deploy` key in the repo's `.orchestrator.json` is an error, because these
 commands run on your machine with your credentials. A repo with a `deploy` block gets `deploy_target: command`; the
 `deploy` node checks `.git/config` is unchanged, then runs the command in a fresh detached checkout of exactly the
 commit you approved (never in the worktree the agent touched; it is removed afterwards), refusing a binary that exists
 in that directory, with a hardened git/npm env and `ORCH_TICKET`, `ORCH_SHA` and `ORCH_PREVIOUS` set. `orch approve`
-shows the environment and the exact `command`, `rollback`, `env` names and `health_url`, and the deploy refuses to run
+shows the environment and the exact `command`, `rollback`, `env` names and `health_url` (plus `checks`, `metrics_url` and `max_error_rate` when set), and the deploy refuses to run
 if the external config no longer matches what the ticket started with. The command and any script it runs come from the
 approved commit, so read the diff for deploy-related files before approving. `orch rollback` also checks `.git/config`
 and runs from the main checkout; if you changed the config on purpose (a new remote, a fork), review it and run
@@ -53,6 +56,14 @@ For command deploys `orch watch` requests `health_url` and reports `http <status
 3xx is a symptom), `timeout after <n>ms`, `latency over <m>ms` or `unreachable: <code>`; the URL may not carry
 credentials and never appears in a symptom. A command deploy without `health_url` has no health check and is not
 monitored.
+
+After health, each `checks` entry runs against the origin of `health_url` with the same timeout and latency limit. A
+wrong status reads `http <status> on <METHOD> <path>`. Then `metrics_url` is read. The first `watch` only records the
+counters. Later runs compare against the last recorded counters (stored in `ORCH_HOME/deployed/metrics/<id>.json`), and
+a 5xx share of the new requests above `max_error_rate` reads `error rate X% over Y%`. A counter reset skips one run. No
+new requests counts as healthy. An invalid payload reads `metrics: invalid payload`. The metrics endpoint can also read `http <status> on metrics`,
+`unreachable: <code> on metrics` or `timeout after <n>ms on metrics`. The first failure is the symptom.
+Unreachable/timeout symptoms (including on metrics) still propose only the rollback, like health, and the others also open the hotfix ticket.
 
 ## Design and webcheck nodes
 

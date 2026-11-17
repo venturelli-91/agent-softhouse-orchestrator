@@ -9,17 +9,31 @@ import { SPECIALTIES } from "./specialties.ts";
 import { ProposedAgents } from "./team.ts";
 
 const plain = safeCommand();
+const urlPath = z.string().regex(/^\/(?!\/)[\w./-]*$/);
+const jsonBody = z.string().refine((b) => { try { JSON.parse(b); return true; } catch { return false; } }, "body must be a JSON string");
+const httpUrl = (name: string) => z.string().refine((u) => URL.canParse(u) && ((x) => /^https?:$/.test(x.protocol) && !x.username && !x.password)(new URL(u)),
+  `${name} must be an http or https URL without credentials`);
+export const DeployCheck = z.object({
+  method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]),
+  path: urlPath,
+  expect_status: z.number().int().min(100).max(599),
+  body: jsonBody.optional(),
+}).refine((c) => c.body === undefined || !["GET", "HEAD"].includes(c.method), { message: "GET and HEAD checks cannot carry a body", path: ["body"] });
+export type DeployCheck = z.infer<typeof DeployCheck>;
 // Real deploy commands run on the host with credentials, so this block is accepted only from the external config.
 export const DeployConfig = z.object({
   command: plain,
   rollback: plain,
-  health_url: z.string().refine((u) => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol) && !new URL(u).username && !new URL(u).password,
-    "health_url must be an http or https URL without credentials"),
+  health_url: httpUrl("health_url"),
   environment: z.enum(["staging", "production"]).default("staging"),
   env: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
   timeout_s: z.number().positive().max(3600).default(300),
   max_latency_ms: z.number().positive().default(2000),
-});
+  checks: z.array(DeployCheck).min(1).max(10).optional(),
+  metrics_url: httpUrl("metrics_url").optional(),
+  max_error_rate: z.number().min(0).max(1).optional(),
+}).refine((c) => c.environment !== "production" || (c.checks ?? []).every((k) => k.method === "GET" || k.method === "HEAD"),
+  { message: "production checks must be GET or HEAD", path: ["checks"] });
 export type DeployConfig = z.infer<typeof DeployConfig>;
 
 // Names a setup command may read: an allowlist, since a blocklist always misses a credential shape (DSN, URI, proxy URL with user:pass@).
@@ -33,7 +47,6 @@ const hostName = z.string().refine(
 );
 
 const localUrl = (u: string) => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol) && ["localhost", "127.0.0.1"].includes(new URL(u).hostname);
-const urlPath = z.string().regex(/^\/(?!\/)[\w./-]*$/);
 const tagId = (prefix: string) => z.array(z.string().regex(new RegExp(`^${prefix}-[A-Z0-9]+$`))).default([]);
 // The app is started on the host from the ticket's worktree, so, like deploy, this block comes only from the external config.
 export const WebcheckConfig = z.object({
@@ -64,7 +77,7 @@ export const LoadConfig = z.object({
   writes: z.array(z.object({
     method: z.enum(["POST", "PUT", "PATCH", "DELETE"]),
     path: urlPath,
-    body: z.string().refine((b) => { try { JSON.parse(b); return true; } catch { return false; } }, "body must be a JSON string").optional(),
+    body: jsonBody.optional(),
   })).min(1).max(5),
   fast_path: urlPath.default("/"),
   slow_dependency: z.object({

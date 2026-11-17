@@ -45,7 +45,10 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
     deploy: {
       target: t.deploy_target,
       environment: t.deploy_cfg?.environment ?? "simulated",
-      ...(t.deploy_cfg ? { command: t.deploy_cfg.command, rollback: t.deploy_cfg.rollback, env: t.deploy_cfg.env, health_url: t.deploy_cfg.health_url } : {}),
+      ...(t.deploy_cfg ? { command: t.deploy_cfg.command, rollback: t.deploy_cfg.rollback, env: t.deploy_cfg.env, health_url: t.deploy_cfg.health_url,
+        ...(t.deploy_cfg.checks && { checks: t.deploy_cfg.checks }),
+        ...(t.deploy_cfg.metrics_url && { metrics_url: t.deploy_cfg.metrics_url }),
+        ...(t.deploy_cfg.max_error_rate !== undefined && { max_error_rate: t.deploy_cfg.max_error_rate }) } : {}),
     },
     active_flags: Object.entries(t.flags)
       .filter(([, active]) => active)
