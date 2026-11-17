@@ -17,7 +17,7 @@ export function ticketMetrics(t: Summarised) {
   const sum = (k: "ms" | "tokens" | "usd") => Object.values(nodes).reduce((a, n) => a + n[k], 0);
   return {
     id: t.id, status: t.status, priority: t.priority, specialty: t.specialty,
-    route: t.history.some((h) => h.node === "planner") ? "ambiguous" : "clear",
+    route: t.history.some((h) => h.node === "planner" || h.node === "discovery") ? "ambiguous" : "clear",
     tasks: t.tasks.length || 1, revisions: t.revisions,
     escalations: t.history.filter((h) => h.result.startsWith("escalated")).length,
     first: t.history[0]?.time ?? "", last: t.history.at(-1)?.time ?? "",

@@ -37,7 +37,7 @@ their own delivery.
 - **CEO's answer to an escalation:** `abort` ends it (`status=aborted`); any other text
   becomes an instruction and goes back to the dev with `revisions=0` — only if triage
   already produced criteria. An escalation before that (ambiguous/failed triage) can
-  only abort; the planner (task 4) covers scope clarification.
+  only abort; an unclear request goes through `discovery` (at most 5 problem-first questions, 2 pauses; answer with `orch approve <id> "1: … 2: …"`, bare `orch approve <id>` accepts every default) before the planner, which no longer asks questions: if it cannot close the criteria the ticket escalates and aborts.
 - **CEO rejection** in a normal approval goes back to the dev with `revisions + 1`.
 - **Fake executor:** `registerExecutor("fake", ...)` + `EXECUTOR=fake`. It is the same
   hook that will serve other executors in the future; there is no module mock.

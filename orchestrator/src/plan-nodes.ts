@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { SPECIALTIES, type Specialty } from "./specialties.ts";
-import { cap, FlagsSchema, summary, type T } from "./ticket.ts";
+import { briefingMarkdown, cap, DiscoveryOutput, FlagsSchema, summary, type T } from "./ticket.ts";
 import { context, guarded, log } from "./graph-kit.ts";
 import { runAgent } from "./run-agent.ts";
 
@@ -14,8 +14,7 @@ const TriageOutput = z.object({
   summary,
   split: z.array(z.string().max(300)).max(8).default([]),
 });
-// `question` is empty when clear; otherwise it is what the CEO needs to answer.
-const PlanOutput = TriageOutput.extend({ question: z.string(), briefing: z.string().default(""), stories: z.array(z.string()).default([]) });
+const PlanOutput = TriageOutput.extend({ briefing: z.string().default(""), stories: z.array(z.string()).default([]) });
 
 // The repo's own team: only its specialties are valid answers, and the model is told which ones.
 const only = (t: T) => z.enum(t.specialties as [Specialty, ...Specialty[]]);
@@ -50,8 +49,31 @@ export const triage = guarded("triage", async (t) => {
   };
 });
 
+// Finds out what the CEO needs before planning: at most two rounds of questions, then the open ones take their defaults.
+export const discovery = guarded("discovery", async (t) => {
+  const { output, usage } = await runAgent({
+    role: "discovery",
+    files: ["discovery"],
+    cwd: t.worktree,
+    schema: DiscoveryOutput,
+    context: context(
+      `CEO request: ${t.request}`,
+      `Triage (unclear request): ${t.summary}`,
+      ...t.discovery_answers.map((a, i) => `CEO answers (round ${i + 1}): ${a}`),
+    ),
+  });
+  if (!output.ready && output.questions.length && t.discovery_round < 2)
+    return { status: "discovery_questions", discovery_output: output, history: log(t, "discovery", "questions", usage) };
+  return {
+    status: "planned_input",
+    discovery_output: output,
+    briefing: briefingMarkdown(output.briefing, output.ready ? [] : output.questions),
+    history: log(t, "discovery", output.ready ? "ready" : output.questions.length ? "defaults assumed" : "nothing to ask", usage),
+  };
+});
+
 // demand-analyst -> product-manager -> tech-lead in a single agent turn (tokens: one context only).
-// Without closed criteria there is no ticket: the question goes to the CEO and the answer comes back here.
+// Without closed criteria there is no ticket: it escalates to the CEO, who can only abort it.
 export const planner = guarded("planner", async (t) => {
   const { output, usage } = await runAgent({
     role: "planner",
@@ -60,16 +82,18 @@ export const planner = guarded("planner", async (t) => {
     schema: PlanOutput.extend({ specialty: only(t) }),
     context: context(
       `CEO request: ${t.request}`,
-      `Triage (ambiguous request): ${t.summary}`,
-      "If missing information prevents verifiable acceptance criteria, set clear=false and put what is missing in `question`.",
+      `Triage: ${t.summary}`,
+      ...(t.briefing ? [`Briefing:\n${t.briefing}`] : []),
+      "Acceptance criteria must trace back to the briefing's success and scope.",
       ...teamNote(t),
       SPLIT_RULE,
     ),
   });
-  const { clear, question, split, ...plan } = output;
-  if (!clear || !plan.criteria.length) return { status: "ambiguous", summary: cap(question || plan.summary), history: log(t, "planner", "ambiguous", usage) };
+  const { clear, split, ...plan } = output;
+  if (!clear || !plan.criteria.length) return { status: "ambiguous", summary: cap(plan.summary), history: log(t, "planner", "ambiguous", usage) };
   return {
     ...plan,
+    briefing: t.briefing || plan.briefing,
     tasks: tasksOf(split),
     task_done: 0,
     priority: t.incident ? ("P0" as const) : plan.priority,

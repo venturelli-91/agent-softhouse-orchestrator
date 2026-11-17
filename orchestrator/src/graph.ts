@@ -9,7 +9,7 @@ import { dev, DEV_RULES, devRules, partialWork, taskBlock } from "./dev-node.ts"
 import { sh } from "./graph-kit.ts";
 import { samePath } from "./platform.ts";
 import { projectDocsNode } from "./project-docs.ts";
-import { planner, SPLIT_RULE, triage } from "./plan-nodes.ts";
+import { discovery, planner, SPLIT_RULE, triage } from "./plan-nodes.ts";
 import { loadConventions, loadPlaybooks, loadRepoConfig } from "./repo-config.ts";
 
 const lessons = (playbooks: string) =>
@@ -26,18 +26,26 @@ export { Brief, briefMarkdown, Ticket, DEV_RULES, devRules, partialWork, taskBlo
 const route = (ok: string, node: string) => (t: T) =>
   t.status === ok ? node : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval";
 const afterReview = (t: T) => (t.status === "design" ? "design" : route("qa", "qa")(t));
-// Adopted changes are already written: an ambiguous triage has nothing left to plan.
-const afterTriage = (t: T) => (t.status === "dev" || (t.adopt_tree && t.status === "ambiguous") ? "dev" : t.status === "ambiguous" ? "planner" : "ceo_approval");
+// Adopted changes are already written: an ambiguous triage has nothing left to plan. An incident has no time for questions.
+const afterTriage = (t: T) =>
+  t.status === "dev" || (t.adopt_tree && t.status === "ambiguous")
+    ? "dev"
+    : t.status === "ambiguous"
+      ? t.incident
+        ? "planner"
+        : "discovery"
+      : "ceo_approval";
 
 const toDev = ["dev_failed", "reverify"];
 const afterCeo = (t: T) =>
-  t.status === "retry" ? t.failed_node : toDev.includes(t.status) ? "dev" : t.status === "replan" ? "planner" : t.status === "approved" ? "merge_pr" : END;
+  t.status === "retry" ? t.failed_node : toDev.includes(t.status) ? "dev" : t.status === "rediscover" ? "discovery" : t.status === "approved" ? "merge_pr" : END;
 // A rebase that broke the suite goes back to the dev; a conflict, a new approval or anything else goes to the CEO.
 const afterMerge = (t: T) => (t.status === "approved" ? "deploy" : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval");
 
 export function buildGraph(checkpointer = new MemorySaver()) {
   return new StateGraph(Ticket)
     .addNode("triage", triage)
+    .addNode("discovery", discovery)
     .addNode("planner", planner)
     .addNode("dev", dev)
     .addNode("reviewer", reviewer)
@@ -51,7 +59,8 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addNode("deploy", deploy)
     .addNode("docs_pre", projectDocsNode)
     .addEdge(START, "triage")
-    .addConditionalEdges("triage", afterTriage, ["dev", "planner", "ceo_approval"])
+    .addConditionalEdges("triage", afterTriage, ["dev", "discovery", "planner", "ceo_approval"])
+    .addConditionalEdges("discovery", (t: T) => (t.status === "planned_input" ? "planner" : "ceo_approval"), ["planner", "ceo_approval"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "ceo_approval"])
     .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "docs_pre")(t)), ["docs_pre", "dev", "ceo_approval"])
     .addEdge("docs_pre", "reviewer")
@@ -61,7 +70,7 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("webcheck", route("publish", "load"), ["load", "dev", "ceo_approval"])
     .addConditionalEdges("load", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
     .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval", "dev"])
-    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy", "merge_pr", END])
+    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "discovery", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["deploy", "dev", "ceo_approval"])
     .addEdge("deploy", END)
     .compile({ checkpointer });

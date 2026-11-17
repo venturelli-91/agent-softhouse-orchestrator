@@ -35,6 +35,34 @@ const plain = (s: string) =>
     .trim();
 export const briefMarkdown = (b: z.infer<typeof Brief>) => `## Why\n${plain(b.why)}\n\n## How\n${plain(b.how)}\n\n## Where it applies\n${plain(b.where)}`;
 
+const BLOCKS = ["problem", "success", "users", "scope", "constraints", "example"] as const;
+export const DiscoveryQuestion = z.object({
+  block: z.enum(BLOCKS),
+  question: z.string().min(5),
+  why: z.string().min(5),
+  default: z.string().min(1),
+});
+const briefingText = z.string().default("");
+const BriefingFields = z.object({
+  problem: briefingText, success: briefingText, users: briefingText, scope_in: briefingText, scope_out: briefingText, constraints: briefingText, example: briefingText,
+});
+export const DiscoveryOutput = z.object({
+  problem: z.string().min(5),
+  assumptions: z.array(z.string()).max(10).default([]),
+  questions: z.array(DiscoveryQuestion).max(5),
+  ready: z.boolean(),
+  briefing: BriefingFields,
+});
+const BRIEFING_HEADINGS: [keyof z.infer<typeof BriefingFields>, string][] = [
+  ["problem", "Problem"], ["success", "Success"], ["users", "Users"], ["scope_in", "Scope in"],
+  ["scope_out", "Scope out"], ["constraints", "Constraints"], ["example", "Example"],
+];
+export const briefingMarkdown = (b: z.infer<typeof BriefingFields>, assumed: z.infer<typeof DiscoveryQuestion>[]) =>
+  [
+    ...BRIEFING_HEADINGS.filter(([k]) => b[k]).map(([k, h]) => `## ${h}\n${plain(b[k])}`),
+    ...(assumed.length ? [`## Assumed defaults\n${assumed.map((a) => `- ${plain(a.question)} → ${plain(a.default)}`).join("\n")}`] : []),
+  ].join("\n\n");
+
 export const Ticket = z.object({
   id: z.string(),
   request: z.string(),
@@ -77,6 +105,10 @@ export const Ticket = z.object({
   tasks: z.array(z.string()).default([]),
   task_done: z.number().default(0),
   briefing: z.string().default(""),
+  discovery_round: z.number().default(0),
+  discovery_answers: z.array(z.string()).default([]),
+  // Not `discovery`: LangGraph refuses a state channel with the same name as a node.
+  discovery_output: DiscoveryOutput.nullable().default(null),
   stories: z.array(z.string()).default([]),
   incident: z.string().default(""),
   deploy_target: z.string().default("simulated"),

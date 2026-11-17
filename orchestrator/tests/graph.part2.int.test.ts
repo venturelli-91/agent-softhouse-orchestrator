@@ -15,6 +15,7 @@ test("a clear ticket runs triage through ceo_approval with zero docs calls", asy
   assert.equal(knobs.docsCalls.length, 0);
   assert.ok(knobs.calls.includes("triage"));
   assert.ok(!knobs.calls.includes("planner"));
+  assert.ok(!knobs.calls.includes("discovery"));
 });
 
 test("dev gets the shell rules and qa gets the code-verified evidence", async () => {
@@ -257,6 +258,7 @@ test("an adopted ticket skips the planner, and a dev that changes the adopted co
   knobs.override.triage = ambiguous;
   const g = await start("T-1", undefined, { adopt_tree: "4b825dc642cb6eb9a060e54bf8d69288fbee4904" });
   assert.ok(!knobs.calls.includes("planner"));
+  assert.ok(!knobs.calls.includes("discovery"));
   assert.ok(!knobs.calls.includes("reviewer"));
   assert.equal(paused(g.r)?.type, "escalation");
   assert.match(String(paused(g.r)?.reason), /changed the adopted content/);

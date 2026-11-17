@@ -1,38 +1,32 @@
 # Task 4 — Planner node
 
-Ambiguous route from the brief: `triage -> planner -> dev`, and `ceo_approval -> planner`
-when information is missing.
+Unclear route: `triage -> discovery -> planner -> dev`. `discovery` asks the CEO; the planner
+never asks.
 
 ## Behavior
 
-- Runs only when triage returns `clear=false` (the post-triage router in `graph.ts`). An
-  ambiguous triage no longer passes criteria on (`criteria=[]`).
+- Runs after `discovery` (or straight after triage for incidents), only when triage returns
+  `clear=false`. It receives the discovery briefing and the triage summary. An unclear triage
+  does not pass criteria on (`criteria=[]`).
 - **One call** with `demand-analyst` + `product-manager` + `tech-lead` concatenated as
   the system prompt (the "sequence" is the order of the files). Three calls would triple
   the context; the brief prioritizes tokens.
-- Output (`PlanOutput`) = triage output + `question`. `clear=true` with criteria: fills
-  title, priority, specialty, flags and criteria, and proceeds to the dev. Without closed
-  criteria: `status=ambiguous`, `summary=question`.
-- **Clarification:** `status=ambiguous` goes to `ceo_approval` as an escalation with the
-  question. An answer other than `abort` is appended to the `request` (`CEO
-  clarification: ...`) and the ticket returns to the planner; `abort` ends it. Node
-  failures (error, timeout, invalid output) still only abort while there are no criteria.
+- Output = triage output. `clear=true` with criteria: fills title, priority, specialty, flags
+  and criteria, and proceeds to the dev. Without closed criteria it escalates to the CEO and
+  the ticket can only abort; the questions belong to `discovery`.
 - `planner` role: read-only (same table as triage). Turns in `TURNS_PLANNER`;
   model/effort inherit `*_DEFAULT`.
-- No cap of its own on clarification rounds: each loop requires a human answer, and the
-  token budget and `RECURSION_LIMIT` still apply.
+- Rounds of questions are capped in `discovery` (2 pauses), not here.
 
 ## Tests (fake nodes)
 
 `an ambiguous request goes through the planner ...`, `a planner without criteria
-escalates with the question ...`, `the CEO aborts when the planner asks for
-clarification`. Total: 26 tests.
+escalates ...`. The discovery tests cover the questions.
 
 ## Real-model validation
 
-Exercised in Phase 4 with the request "Add a discount to the cart": the planner asked 5
-scoping questions, the CEO's answer returned it to the planner, which closed the criteria
-and released the dev (`08-real-repo-validation.md`). Planner cost: 2 calls, ~20k tokens.
+Historical (Phase 4, before `discovery`): with "Add a discount to the cart" the planner itself
+asked 5 scoping questions (`08-real-repo-validation.md`). That job now belongs to `discovery`.
 
 ## Out of scope
 
