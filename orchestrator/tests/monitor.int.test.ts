@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { forgetDeploy, recordDeploy, registerDeployTarget } from "../src/deploy.ts";
-import { listIncidents } from "../src/incidents.ts";
-import { approveRollback, resolveIncident, watch } from "../src/monitor.ts";
+import { MAX_OPEN_INCIDENTS, listIncidents, openIncident } from "../src/incidents.ts";
+import { approveRollback, resolveIncident, verifyDeploy, verifyMinutes, watch } from "../src/monitor.ts";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { gitConfigHash } from "../src/guardrails.ts";
 
@@ -171,4 +171,62 @@ test("a watch after the rollback never reopens it, so a second approval is refus
   assert.equal(listIncidents(home)[0].rollback, "done");
   assert.throws(() => approveRollback(home, id), /already rolled back/);
   assert.equal(rollbacks.length, 1);
+});
+
+const cmd2 = { rollback: "node --version", health_url: "http://x/h", env: [], timeout_s: 30, max_latency_ms: 2000, environment: "staging" as const,
+  git_config_hash: "" };
+const withHealth = () => recordDeploy(home, { id: "T-2", repo: "/r", sha: "a", previous: "b", target: "rec", sandbox: true, cmd: cmd2 });
+
+test("verifyDeploy without a health check is skipped and never probes", async () => {
+  let probed = 0;
+  const r = await verifyDeploy(home, "T-1", { probe: () => (probed++, null), notify: async () => {}, minutes: 5 });
+  assert.deepEqual(r, { outcome: "skipped" });
+  assert.equal(probed, 0);
+});
+
+test("a healthy service is polled every 30s for the window and stays without incidents", async () => {
+  withHealth();
+  const waits: number[] = [];
+  const r = await verifyDeploy(home, "T-2", { probe: () => null, notify: async () => {}, minutes: 2, sleep: async (ms) => void waits.push(ms) });
+  assert.deepEqual(r, { outcome: "healthy" });
+  assert.deepEqual(waits, [30_000, 30_000, 30_000, 30_000]);
+  assert.equal(listIncidents(home).length, 0);
+});
+
+test("minutes 0 still polls once", async () => {
+  withHealth();
+  let probed = 0;
+  const waits: number[] = [];
+  const r = await verifyDeploy(home, "T-2", { probe: () => (probed++, null), notify: async () => {}, minutes: 0, sleep: async (ms) => void waits.push(ms) });
+  assert.deepEqual(r, { outcome: "healthy" });
+  assert.equal(probed, 1);
+  assert.deepEqual(waits, []);
+});
+
+test("a degradation opens one incident with the rollback proposed and notifies once", async () => {
+  withHealth();
+  const seq = [null, "http 500"];
+  const r = await verifyDeploy(home, "T-2", { probe: () => seq.shift() ?? null, notify: async (t) => void notes.push(t), minutes: 5, sleep: async () => {} });
+  const [inc] = listIncidents(home);
+  assert.deepEqual(r, { outcome: "degraded", symptom: "http 500", incident: inc.id });
+  assert.equal(inc.rollback, "proposed");
+  assert.deepEqual(notes, [`Incident ${inc.id} on T-2: http 500 -> orch rollback ${inc.id}`]);
+  const again = await verifyDeploy(home, "T-2", { probe: () => "http 500", notify: async (t) => void notes.push(t), minutes: 5, sleep: async () => {} });
+  assert.deepEqual(again, { outcome: "degraded", symptom: "http 500", incident: inc.id });
+  assert.equal(listIncidents(home).length, 1);
+  assert.equal(notes.length, 1);
+});
+
+test("verifyMinutes falls back to 5 for unset or invalid values", () => {
+  assert.equal(verifyMinutes({}), 5);
+  assert.equal(verifyMinutes({ VERIFY_MINUTES: "abc" }), 5);
+  assert.equal(verifyMinutes({ VERIFY_MINUTES: "-1" }), 5);
+  assert.equal(verifyMinutes({ VERIFY_MINUTES: "0" }), 0);
+  assert.equal(verifyMinutes({ VERIFY_MINUTES: "0.5" }), 0.5);
+});
+
+test("a degradation at the open incident limit throws a limit error", async () => {
+  withHealth();
+  for (let n = 0; n < MAX_OPEN_INCIDENTS; n++) openIncident(home, `X-${n}`, "boom");
+  await assert.rejects(verifyDeploy(home, "T-2", { probe: () => "http 500", notify: async () => {}, minutes: 0 }), /limit/);
 });
