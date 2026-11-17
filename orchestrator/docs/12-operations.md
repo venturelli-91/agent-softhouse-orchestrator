@@ -57,6 +57,13 @@ For command deploys `orch watch` requests `health_url` and reports `http <status
 credentials and never appears in a symptom. A command deploy without `health_url` has no health check and is not
 monitored.
 
+After health, each `checks` entry runs against the origin of `health_url` with the same timeout and latency limit. A
+wrong status reads `http <status> on <METHOD> <path>`. Then `metrics_url` is read. The first `watch` only records the
+counters. Later runs compare against the last recorded counters (stored in `ORCH_HOME/deployed/metrics/<id>.json`), and
+a 5xx share of the new requests above `max_error_rate` reads `error rate X% over Y%`. A counter reset skips one run. No
+new requests counts as healthy. An invalid payload reads `metrics: invalid payload`. The first failure is the symptom.
+Unreachable/timeout symptoms still propose only the rollback, and the others also open the hotfix ticket.
+
 ## Design and webcheck nodes
 
 UI tickets (`frontend`, `fullstack`) pass through `design` (read-only agent, reports only; the dev fixes in the

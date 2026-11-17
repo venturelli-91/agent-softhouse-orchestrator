@@ -37,7 +37,23 @@ export function recordDeploy(home: string, r: DeployRecord): void {
   mkdirSync(dir(home), { recursive: true });
   writeFileSync(f, JSON.stringify(r, null, 1));
 }
-export const forgetDeploy = (home: string, id: string): void => rmSync(file(home, id), { force: true });
+export type Counters = { ts: string; requests: number; errors_5xx: number };
+const counterFile = (home: string, id: string) => (checkId(id), join(dir(home), "metrics", `${id}.json`));
+export function readCounters(home: string, id: string): Counters | null {
+  try {
+    return JSON.parse(readFileSync(counterFile(home, id), "utf8"));
+  } catch {
+    return null;
+  }
+}
+export function recordCounters(home: string, id: string, c: Counters): void {
+  mkdirSync(join(dir(home), "metrics"), { recursive: true });
+  writeFileSync(counterFile(home, id), JSON.stringify(c));
+}
+export function forgetDeploy(home: string, id: string): void {
+  rmSync(file(home, id), { force: true });
+  rmSync(counterFile(home, id), { force: true });
+}
 export const readDeploy = (home: string, id: string): DeployRecord => JSON.parse(readFileSync(file(home, id), "utf8"));
 export function deployedIds(home: string): string[] {
   try {
