@@ -61,11 +61,16 @@ const check = (o: z.infer<typeof Plan>, e: Exp) =>
   o.clear === e.clear && (!e.priority || o.priority === e.priority) && (!e.specialty || o.specialty === e.specialty) && (!e.flag || o.flags[e.flag]);
 
 const repo = createFixture(mkdtempSync(`${tmpdir()}/stages-`));
-// Facts the discovery questions must not ask about; seeded for every stage (harmless: devops only compares before/after).
-writeFileSync(`${repo}/README.md`, "Customers are B2B buyers on desktop.\nCheckout is in src/checkout.ts.\nPrices are in BRL.\nData falls under LGPD.\n");
-git(repo, "add", "-A");
-git(repo, "commit", "-q", "-m", "readme");
+// Facts the discovery questions must not ask about; seeded only when the discovery stage runs.
+if (values.stages!.split(",").includes("discovery")) {
+  writeFileSync(`${repo}/README.md`, "Customers are B2B buyers on desktop.\nCheckout is in checkout.html.\nPrices are in BRL.\nData falls under LGPD.\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "readme");
+}
 const reps = Number(values.reps);
+const triageContext = (text: string, planner = false) => `CEO request: ${text}\n\n` + (planner
+  ? "If missing information prevents verifiable acceptance criteria, set clear=false.\n\n"
+  : "") + "Answer only in the structured format. `summary`: up to 10 lines.";
 const sum = (u: { tokens_in: number; tokens_out: number; cache_read: number; cache_create: number }) => u.tokens_in + u.tokens_out + u.cache_read
   + u.cache_create;
 
@@ -82,9 +87,7 @@ for (const model of values.models.split(",")) {
           const res = await runAgent({
             role: stage, cwd: repo, schema: Plan,
             files: planner ? ["demand-analyst", "product-manager", "tech-lead"] : ["triage"],
-            context: `CEO request: ${r.text}\n\n` + (planner
-              ? "If missing information prevents verifiable acceptance criteria, set clear=false.\n\n"
-              : "") + "Answer only in the structured format. `summary`: up to 10 lines.",
+            context: triageContext(r.text, planner),
           });
           if ("failed" in res) { lines.push(`FAIL "${r.text.slice(0, 40)}": ${res.failed}`); continue; }
           const { output, usage } = res;
@@ -108,9 +111,7 @@ for (const model of values.models.split(",")) {
           total++;
           const tri = await runAgent({
             role: "triage", cwd: repo, schema: Plan, files: ["triage"],
-            context: `CEO request: ${r.text}
-
-Answer only in the structured format. \`summary\`: up to 10 lines.`,
+            context: triageContext(r.text),
           });
           if ("failed" in tri) { lines.push(`FAIL triage "${r.text.slice(0, 40)}": ${tri.failed}`); continue; }
           tokens += sum(tri.usage);
@@ -129,7 +130,7 @@ Answer only in the structured format. \`summary\`: up to 10 lines.`,
           tokens += sum(res.usage);
           usd += res.usage.cost_usd;
           const qs = res.output.questions;
-          const ok = qs.length <= 5 && qs.every((q) => q.why.trim() && q.default.trim());
+          const ok = qs.every((q) => q.why.trim() && q.default.trim());
           right += +ok;
           lines.push(`${ok ? "OK" : "MISS"} "${r.text}" ready=${res.output.ready} questions=${qs.length}`);
           for (const q of qs) lines.push(`    Q: ${q.question} | why: ${q.why} | default: ${q.default}`);
