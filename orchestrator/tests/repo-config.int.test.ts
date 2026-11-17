@@ -283,9 +283,9 @@ test("a GET or HEAD check with a body is rejected in every environment", () => {
   }
 });
 
-test("production checks accept only GET or HEAD without a body", () => {
+test("production checks accept only GET or HEAD", () => {
   const p = withDeploy({ ...okDeploy, environment: "production", checks: [{ method: "POST", path: "/x", expect_status: 200 }] });
-  assert.throws(() => loadRepoConfig(p.d, p.base, p.h), /checks: production checks must be GET or HEAD without a body/);
+  assert.throws(() => loadRepoConfig(p.d, p.base, p.h), /checks: production checks must be GET or HEAD/);
   p.done();
   const t = withDeploy({ ...okDeploy, environment: "production", checks: [{ method: "HEAD", path: "/", expect_status: 200 }] });
   assert.equal(loadRepoConfig(t.d, t.base, t.h).deploy?.checks?.length, 1);

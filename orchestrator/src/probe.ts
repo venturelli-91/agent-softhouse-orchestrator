@@ -27,17 +27,18 @@ function fetchSymptom(e: unknown, timeout_ms: number): string {
   return `unreachable: ${err.cause?.code ?? err.name ?? "error"}`;
 }
 
+const TIMEOUT_MS = 10_000;
+
 const Metrics = z.object({ requests: z.number().nonnegative(), errors_5xx: z.number().nonnegative() });
 
 export async function errorRate(home: string, id: string, url: string, max: number): Promise<string | null> {
-  const timeout_ms = 10_000;
   let parsed;
   try {
-    const res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(timeout_ms) });
+    const res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!res.ok) return `http ${res.status} on metrics`;
     parsed = Metrics.safeParse(await res.json().catch((e) => (e as Error).name === "TimeoutError" ? Promise.reject(e) : null));
   } catch (e) {
-    return `${fetchSymptom(e, timeout_ms)} on metrics`;
+    return `${fetchSymptom(e, TIMEOUT_MS)} on metrics`;
   }
   if (!parsed.success) return "metrics: invalid payload";
   const { requests, errors_5xx } = parsed.data;
@@ -54,7 +55,7 @@ export async function errorRate(home: string, id: string, url: string, max: numb
 export const defaultProbe: Probe = async (home, id) => {
   const cmd = readDeploy(home, id).cmd;
   if (!cmd?.health_url) return null;
-  const opts = { timeout_ms: 10_000, max_latency_ms: cmd.max_latency_ms };
+  const opts = { timeout_ms: TIMEOUT_MS, max_latency_ms: cmd.max_latency_ms };
   const health = await httpProbe(cmd.health_url, opts);
   if (health) return health;
   const origin = new URL(cmd.health_url).origin;

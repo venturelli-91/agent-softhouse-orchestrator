@@ -61,8 +61,9 @@ After health, each `checks` entry runs against the origin of `health_url` with t
 wrong status reads `http <status> on <METHOD> <path>`. Then `metrics_url` is read. The first `watch` only records the
 counters. Later runs compare against the last recorded counters (stored in `ORCH_HOME/deployed/metrics/<id>.json`), and
 a 5xx share of the new requests above `max_error_rate` reads `error rate X% over Y%`. A counter reset skips one run. No
-new requests counts as healthy. An invalid payload reads `metrics: invalid payload`. The first failure is the symptom.
-Unreachable/timeout symptoms still propose only the rollback, and the others also open the hotfix ticket.
+new requests counts as healthy. An invalid payload reads `metrics: invalid payload`. The metrics endpoint can also read `http <status> on metrics`,
+`unreachable: <code> on metrics` or `timeout after <n>ms on metrics`. The first failure is the symptom.
+Unreachable/timeout symptoms (including on metrics) still propose only the rollback, like health, and the others also open the hotfix ticket.
 
 ## Design and webcheck nodes
 
