@@ -93,7 +93,7 @@ export const planner = guarded("planner", async (t) => {
   if (!clear || !plan.criteria.length) return { status: "ambiguous", summary: cap(plan.summary), history: log(t, "planner", "ambiguous", usage) };
   return {
     ...plan,
-    briefing: plan.briefing || t.briefing,
+    briefing: t.briefing || plan.briefing,
     tasks: tasksOf(split),
     task_done: 0,
     priority: t.incident ? ("P0" as const) : plan.priority,

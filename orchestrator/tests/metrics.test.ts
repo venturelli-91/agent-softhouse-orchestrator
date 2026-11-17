@@ -33,6 +33,7 @@ test("metrics add up per node and count escalations, revisions and route", () =>
 test("a planner run marks the ticket ambiguous; recordMetrics appends one JSON line per ticket", () => {
   const home = mkdtempSync(join(tmpdir(), "metrics-"));
   recordMetrics(home, { ...ticket, tasks: [], history: [...ticket.history, { node: "planner", time: "t6", result: "clear", ms: 1 }] });
+  assert.equal(ticketMetrics({ ...ticket, history: [{ node: "discovery", time: "t1", result: "paused", ms: 1 }] }).route, "ambiguous");
   recordMetrics(home, ticket);
   const lines = readFileSync(join(home, "metrics.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
   assert.equal(lines.length, 2);

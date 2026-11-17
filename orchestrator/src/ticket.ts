@@ -35,7 +35,7 @@ const plain = (s: string) =>
     .trim();
 export const briefMarkdown = (b: z.infer<typeof Brief>) => `## Why\n${plain(b.why)}\n\n## How\n${plain(b.how)}\n\n## Where it applies\n${plain(b.where)}`;
 
-export const BLOCKS = ["problem", "success", "users", "scope", "constraints", "example"] as const;
+const BLOCKS = ["problem", "success", "users", "scope", "constraints", "example"] as const;
 export const DiscoveryQuestion = z.object({
   block: z.enum(BLOCKS),
   question: z.string().min(5),
@@ -43,7 +43,7 @@ export const DiscoveryQuestion = z.object({
   default: z.string().min(1),
 });
 const briefingText = z.string().default("");
-export const BriefingFields = z.object({
+const BriefingFields = z.object({
   problem: briefingText, success: briefingText, users: briefingText, scope_in: briefingText, scope_out: briefingText, constraints: briefingText, example: briefingText,
 });
 export const DiscoveryOutput = z.object({

@@ -138,6 +138,18 @@ test("after two pauses the open questions take their defaults", async () => {
   assert.equal(discoveryCalls(), 3);
 });
 
+test("the planner's own briefing does not overwrite the discovery briefing", async () => {
+  knobs.override.triage = ambiguous;
+  recordDiscovery(() => ({ ready: false, questions: [q(1)] }));
+  knobs.override.planner = (req) => ({ ...(defaults.planner!(req) as object), briefing: "PLANNER" });
+  const g = await start();
+  await answer(g, "a1");
+  await answer(g, "a2");
+  const { briefing } = (await g.graph.getState(g.cfg)).values;
+  assert.match(briefing, /## Assumed defaults/);
+  assert.notEqual(briefing, "PLANNER");
+});
+
 test("discovery with nothing to ask goes to the planner", async () => {
   knobs.override.triage = ambiguous;
   recordDiscovery(() => ({ ready: false, questions: [] }));
