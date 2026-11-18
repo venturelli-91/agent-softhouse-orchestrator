@@ -31,9 +31,9 @@ Instead of guessing which model each role needs, I built three eval scripts (`ev
 
 ## 12. Testing strategy
 
-- **245 tests defined with `node:test`** (82 unit, 163 integration; 2 integration tests skip where symlinks are unavailable; counts as of 2026-11-08), run on Node 24 with native TypeScript. No vitest, no tsx. `npm run test:unit` runs the fast pure tests, `npm run test:int` the ones that build real git repos and drive the graph, and `npm test` runs both.
+- **418 tests defined with `node:test`** (140 unit, 278 integration; 2 integration tests skip where symlinks are unavailable; counts as of 2026-11-17), run on Node 24 with native TypeScript. No vitest, no tsx. `npm run test:unit` runs the fast pure tests, `npm run test:int` the ones that build real git repos and drive the graph, and `npm test` runs both.
 - **Zero network, model or credentials.** A fake executor (`registerExecutor("fake", ...)`) and a fake publisher exercise the real graph. The fake dev makes **real commits** in a fixture repo.
-- Coverage includes: revision cap, self-approval, declared-but-false evidence, forbidden paths, `package.json` changes, uncommitted changes, deploy only after approval, escalation on every failure class, planner clarification loop, push/PR ordering, git config tampering, local merge safety, incident dedupe, chaos sandbox restriction, probe symptoms, deploy command masking, postmortem sanitization, per-ticket locks.
+- Coverage includes: revision cap, self-approval, declared-but-false evidence, forbidden paths, `package.json` changes, uncommitted changes, deploy only after approval, escalation on every failure class, discovery clarification loop, push/PR ordering, git config tampering, local merge safety, incident dedupe, probe symptoms, deploy command masking, staging→production promotion, postmortem sanitization, per-ticket locks.
 - **CI:** GitHub Actions on Node 24 (typecheck, then `npm test`) with `permissions: contents: read` and no secrets.
 - **Live validation** on a real private GitHub repo with the real model: draft PRs, an ambiguous request resolved through planner questions, persistent approval across two processes, and a real squash-merge after green CI.
 - **Security review rounds** after each phase; each finding was fixed together with a regression test.
@@ -51,6 +51,12 @@ Instead of guessing which model each role needs, I built three eval scripts (`ev
 | Nov 6 | Playbook for the command deploy target validated on a staging service; per-ticket metrics on `orch clean`; the orchestrator folder made a self-contained drop-in; **graph-written project docs** (`docs` role, `docs_start`/`docs_mid`/`docs_end`) (PRs #8–#13) |
 | Nov 7 | `.claude/CLAUDE.md` rules loading; modularity guardrail; `graph.ts`, `guardrails.ts` and `orch.ts` split by responsibility; the team mapped by tier (`TEAM.md`); per-project dev specialties; red-base refusal; `orch team` (PRs #14–#27) |
 | Nov 8 | **`design` node** for UI tickets; **`webcheck` node** (GTM, GA4, Ads, Web Vitals in Chromium); `orch setup`; the prompt-engineer role removed; `.claude/agents` turned into pointer stubs to `orchestrator/agents` (PRs #30–#33 and direct commits) |
+| Nov 9 | Refinement wave: extra agents proposed, review gates read from the diff, docs-agent fixes, liftoff blockers (PRs #28–#39) |
+| Nov 12–13 | Demand flow quality and flow small fixes (PRs #40–#41) |
+| Nov 14 | Design docs: lean triage/production design, load-stage design, R9 prompt eval |
+| Nov 15 | **Load stage** (`load`); setup/env hook; retry cap and run state; spec-aware review; CI hooks (PRs #42–#47) |
+| Nov 16 | **Cut**: the docs snapshot nodes (`docs_start`/`docs_mid`/`docs_end`), `chaos` and the model watchdog removed (PR #48) |
+| Nov 17 | **Discovery + triage**; production detection; **`verify_deploy`**; **staging → production promotion** (PRs #49–#52) |
 
 The work followed a **spec → plan → implementation** discipline: each major feature has a written design (goals, non-goals, decisions) and an implementation plan under `docs/superpowers/`, and the CEO-approved design was committed before the code.
 

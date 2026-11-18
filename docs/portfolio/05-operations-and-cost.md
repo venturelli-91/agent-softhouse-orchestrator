@@ -10,7 +10,7 @@ Delivery ends at the deploy. Operations is **not a graph**; it is a few file-bac
 - **One outage = one incident = one hotfix,** even if the symptom changes.
 - **Postmortem:** the `knowledge-manager` agent proposes text; **code** writes it to `playbooks/<date>-<slug>.md`, uncommitted, for the human to read.
 - **HTTP probe:** reports `http <status>`, `timeout after <n>ms`, `latency over <m>ms` or `unreachable: <code>`. Redirects are not followed (a 3xx is a symptom) and the URL never appears in a symptom.
-- **Chaos engineering (sandbox only):** `orch chaos <ticket> <scenario>` injects one of 12 failures (`broken-build`, `missing-env`, `failed-migration`, `http-500`, `latency-spike`, `memory-growth`, `cert-expired`, `api-down`, `api-timeout`, `rate-limit`, `db-down`, `regression`) to prove the loop reacts. It refuses any non-sandbox target and writes nothing in that case.
+- **Staging before production:** with a `staging`/`production` deploy pair, a healthy staging pauses for `orch approve` (deploy to production) or `orch reject` (stay on staging, `not_promoted`); after promotion, `orch watch` and `orch rollback` act on production only.
 
 ---
 
