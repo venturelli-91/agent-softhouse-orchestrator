@@ -35,6 +35,8 @@ export function minimalEnv(role: Role, src: Env = process.env): Record<string, s
     GIT_CONFIG_KEY_2: "core.pager",
     GIT_CONFIG_VALUE_2: "cat",
     GIT_EXTERNAL_DIFF: "",
+    // The user npmrc is the credential risk and is nulled; the global npmrc is system-wide and benign, and setting
+    // NPM_CONFIG_GLOBALCONFIG to the same null device makes npm error with "double-loading", so it stays unset.
     NPM_CONFIG_USERCONFIG: devNull,
     PIP_CONFIG_FILE: devNull,
     PYTHONDONTWRITEBYTECODE: "1",

@@ -71,7 +71,15 @@ async function viaRunner(cfg: LoadConfig, cwd: string, env: Record<string, strin
 async function viaDriver(cfg: LoadConfig, proxy: Awaited<ReturnType<typeof startDelayProxy>> | null, check: () => void): Promise<LoadOutcome> {
   let report: LoadReport = await runDriver(cfg, proxy, check);
   let findings = evaluateLoad(report, cfg);
-  if (findings.length && report.recovered !== false) (report = await runDriver(cfg, proxy, check), (findings = evaluateLoad(report, cfg)));
+  if (findings.length && report.recovered !== false) {
+    try {
+      report = await runDriver(cfg, proxy, check);
+      findings = evaluateLoad(report, cfg);
+    } catch (e) {
+      // The re-run cannot fit in timeout_s: keep the first run's breach instead of escalating.
+      if (!(e instanceof NodeFailure) || !/exceeded timeout/.test(e.message)) throw e;
+    }
+  }
   const slowed = report.slowed_p95_ms === undefined ? "" : ` vs ${Math.round(report.slowed_p95_ms)}ms with the dependency slowed`;
   return { findings, report, summary: `${report.requests} requests, error rate ${pct(report.errors, report.requests)}, fast p95 ${Math.round(report.baseline_p95_ms)}ms baseline${slowed}` };
 }
