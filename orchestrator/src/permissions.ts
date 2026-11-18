@@ -47,7 +47,8 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
 export function permissionArgs(role: Role, test: string | string[] = DEFAULT_TEST): string[] {
   const p = PERMISSIONS[role];
   const cmds = [test].flat();
-  const own = [...cmds, ...(cmds.some((c) => c.startsWith("npm")) ? ["npm run typecheck"] : [])].map((c) => `${SHELL}(${c}*)`);
+  // The exact command, plus the command with arguments: a bare `npm test*` (no space) would also allow `npm testx`.
+  const own = [...cmds, ...(cmds.some((c) => c.startsWith("npm")) ? ["npm run typecheck"] : [])].flatMap((c) => [`${SHELL}(${c})`, `${SHELL}(${c} *)`]);
   const allow = role === "dev" ? [...p.allow, ...own] : p.allow;
   return [
     "--permission-mode", "dontAsk",

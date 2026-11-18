@@ -124,13 +124,15 @@ test("a diff that touches python test config does not run on the host", () => {
 test("the dev's allowlist gets the repo's test command instead of npm test", () => {
   const allow = (a: string[]) => a.slice(a.indexOf("--allowedTools") + 1, a.indexOf("--disallowedTools"));
   const npm = allow(permissionArgs("dev"));
-  assert.ok(npm.includes(`${SHELL}(npm test*)`) && npm.includes(`${SHELL}(npm run typecheck*)`));
+  assert.ok(npm.includes(`${SHELL}(npm test)`) && npm.includes(`${SHELL}(npm test *)`));
+  assert.ok(npm.includes(`${SHELL}(npm run typecheck)`) && npm.includes(`${SHELL}(npm run typecheck *)`));
+  assert.ok(!npm.includes(`${SHELL}(npm test*)`), "a bare `npm test*` (no space) would also allow `npm testx`");
   const py = allow(permissionArgs("dev", "pytest -q"));
-  assert.ok(py.includes(`${SHELL}(pytest -q*)`) && !py.some((a) => a.includes("npm")));
+  assert.ok(py.includes(`${SHELL}(pytest -q)`) && py.includes(`${SHELL}(pytest -q *)`) && !py.some((a) => a.includes("npm")));
   assert.ok(!allow(permissionArgs("dev", "python -m unittest")).some((a) => a.includes("npm") || a.includes("pip")));
   assert.ok(!allow(permissionArgs("qa", "pytest -q")).some((t) => t.includes("pytest")));
   const both = allow(permissionArgs("dev", ["npm test", "npm run lint"]));
-  assert.ok(both.includes(`${SHELL}(npm test*)`) && both.includes(`${SHELL}(npm run lint*)`));
+  assert.ok(both.includes(`${SHELL}(npm test *)`) && both.includes(`${SHELL}(npm run lint *)`));
 });
 
 function home(cfg: string) {
