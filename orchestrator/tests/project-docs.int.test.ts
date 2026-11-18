@@ -7,7 +7,7 @@ import { git } from "../scripts/fixture.ts";
 import { knobs, paused, start } from "./helpers/graph-harness.ts";
 
 const pre = (req: { context: string }) => /Phase: pre/.test(req.context);
-const docs = (files: { path: string; content: string }[]) => (req: { context: string }) => ({ files: pre(req) ? files : [], not_applicable: [], notes: "" });
+const docs = (files: { path: string; content: string }[]) => (req: { context: string }) => ({ files: pre(req) ? files : [], notes: "" });
 const preCalls = () => knobs.docsContexts.filter((c) => /Phase: pre/.test(c));
 const warnings = (r: unknown) => ((r as { docs_warnings: string[] }).docs_warnings).filter((w) => w.startsWith("pre: "));
 const wt = (r: unknown) => (r as { worktree: string }).worktree;
@@ -66,7 +66,7 @@ test("a symlinked project doc is refused and nothing escapes the worktree", asyn
 test("a failing docs agent only adds a pre warning and leaves the tree as the dev left it", async () => {
   knobs.override.docs = (req) => {
     if (pre(req)) throw new Error("boom");
-    return { files: [], not_applicable: [], notes: "" };
+    return { files: [], notes: "" };
   };
   const g = await start("T-1", undefined, { project_docs: ["README.md"] });
   assert.equal(paused(g.r)?.type, "approval");

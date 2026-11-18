@@ -12,7 +12,6 @@ const MAX_FILES = 40;
 const MAX_BYTES = 200_000;
 const DocsOutput = z.object({
   files: z.array(z.object({ path: z.string(), content: z.string() })).max(MAX_FILES),
-  not_applicable: z.array(z.object({ topic: z.string(), reason: z.string().min(5) })).default([]),
   notes: z.string().default(""),
 });
 

@@ -11,4 +11,4 @@ Rules:
 - To change a file, return its full new content; you may only edit files whose content the context shows.
 - Return only files that need a change; never rewrite a file just to restate what it already says.
 - Never read secrets (.env, keys); never push, merge or deploy.
-- Answer only in the requested structured format: `files` (path, content), `not_applicable`, `notes`.
+- Answer only in the requested structured format: `files` (path, content), `notes`.
