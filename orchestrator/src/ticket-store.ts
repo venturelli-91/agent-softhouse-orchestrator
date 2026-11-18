@@ -24,6 +24,9 @@ export function ticketIds(home: string): string[] {
 }
 
 function alive(pid: number): boolean {
+  // An empty, zero or negative lock (corrupt file) is a stale lock, not a live one: `kill(0, 0)` would
+  // report the caller's own process group as alive.
+  if (!Number.isFinite(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
