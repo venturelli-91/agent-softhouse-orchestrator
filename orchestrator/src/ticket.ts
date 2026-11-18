@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_TEST, TestSpec } from "./commands.ts";
-import { DeployConfig, LoadConfig, WebcheckConfig } from "./repo-config.ts";
+import { LoadConfig, RepoDeploy, WebcheckConfig } from "./repo-config.ts";
 import { TestCounts } from "./test-report.ts";
 import type { Usage } from "./run-agent.ts";
 import { SPECIALTIES } from "./specialties.ts";
@@ -112,7 +112,9 @@ export const Ticket = z.object({
   stories: z.array(z.string()).default([]),
   incident: z.string().default(""),
   deploy_target: z.string().default("simulated"),
-  deploy_cfg: DeployConfig.nullable().default(null),
+  deploy_cfg: RepoDeploy.nullable().default(null),
+  // After the CEO approves a promotion, the next deploy targets production instead of staging.
+  promoted: z.boolean().default(false),
   webcheck_cfg: WebcheckConfig.nullable().default(null),
   load_cfg: LoadConfig.nullable().default(null),
   load_note: z.string().default(""),

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { MAX_REVISIONS, tokens } from "./guardrails.ts";
 import type { Ticket } from "./graph.ts";
 
-const DONE = new Set(["simulated_deploy", "deployed", "aborted", "closed", "merged"]);
+const DONE = new Set(["simulated_deploy", "deployed", "aborted", "closed", "merged", "not_promoted"]);
 const used = (t: z.infer<typeof Ticket>) => t.history.reduce((a, h) => a + (h.usage ? tokens(h.usage) : 0), 0);
 
 // Rule-based sweep, no model and no tokens. STALE_HOURS (default 24; P0 waits 1h) for a ticket that stopped moving.

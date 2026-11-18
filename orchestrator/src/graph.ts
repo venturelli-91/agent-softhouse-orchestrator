@@ -38,7 +38,7 @@ const afterTriage = (t: T) =>
 
 const toDev = ["dev_failed", "reverify"];
 const afterCeo = (t: T) =>
-  t.status === "retry" ? t.failed_node : toDev.includes(t.status) ? "dev" : t.status === "rediscover" ? "discovery" : t.status === "approved" ? "merge_pr" : END;
+  t.status === "retry" ? t.failed_node : toDev.includes(t.status) ? "dev" : t.status === "rediscover" ? "discovery" : t.status === "approved" ? "merge_pr" : t.status === "promoting" ? "deploy" : END;
 // A rebase that broke the suite goes back to the dev; a conflict, a new approval or anything else goes to the CEO.
 const afterMerge = (t: T) => (t.status === "approved" ? "deploy" : t.status === "dev_failed" && t.revisions < MAX_REVISIONS ? "dev" : "ceo_approval");
 
@@ -73,8 +73,8 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval", "dev"])
     .addConditionalEdges("ceo_approval", afterCeo, ["triage", "discovery", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["deploy", "dev", "ceo_approval"])
-    .addConditionalEdges("deploy", (t: T) => (["deployed", "simulated_deploy"].includes(t.status) ? "verify_deploy" : END), ["verify_deploy", END])
-    .addEdge("verify_deploy", END)
+    .addConditionalEdges("deploy", (t: T) => (["deployed", "simulated_deploy"].includes(t.status) ? "verify_deploy" : t.status === "escalated" ? "ceo_approval" : END), ["verify_deploy", "ceo_approval", END])
+    .addConditionalEdges("verify_deploy", (t: T) => (t.status === "promote" ? "ceo_approval" : END), ["ceo_approval", END])
     .compile({ checkpointer });
 }
 

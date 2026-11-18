@@ -55,11 +55,6 @@ export async function watch(home: string, deps: WatchDeps): Promise<Incident[]> 
 
 const VERIFY_POLL_MS = 30_000;
 
-export const verifyMinutes = (env: NodeJS.ProcessEnv = process.env): number => {
-  const n = Number(env.VERIFY_MINUTES?.trim() || 5);
-  return Number.isFinite(n) && n >= 0 ? n : 5;
-};
-
 type VerifyResult = { outcome: "healthy" | "skipped" } | { outcome: "degraded"; symptom: string; incident: string };
 
 export async function verifyDeploy(home: string, id: string, deps: { probe: Probe; notify: (text: string) => Promise<void>; minutes: number;

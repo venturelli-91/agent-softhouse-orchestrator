@@ -2,15 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import { orchHome, workRoot } from "./daily-cap.ts";
-import { type CommandSettings, commandTarget, getDeployTarget, recordDeploy } from "./deploy.ts";
+import { type CommandSettings, commandTarget, forgetDeploy, getDeployTarget, recordDeploy } from "./deploy.ts";
 import { repoOf, safeGit, verifyTicket } from "./guardrails.ts";
 import { checkConfig, guarded, log } from "./graph-kit.ts";
 import { handRebased, mergeLocalTicket } from "./local-merge.ts";
 import { mergePr, publish } from "./publish.ts";
-import { isLimit, verifyDeploy, verifyMinutes } from "./monitor.ts";
+import { isLimit, verifyDeploy } from "./monitor.ts";
 import { notify } from "./notify.ts";
 import { defaultProbe } from "./probe.ts";
-import { loadRepoConfig } from "./repo-config.ts";
+import { loadRepoConfig, promotes, stageOf } from "./repo-config.ts";
 import { NodeFailure } from "./run-agent.ts";
 import { briefMarkdown, type T } from "./ticket.ts";
 
@@ -54,7 +54,7 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
     checkConfig(t);
     if (!isDeepStrictEqual(loadRepoConfig(repo, t.base).deploy, t.deploy_cfg))
       throw new NodeFailure("deploy settings changed since the ticket started; re-run the ticket");
-    const c = t.deploy_cfg;
+    const c = stageOf(t.deploy_cfg, t.promoted);
     cmd = {
       rollback: c.rollback,
       health_url: c.health_url,
@@ -102,6 +102,9 @@ export async function deployTicket(t: T): Promise<Partial<T>> {
       throw new NodeFailure((e as Error).message);
     }
   }
+  // ponytail: one deploy record per ticket — the production deploy replaces the staging one, so the staging rollback
+  // is lost after promotion; keep one record per environment if that ever matters.
+  if (t.promoted) forgetDeploy(orchHome(), t.id);
   recordDeploy(orchHome(), {
     id: t.id,
     repo,
@@ -132,17 +135,21 @@ export const deploy = guarded("deploy", async (t) => {
 
 // A degraded deploy opens the incident and proposes the rollback now, not at the next `orch watch`; the status stays as deploy set it.
 export const verifyDeployNode = guarded("verify_deploy", async (t) => {
-  const minutes = verifyMinutes();
+  const minutes = t.deploy_cfg ? stageOf(t.deploy_cfg, t.promoted).verify_minutes : 0;
   let summary: string;
+  let healthy = false;
   try {
     const r = await verifyDeploy(orchHome(), t.id, { probe: defaultProbe, notify, minutes });
+    healthy = r.outcome === "healthy";
     if (r.outcome === "degraded") summary = `deploy degraded: ${r.symptom}; incident ${r.incident} opened, rollback proposed -> orch rollback ${r.incident}`;
-    else summary = r.outcome === "healthy" ? `deploy verified: healthy for ${minutes} min` : "deploy not verified: no health check configured";
+    else summary = healthy ? `deploy verified: healthy for ${minutes} min` : "deploy not verified: no health check configured";
   } catch (e) {
     if (isLimit(e)) throw new NodeFailure((e as Error).message);
     throw e;
   }
-  return { summary, history: log(t, "verify_deploy", summary) };
+  // A healthy staging with a production target waits for the CEO to promote; a flat config or a promoted deploy just ends.
+  const promote = healthy && promotes(t.deploy_cfg) && !t.promoted;
+  return { summary, history: log(t, "verify_deploy", summary), ...(promote ? { status: "promote" } : {}) };
 });
 
 // Squash-merge by code, only for repos that opted in (merge=auto), after the CEO approved, with the evidence still holding.

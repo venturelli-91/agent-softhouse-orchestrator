@@ -82,7 +82,7 @@ export function waitingDays(d: Demand, now = Date.now()): number | null {
   return oldest ? (now - Date.parse(oldest.asked)) / 86_400_000 : null;
 }
 
-const DELIVERED = { code: ["simulated_deploy", "deployed", "merged"], manual: ["closed"] };
+const DELIVERED = { code: ["simulated_deploy", "deployed", "merged", "not_promoted"], manual: ["closed"] };
 
 export type Check = { item: string; ok: boolean; detail: string };
 
