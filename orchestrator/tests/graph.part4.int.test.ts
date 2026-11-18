@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { git } from "../scripts/fixture.ts";
 import { createServer } from "node:http";
-import { readDeploy } from "../src/deploy.ts";
+import { readCounters, readDeploy, recordCounters } from "../src/deploy.ts";
 import { listIncidents, MAX_OPEN_INCIDENTS, openIncident } from "../src/incidents.ts";
 import { deployTicket, Ticket } from "../src/graph.ts";
 import { BRIEF, FLAGS, commit, start, paused, answer, approved, CMD_CFG, writeExternal, commandTicket, knobs } from "./helpers/graph-harness.ts";
@@ -210,4 +210,128 @@ test("a degraded deploy with the open incident limit reached escalates from veri
   assert.equal(end.status, "escalated");
   assert.equal(end.failed_node, "verify_deploy");
   assert.match(end.summary, /^verify_deploy: deploy degraded \(unreachable: .*\) but the open incident limit is reached$/);
+});
+
+// A healthy server whose health_url verifies quickly (verify_minutes 0 in the pair targets below).
+const healthyServer = async () => {
+  const server = createServer((_, res) => res.end("ok"));
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  return { server, url: `http://127.0.0.1:${(server.address() as { port: number }).port}/health` };
+};
+// A staging/production pair: targets never name their own environment (CMD_CFG's is dropped), commands stay SAFE_COMMAND-safe.
+const CMD_NO_ENV = (() => { const { environment: _e, ...rest } = CMD_CFG; return rest; })();
+const pair = (stagingUrl: string, productionUrl: string, prodOver: Record<string, unknown> = {}) => ({
+  staging: { ...CMD_NO_ENV, health_url: stagingUrl },
+  production: { ...CMD_NO_ENV, health_url: productionUrl, ...prodOver },
+});
+type DeployView = { environment: string; production?: { environment: string } };
+
+test("with a staging and production pair a healthy staging asks the CEO to promote, and approve deploys production", async () => {
+  const { server, url } = await healthyServer();
+  try {
+    const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: pair(url, url) });
+    const first = paused(g.r)?.deploy as DeployView | undefined;
+    assert.equal(first?.environment, "staging");
+    assert.equal(first?.production?.environment, "production");
+    const ask = await answer(g, "approve");
+    assert.equal(paused(ask)?.type, "promote");
+    assert.equal((paused(ask)?.deploy as { environment: string } | undefined)?.environment, "production");
+    assert.equal(readDeploy(process.env.ORCH_HOME!, "T-1").cmd?.environment, "staging");
+    const end = await answer(g, "approve");
+    assert.equal(end.status, "deployed");
+    assert.equal(end.promoted, true);
+    assert.equal(readDeploy(process.env.ORCH_HOME!, "T-1").cmd?.environment, "production");
+    assert.equal(end.history.filter((h) => h.node === "deploy").length, 2);
+    assert.equal(end.history.at(-1)?.node, "verify_deploy");
+  } finally {
+    server.close();
+  }
+});
+
+test("a degraded staging never reaches production", async () => {
+  const { server, url } = await healthyServer();
+  try {
+    const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: pair("http://127.0.0.1:1/health", url) });
+    const end = await answer(g, "approve");
+    assert.equal(paused(end), undefined);
+    assert.equal(end.promoted, false);
+    assert.equal(readDeploy(process.env.ORCH_HOME!, "T-1").cmd?.environment, "staging");
+    assert.equal(end.history.filter((h) => h.node === "deploy").length, 1);
+    assert.equal(listIncidents(process.env.ORCH_HOME!)[0].rollback, "proposed");
+  } finally {
+    server.close();
+  }
+});
+
+test("rejecting the promotion ends the ticket on staging as not_promoted", async () => {
+  const { server, url } = await healthyServer();
+  try {
+    const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: pair(url, url) });
+    await answer(g, "approve"); // merge approval -> promote pause
+    const end = await answer(g, "abort: not today");
+    assert.equal(end.status, "not_promoted");
+    assert.equal(end.summary, "not promoted: not today");
+    assert.equal(readDeploy(process.env.ORCH_HOME!, "T-1").cmd?.environment, "staging");
+  } finally {
+    server.close();
+  }
+});
+
+test("the production deploy drops staging's metric counters", async () => {
+  const { server, url } = await healthyServer();
+  try {
+    const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: pair(url, url) });
+    await answer(g, "approve"); // merge approval -> promote pause
+    recordCounters(process.env.ORCH_HOME!, "T-1", { ts: "x", requests: 10, errors_5xx: 0 });
+    const end = await answer(g, "approve"); // promote -> production deploy
+    assert.equal(end.status, "deployed");
+    assert.equal(readCounters(process.env.ORCH_HOME!, "T-1"), null);
+  } finally {
+    server.close();
+  }
+});
+
+test("a failed production deploy is retried as production", async () => {
+  const { server, url } = await healthyServer();
+  try {
+    const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: pair(url, url, { command: "node --nonexistent-flag" }) });
+    await answer(g, "approve"); // merge approval -> promote pause
+    const failed = await answer(g, "approve"); // promote -> production deploy fails
+    assert.equal(failed.status, "escalated");
+    assert.equal(failed.failed_node, "deploy");
+    const again = await answer(g, "retry"); // must not throw in sameCommit (ticket worktree removed by the staging deploy)
+    assert.equal(again.status, "escalated");
+    assert.equal(again.failed_node, "deploy");
+    assert.equal(again.promoted, true);
+    assert.equal(again.history.filter((h) => h.node === "deploy").length, 3);
+    assert.equal(readDeploy(process.env.ORCH_HOME!, "T-1").cmd?.environment, "staging");
+  } finally {
+    server.close();
+  }
+});
+
+test("a config change before the promotion is refused at the production deploy", async () => {
+  const { server, url } = await healthyServer();
+  try {
+    const g = await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: pair(url, url) });
+    await answer(g, "approve"); // merge approval -> promote pause
+    writeExternal(g.repo, pair(url, url, { command: "node --help" })); // changed production command
+    const end = await answer(g, "approve"); // promote -> production deploy refuses the drift
+    assert.equal(end.status, "escalated");
+    assert.match(end.summary, /deploy settings changed since the ticket started/);
+  } finally {
+    server.close();
+  }
+});
+
+test("a flat config healthy deploy never asks to promote", async () => {
+  const { server, url } = await healthyServer();
+  try {
+    const end = await answer(await start("T-1", new MemorySaver(), { deploy_target: "command", deploy_cfg: { ...CMD_CFG, health_url: url } }), "approve");
+    assert.equal(end.status, "deployed");
+    assert.equal(end.promoted, false);
+    assert.equal(paused(end), undefined);
+  } finally {
+    server.close();
+  }
 });

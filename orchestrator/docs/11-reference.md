@@ -110,13 +110,15 @@ graph TD;
 	__end__([<p>__end__</p>]):::last
 	__start__ --> triage;
 	docs_pre --> reviewer;
-	verify_deploy --> __end__;
 	triage -.-> dev;
 	triage -.-> discovery;
 	triage -.-> planner;
 	discovery -.-> planner;
 	deploy -.-> verify_deploy;
+	deploy -.-> ceo_approval;
 	deploy -.-> __end__;
+	verify_deploy -.-> ceo_approval;
+	verify_deploy -.-> __end__;
 	discovery -.-> ceo_approval;
 	triage -.-> ceo_approval;
 	planner -.-> dev;

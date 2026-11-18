@@ -16,7 +16,7 @@ export const die = (msg: string): never => {
 };
 
 type Pending = {
-  type: "approval" | "escalation" | "no_change" | "host_review" | "discovery";
+  type: "approval" | "escalation" | "no_change" | "host_review" | "discovery" | "promote";
   reason?: string | null;
   title: string;
   summary?: string;
@@ -73,6 +73,7 @@ export function makeCtx(argv: string[], host: string) {
         escalation: `orch approve ${id} "<answer>"  |  orch reject ${id} (close)`,
         host_review: `orch approve ${id} (allow these versions of the host files)  |  orch request-changes ${id} "<what to change>"  |  orch reject ${id}`,
         discovery: `orch approve ${id} "1: ... 2: ..."  |  orch approve ${id} (accept every default)  |  orch reject ${id} (close)`,
+        promote: `orch approve ${id} (deploy to production)  |  orch reject ${id} (stay on staging)`,
       }[pending.type];
       await notify(`${id} waiting for you (${pending.type}): ${pending.title}\n${pendingDetail(pending)}\n${next}`);
     } else {

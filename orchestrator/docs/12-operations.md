@@ -37,7 +37,7 @@ In `ORCH_HOME/config.json` (`.state/config.json` by default), under `repos["<abs
 | `max_error_rate` | Optional, 0 to 1, default 0.02. |
 | `verify_minutes` | How long `verify_deploy` probes after the deploy, 0 to 60, default 5. |
 
-Instead of these keys, `deploy` may hold `{ "staging": {...}, "production": {...} }`, each with the keys above except `environment` (set by the target; unknown keys are rejected). Only staging is used for now.
+Instead of these keys, `deploy` may hold `{ "staging": {...}, "production": {...} }`, each with the keys above except `environment` (set by the target; unknown keys are rejected). Staging is deployed and verified first; a healthy staging asks you to promote to production (below).
 
 It is read only from this external file: a `deploy` key in the repo's `.orchestrator.json` is an error, because these
 commands run on your machine with your credentials. A repo with a `deploy` block gets `deploy_target: command`; the
@@ -58,6 +58,14 @@ After a deploy, the `verify_deploy` node probes the deployed service (same probe
 opens the incident, proposes the rollback and notifies you, so you can run `orch rollback <incident-id>` right away; the
 ticket stays `deployed`. Without a `health_url` the deploy is reported as not verified. This holds `orch approve` for that
 long. If the open incident limit is reached, the ticket escalates with the symptom (status `escalated`; the deploy record stays, so `orch watch` keeps probing it). The hotfix still comes from `orch watch`.
+
+With `deploy: { "staging": {...}, "production": {...} }` the ticket deploys staging, verifies it, and a healthy
+staging pauses for you: `orch approve <id>` deploys to production, `orch reject <id>` stays on staging (status
+`not_promoted`). A degraded staging ends with the staging rollback proposed and never reaches production. After a
+promotion the deploy record for the ticket is the production one (staging's record and counters are gone), so
+`orch watch` and `orch rollback` act on production only. A production deploy that fails can be retried with
+`orch approve <id> retry`, which re-runs production, not staging; a config change between staging and the promotion
+refuses the production deploy with "deploy settings changed".
 
 ## HTTP probe
 

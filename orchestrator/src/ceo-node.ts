@@ -4,14 +4,32 @@ import { interrupt } from "@langchain/langgraph";
 import { orchHome } from "./daily-cap.ts";
 import { MAX_REVISIONS, safeGit, verifyTicket } from "./guardrails.ts";
 import { log } from "./graph-kit.ts";
-import { stageOf } from "./repo-config.ts";
+import { promotes, stageOf, type DeployConfig } from "./repo-config.ts";
 import type { T } from "./ticket.ts";
 
 // On an escalation these words are not an answer: they would reach the dev as its instruction.
 export const isBareApproval = (answer?: string) => answer === undefined || /^(approve|approved|ok|yes|lgtm)$/i.test(answer.trim());
 
+// The deploy view shown to the CEO: exactly today's keys. `withTarget` keeps the target; the pair's production preview drops it.
+const deployView = (target: string, c: DeployConfig | null, withTarget = true) => ({
+  ...(withTarget ? { target } : {}),
+  environment: c?.environment ?? "simulated",
+  ...(c ? { command: c.command, rollback: c.rollback, env: c.env, health_url: c.health_url,
+    ...(c.checks && { checks: c.checks }),
+    ...(c.metrics_url && { metrics_url: c.metrics_url }),
+    ...(c.max_error_rate !== undefined && { max_error_rate: c.max_error_rate }) } : {}),
+});
+
 // The only merge/deploy and escalation point. Approval only counts if the evidence still holds.
 export const ceoApproval = async (t: T): Promise<Partial<T>> => {
+  // A healthy staging pause asks whether to deploy to production; anything but "approve" (including `orch reject`'s abort)
+  // leaves the ticket on staging. Checked before the abort branch so a reject here is not_promoted, not aborted.
+  if (t.status === "promote") {
+    const r = interrupt({ type: "promote", ticket: t.id, title: t.title, summary: t.summary, deploy: deployView(t.deploy_target, stageOf(t.deploy_cfg!, true)) }) as string;
+    if (r === "approve") return { status: "promoting", promoted: true, history: log(t, "ceo_approval", "promote approved") };
+    const answer = r.replace(/^abort:?\s*/, "").trim() || "rejected";
+    return { status: "not_promoted", summary: `not promoted: ${answer}`.slice(0, 500), history: log(t, "ceo_approval", "not promoted") };
+  }
   const v = t.status === "approval" && t.evidence.length ? verifyTicket(t) : null;
   const reason =
     t.status === "approval"
@@ -45,12 +63,8 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
     ...(t.status === "host_review" ? { host_diff: hostDiff(t) } : {}),
     ...(t.test_alerts.length ? { test_alerts: t.test_alerts } : {}),
     deploy: {
-      target: t.deploy_target,
-      environment: stage?.environment ?? "simulated",
-      ...(stage ? { command: stage.command, rollback: stage.rollback, env: stage.env, health_url: stage.health_url,
-        ...(stage.checks && { checks: stage.checks }),
-        ...(stage.metrics_url && { metrics_url: stage.metrics_url }),
-        ...(stage.max_error_rate !== undefined && { max_error_rate: stage.max_error_rate }) } : {}),
+      ...deployView(t.deploy_target, stage),
+      ...(promotes(t.deploy_cfg) ? { production: deployView(t.deploy_target, stageOf(t.deploy_cfg, true), false) } : {}),
     },
     active_flags: Object.entries(t.flags)
       .filter(([, active]) => active)
@@ -84,7 +98,10 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
   // A node that stopped on an error or timeout: "retry" runs just that node again, not the dev.
   // Only for the commit that was reviewed: a new commit in the worktree must go back through the dev and both reviews.
   // The failure text stays out of the retried node's context (and out of the PR body).
-  const sameCommit = () => !POST_DEV.includes(t.failed_node) || t.evidence.includes(`commit:${safeGit(t.worktree, "rev-parse", "--short", "HEAD")}`);
+  const sameCommit = () =>
+    (t.failed_node === "deploy" && t.promoted) || // a promoted deploy runs the approved commit from a fresh checkout; the ticket worktree is gone
+    !POST_DEV.includes(t.failed_node) ||
+    t.evidence.includes(`commit:${safeGit(t.worktree, "rev-parse", "--short", "HEAD")}`);
   if (r === "retry" && t.status === "escalated" && RETRYABLE.includes(t.failed_node) && sameCommit())
     return { status: "retry", summary: t.summary_before_failure, history: h("retry") };
   // Any other escalation: the CEO instructs the dev (only if criteria already exist).

@@ -113,6 +113,8 @@ export const Ticket = z.object({
   incident: z.string().default(""),
   deploy_target: z.string().default("simulated"),
   deploy_cfg: RepoDeploy.nullable().default(null),
+  // After the CEO approves a promotion, the next deploy targets production instead of staging.
+  promoted: z.boolean().default(false),
   webcheck_cfg: WebcheckConfig.nullable().default(null),
   load_cfg: LoadConfig.nullable().default(null),
   load_note: z.string().default(""),

@@ -43,7 +43,7 @@ export function runningPid(home: string, id: string): number | null {
   }
 }
 
-export const DONE = ["simulated_deploy", "deployed", "aborted", "closed", "merged"];
+export const DONE = ["simulated_deploy", "deployed", "aborted", "closed", "merged", "not_promoted"];
 
 export type RunState = "waiting" | "running" | "dead" | "done";
 
