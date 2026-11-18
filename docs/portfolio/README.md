@@ -1,11 +1,11 @@
 # Agent Softhouse Orchestrator — An AI Software House Controlled by a LangGraph State Machine
 
 > **Flow control in code, not in prompts.**
-> A TypeScript orchestrator where a [LangGraph.js](https://langchain-ai.github.io/langgraphjs/) graph runs a team of AI agents (triage, planner, dev, reviewer, design, QA, webcheck, docs) with guardrails that the model cannot talk its way around.
+> A TypeScript orchestrator where a [LangGraph.js](https://langchain-ai.github.io/langgraphjs/) graph runs a team of AI agents (triage, discovery, planner, dev, reviewer, design, QA, docs) and code-only nodes (webcheck, load, publish, deploy, verify_deploy) with guardrails that the model cannot talk its way around.
 
 **Repository:** Agent Softhouse Orchestrator (URL pending the repo rename)
 **Role:** Solo author (design, implementation, security hardening, evaluation)
-**Timeline:** Oct 31 – Nov 8, 2026 · over 200 commits · over 30 merged PRs (measured on 2026-11-08, see [VERIFIED.md](VERIFIED.md))
+**Timeline:** Oct 31 – Nov 17, 2026 · 402 commits · 51 merged PRs (measured on 2026-11-17, see [VERIFIED.md](VERIFIED.md))
 **Stack:** TypeScript, Node 24, LangGraph.js, zod, Claude Code CLI (`claude -p`), GitHub CLI, GitHub Actions
 **License:** MIT
 
@@ -20,15 +20,15 @@ So I built an **orchestrator** that turns those rules into a **graph**. Each rol
 
 Result: a CLI (`orch`) that takes a plain-English request, drives it through triage → (planning) → dev → review → QA → publish (draft PR) → CEO approval → merge/deploy, and then watches the deployed product, opening P0 hotfix tickets and rollback proposals when it fails.
 
-*Counts in this table are as of 2026-11-08.*
+*Counts in this table are as of 2026-11-17.*
 
 | Metric | Value |
 |---|---|
-| Source (`orchestrator/src`) | ~2,400 lines of TypeScript in 38 files |
-| Automated tests | 245 defined (82 unit, 163 integration; 2 integration tests skip where symlinks are unavailable; `node:test`, no network, no model, no credentials) |
+| Source (`orchestrator/src`) | ~3,700 lines of TypeScript in 48 files |
+| Automated tests | 418 defined (140 unit, 278 integration; 2 integration tests skip where symlinks are unavailable; `node:test`, no network, no model, no credentials) |
 | Runtime dependencies | 3 (`@langchain/langgraph`, `@langchain/core`, `zod`) |
-| Graph nodes | 14 (triage, planner, dev, reviewer, design, qa, webcheck, publish, ceo_approval, merge_pr, deploy, docs_start, docs_mid, docs_end) |
-| Agent prompts | 21 in `orchestrator/agents/` |
+| Graph nodes | 15 (triage, discovery, planner, dev, reviewer, design, qa, webcheck, load, publish, ceo_approval, merge_pr, deploy, verify_deploy, docs_pre) |
+| Agent prompts | 22 in `orchestrator/agents/` |
 | Cost per ticket | one sample: US$0.2308 for a trivial ticket (86 s, 0 revisions), as of 2026-11-08, evidence in `docs/evidence/cost-1/`; a typical cost is to be measured |
 
 
@@ -40,7 +40,7 @@ Result: a CLI (`orch`) that takes a plain-English request, drives it through tri
 | 2 | [02-system-overview.md](02-system-overview.md) | Graph, components, how a ticket flows |
 | 3 | [03-architecture.md](03-architecture.md) | Executor, state, persistence, per-repo config |
 | 4 | [04-guardrails-and-security.md](04-guardrails-and-security.md) | Enforced rules and the security model |
-| 5 | [05-operations-and-cost.md](05-operations-and-cost.md) | Post-production loop, chaos, cost controls |
+| 5 | [05-operations-and-cost.md](05-operations-and-cost.md) | Post-production loop, staging promotion, cost controls |
 | 6 | [06-evaluation-and-testing.md](06-evaluation-and-testing.md) | Model evals, tests, build timeline |
 | 7 | [07-lessons-and-limits.md](07-lessons-and-limits.md) | Bugs, decisions, honest limitations |
 | 8 | [08-demonstrates-and-running.md](08-demonstrates-and-running.md) | Skills shown and how to run it |

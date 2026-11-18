@@ -31,6 +31,6 @@ The "max 5 active tickets" rule has no database: `activeTickets(repo)` counts gi
 
 ### 6.5 Per-repo configuration
 
-`.orchestrator.json` at the repo root is read **from the base commit**, so a ticket cannot edit its own rules. It sets the test command, merge policy (`pr`, `auto` or `local` for solo repos), publisher, push remote, fork target (`base_repo`), whether the PR body discloses the automated origin, `install`, the dev `specialties` and the `stack`. The same keys can live in `<ORCH_HOME>/config.json` (default `orchestrator/.state/config.json`), and the in-repo file wins per key. `deploy` and `webcheck` are accepted only from that external file.
+`.orchestrator.json` at the repo root is read **from the base commit**, so a ticket cannot edit its own rules. It sets the test command, merge policy (`pr`, `auto` or `local` for solo repos), publisher, push remote, fork target (`base_repo`), whether the PR body discloses the automated origin, `install`, the dev `specialties`, the `stack` and the `project_docs` the docs node may update. The same keys can live in `<ORCH_HOME>/config.json` (default `orchestrator/.state/config.json`), and the in-repo file wins per key. `deploy`, `webcheck` and `load` are accepted only from that external file; `deploy` is a flat target or a strict `{ staging, production }` pair.
 
 
