@@ -43,6 +43,17 @@ export function killTree(
   pid: number, p: Platform = process.platform,
   io: { spawnSync: typeof spawnSync; kill: typeof process.kill } = { spawnSync, kill: process.kill.bind(process) },
 ): void {
-  if (isWindows(p)) io.spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"]);
-  else io.kill(-pid, "SIGKILL");
+  if (isWindows(p)) {
+    io.spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"]);
+    // taskkill returns before the tree is fully reaped, so a live cwd handle can still make a later rmSync
+    // fail with EPERM. Wait (bounded) until the pid is actually gone.
+    for (let i = 0; i < 40; i++) {
+      let alive = true;
+      try { io.kill(pid, 0); } catch { alive = false; }
+      if (!alive) return;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  } else {
+    io.kill(-pid, "SIGKILL");
+  }
 }

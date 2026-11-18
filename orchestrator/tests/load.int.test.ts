@@ -39,7 +39,16 @@ async function assertCleanedUp(f: Awaited<ReturnType<typeof fixture>>) {
   assert.equal(alive(), false, "the service process is still running");
   await assert.rejects(fetch(f.cfg.base_url, { signal: AbortSignal.timeout(1000) }), "the service port is still open");
   await assert.rejects(fetch(dep, { signal: AbortSignal.timeout(1000) }), "the proxy port is still open");
-  rmSync(f.dir, { recursive: true, force: true });
+  // Windows can release the cwd handle a moment after the process is gone; retry the removal.
+  for (let i = 0; ; i++) {
+    try {
+      rmSync(f.dir, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EPERM" || i === 10) throw e;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }
 
 const run = (f: Awaited<ReturnType<typeof fixture>>) => realLoad(f.cfg, f.dir, { id: "T-1", sha: "abc" });

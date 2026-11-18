@@ -40,12 +40,20 @@ test("spawnServe: one shell line on win32, argv and a process group on linux", (
   assert.deepEqual(calls[1], ["npm", ["run", "dev", "-p", "3000"], { cwd: "/w", env, stdio: "ignore", detached: true, shell: false, windowsHide: true }]);
 });
 
-test("killTree: taskkill /t /f on win32, SIGKILL to the group on linux", () => {
+test("killTree: taskkill /t /f then wait for the pid on win32, SIGKILL to the group on linux", () => {
   const seen: unknown[][] = [];
-  const io = { spawnSync: ((...a: unknown[]) => seen.push(["spawnSync", ...a])) as never, kill: ((...a: unknown[]) => seen.push(["kill", ...a])) as never };
+  const io = {
+    spawnSync: ((...a: unknown[]) => seen.push(["spawnSync", ...a])) as never,
+    // signal 0 is the existence probe: throw to say the process is already gone (so the wait loop returns at once).
+    kill: ((...a: unknown[]) => { seen.push(["kill", ...a]); if (a[1] === 0) throw new Error("gone"); }) as never,
+  };
   killTree(42, "win32", io);
   killTree(42, "linux", io);
-  assert.deepEqual(seen, [["spawnSync", "taskkill", ["/pid", "42", "/t", "/f"]], ["kill", -42, "SIGKILL"]]);
+  assert.deepEqual(seen, [
+    ["spawnSync", "taskkill", ["/pid", "42", "/t", "/f"]],
+    ["kill", 42, 0],
+    ["kill", -42, "SIGKILL"],
+  ]);
 });
 
 test("a file named like the binary in the cwd shadows it on Windows only", () => {
