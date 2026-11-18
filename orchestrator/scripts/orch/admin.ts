@@ -187,6 +187,7 @@ export async function clean(c: Ctx) {
       step(`${id} deploy record`, () => forgetDeploy(c.home, id));
       step(`${id} deploy log`, () => rmSync(join(c.home, "deploy-logs", `${id}.txt`), { force: true }));
       step(`${id} host diff`, () => rmSync(join(c.home, `host-diff-${id}.diff`), { force: true }));
+      step(`${id} load report`, () => rmSync(join(c.home, `load-${id}.json`), { force: true }));
       console.log(metrics ? `cleaned ${id} (${t.status}${all ? "" : `, ${repo}`})` : `${id} removed, but its metrics line was lost`);
     });
   }

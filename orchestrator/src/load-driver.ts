@@ -34,7 +34,16 @@ async function hit(url: string, init: RequestInit, signal: AbortSignal): Promise
   const t0 = performance.now();
   try {
     const r = await fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
-    await r.arrayBuffer();
+    // Drain and discard the body instead of buffering it: a huge response must not grow memory.
+    if (r.body) {
+      const reader = r.body.getReader();
+      try {
+        for (;;) {
+          const { done } = await reader.read();
+          if (done) break;
+        }
+      } catch {}
+    }
     return { ms: performance.now() - t0, ok: r.status < 500 };
   } catch {
     return signal.aborted ? { ms: performance.now() - t0, ok: true } : { ms: REQUEST_TIMEOUT_MS, ok: false };
@@ -83,12 +92,14 @@ export async function runDriver(cfg: LoadConfig, proxy: DelayProxy | null, check
   await phase(() => sleep(cfg.duration_s * 1000));
   if (proxy && cfg.slow_dependency) {
     proxy.delay_ms = cfg.slow_dependency.delay_ms;
+    const before = proxy.connections;
     try {
       report.slowed_p95_ms = p95(await phase(() => probe(cfg, cfg.duration_s, check)));
     } finally {
       proxy.delay_ms = 0;
     }
-    report.dep_connections = proxy.connections;
+    // Connections during the slowed phase only: the counter accumulates, so a re-run must not see the first run's.
+    report.dep_connections = proxy.connections - before;
     const until = Date.now() + cfg.thresholds.recover_s * 1000;
     for (report.recovered = false; Date.now() < until && !report.recovered; ) {
       check();

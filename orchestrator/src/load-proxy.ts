@@ -25,10 +25,16 @@ export async function startDelayProxy(target?: string): Promise<DelayProxy> {
       const up = connect({ host, port: Number(port) });
       track(client, up);
       track(up, client);
-      let last = 0;
-      const wait = () => (last = Math.max(last, Date.now() + p.delay_ms)) - Date.now();
-      client.on("data", (c) => after(wait(), () => up.write(c)));
-      client.on("end", () => after(wait(), () => up.end()));
+      // One serial chain per connection: each chunk waits delay_ms then writes, honoring upstream backpressure.
+      // A single chain cannot reorder bytes, and honoring the write return bounds the memory (no chunk pile-up).
+      let chain: Promise<void> = Promise.resolve();
+      const hold = () => new Promise<void>((r) => after(p.delay_ms, r));
+      client.on("data", (c) => {
+        chain = chain.then(hold).then(() => (up.write(c) ? Promise.resolve() : new Promise<void>((r) => up.once("drain", r))));
+      });
+      client.on("end", () => {
+        chain = chain.then(hold).then(() => { up.end(); });
+      });
       up.pipe(client);
     });
   } else {

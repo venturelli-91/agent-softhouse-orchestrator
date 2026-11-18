@@ -126,7 +126,7 @@ as "dependency not reached".
 | `runner` | Optional plain command that replaces the built-in driver: gets `ORCH_LOAD_TARGET`, `ORCH_SLOW_DEP` (dependency slow for the whole run) and `ORCH_LOAD_DURATION`; exit 0 pass, 1 breach, other crash; last stdout line `{"requests":N,"errors":N,"p95_ms":N}`. |
 
 A breach (error rate, fast path stalled while the dependency is slow, no recovery, service died) goes back to the dev as
-`load: ...`; a failed phase is re-run once before it counts. A pass puts one summary line in the PR body and in the
+`load: ...`; the whole run is re-run once before it counts. A pass puts one summary line in the PR body and in the
 approval request, and the JSON report is saved as `ORCH_HOME/load-<id>.json`. A port that already answers or a runner
 that crashes escalates to you; a runner or proxy that cannot start skips with a warning.
 
