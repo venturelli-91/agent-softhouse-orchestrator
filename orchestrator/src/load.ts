@@ -27,15 +27,27 @@ const stop = (p: ChildProcess) => {
   } catch {}
 };
 
+// Only the runner's last line is parsed: keep a bounded tail of its stdout.
+const RUNNER_STDOUT_MAX = 64 * 1024;
+
 function runCommand(cfg: LoadConfig, cwd: string, env: Record<string, string>, deadline: number): Promise<{ code: number; out: string }> {
   const piped = ((c: string, a: string[], o: object) => spawn(c, a, { ...o, stdio: ["ignore", "pipe", "ignore"] })) as unknown as typeof spawn;
   const child = spawnServe(cfg.runner!, cwd, env, undefined, piped);
   let out = "";
-  child.stdout?.on("data", (d) => (out += d));
+  // Only the last line is parsed: keep the tail instead of buffering unbounded runner output.
+  child.stdout?.on("data", (d) => (out = (out + d).slice(-RUNNER_STDOUT_MAX)));
   return new Promise<{ code: number; out: string }>((done, fail) => {
     const timer = setTimeout(() => fail(new NodeFailure(`load runner exceeded timeout_s (${cfg.timeout_s}s)`)), Math.max(0, deadline - Date.now()));
     child.on("error", (e) => (clearTimeout(timer), fail(new InfraError(`load runner cannot start (${e.message})`))));
-    child.on("close", (code) => (clearTimeout(timer), done({ code: code ?? -1, out })));
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const c = code ?? -1;
+      // A command that never started (not found) prints nothing — the "not recognized"/"not found" text goes to
+      // stderr — and exits non-zero. Its exit code varies by platform/locale (9009, 127 or 1), so use the empty
+      // stdout as the signal: a runner that ran prints its JSON report on the last line.
+      if (c !== 0 && out.trim() === "") fail(new InfraError(`load runner cannot start (command not found, exit ${c})`));
+      else done({ code: c, out });
+    });
   }).finally(() => stop(child));
 }
 

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { setLoadRunner, realLoad } from "../src/load.ts";
 import { LoadConfig } from "../src/repo-config.ts";
-import { AppFailure } from "../src/webcheck.ts";
+import { AppFailure, InfraError } from "../src/webcheck.ts";
 import type { Req } from "../src/run-agent.ts";
 import { defaults, knobs, paused, start } from "./helpers/graph-harness.ts";
 
@@ -98,6 +98,15 @@ test("an optional runner replaces the driver and its JSON report is judged by th
   const out = await realLoad({ ...f.cfg, runner: `node ${script}` }, f.dir, { id: "T-1", sha: "abc" });
   assert.deepEqual(out.findings, []);
   assert.match(out.summary, /100 requests.*\(runner\)/);
+  await assertCleanedUp(f);
+});
+
+test("a missing runner is an infrastructure problem, not a crash", async () => {
+  const f = await fixture("free");
+  await assert.rejects(
+    realLoad({ ...f.cfg, runner: "definitely-not-a-real-command-xyz" }, f.dir, { id: "T-1", sha: "abc" }),
+    (e: Error) => e instanceof InfraError && /cannot start/.test(e.message),
+  );
   await assertCleanedUp(f);
 });
 

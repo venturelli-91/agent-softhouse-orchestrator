@@ -34,7 +34,16 @@ async function hit(url: string, init: RequestInit, signal: AbortSignal): Promise
   const t0 = performance.now();
   try {
     const r = await fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
-    await r.arrayBuffer();
+    // Drain and discard the body instead of buffering it: a huge response must not grow memory.
+    if (r.body) {
+      const reader = r.body.getReader();
+      try {
+        for (;;) {
+          const { done } = await reader.read();
+          if (done) break;
+        }
+      } catch {}
+    }
     return { ms: performance.now() - t0, ok: r.status < 500 };
   } catch {
     return signal.aborted ? { ms: performance.now() - t0, ok: true } : { ms: REQUEST_TIMEOUT_MS, ok: false };
