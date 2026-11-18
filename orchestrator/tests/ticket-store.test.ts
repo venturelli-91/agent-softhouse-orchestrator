@@ -83,3 +83,12 @@ test("a killed process leaves a stale lock: dead until the ticket reaches a fini
   assert.equal(runState(home, "T-1", null, "dev"), "dead");
   assert.equal(runState(home, "T-1", null, "merged"), "done");
 });
+
+test("an empty, zero, negative or non-numeric lock reads as not running", () => {
+  const home = tmp();
+  mkdirSync(join(home, "tickets"), { recursive: true });
+  for (const text of ["", "0", "-1", "abc"]) {
+    writeFileSync(join(home, "tickets", "T-1.lock"), text);
+    assert.equal(runningPid(home, "T-1"), null, `lock "${text}"`);
+  }
+});
