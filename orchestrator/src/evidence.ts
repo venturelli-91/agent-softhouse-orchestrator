@@ -43,7 +43,8 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
     return { ok: false, reason: "worktree has files hidden from git (assume-unchanged or skip-worktree)" };
   }
   // npm test runs over the working tree: only what is committed counts, with no dirt and no ignored executable file.
-  const dirt = git("status", "--porcelain", "--untracked-files=all", "--ignored").split("\n").filter(Boolean);
+  // `-z` keeps paths unquoted, so an ignored host file with a space (or any special char) cannot slip past RUNS_ON_HOST.
+  const dirt = git("status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored").split("\0").filter(Boolean);
   if (dirt.some((l) => !l.startsWith("!!"))) return { ok: false, reason: "worktree has uncommitted changes" };
   if (setupIgnored) {
     const fresh = setupSnapshot(wt, install).filter((k) => !setupIgnored.includes(k));
@@ -143,6 +144,11 @@ export function installDeps(wt: string, install = DEFAULT_INSTALL, envNames: str
     }
     // npm ci empties node_modules, and through a symlink or junction it would empty the target.
     if (lstatSync(join(wt, "node_modules"), { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error("install: node_modules is a symlink");
+    // A workspace's node_modules is emptied too; a tracked symlink there would be followed. `git clean` cannot
+    // remove it (it is tracked), so refuse before npm ci runs.
+    const trackedSymlink = safeGit(wt, "ls-files", "-s", "-z").split("\0").filter(Boolean)
+      .some((l) => l.startsWith("120000 ") && /(^|\/)node_modules$/.test(l.split("\t")[1] ?? ""));
+    if (trackedSymlink) throw new Error("install: a tracked node_modules symlink would let npm ci empty its target");
   }
   const bin = install.split(" ")[0];
   if (shadowsBin(wt, bin)) throw new Error(`setup refused (${install}): ${bin} exists in the worktree and would shadow the binary`);

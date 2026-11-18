@@ -192,6 +192,16 @@ test("without install, an ignored node_modules tree blocks the evidence", () => 
   assert.equal(r.ok, false);
 });
 
+test("an ignored host file with a space in its path is still caught", () => {
+  const { d, base } = withCommit();
+  mkdirSync(join(d, "dir with space"), { recursive: true });
+  writeFileSync(join(d, "dir with space", ".npmrc"), "x=1");
+  const r = verifyEvidence(d, base);
+  rmSync(d, { recursive: true, force: true });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /outside the commit \(ignored\)/);
+});
+
 test("with install, ignored files the agent left are wiped before the test and never block", () => {
   const { d, base } = withCommit(true);
   mkdirSync(join(d, "node_modules", "dep"), { recursive: true });
@@ -268,6 +278,15 @@ test("a node_modules symlink never lets npm ci empty its target", (t) => {
   rmSync(outside, { recursive: true, force: true });
   assert.equal(kept, true);
   assert.equal(r.ok, true, JSON.stringify(r));
+});
+
+test("a tracked workspace node_modules symlink refuses the install", () => {
+  const { d } = withCommit(true);
+  const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: "/nonexistent", encoding: "utf8" }).trim();
+  git(d, "update-index", "--add", "--cacheinfo", `120000,${blob},packages/foo/node_modules`);
+  git(d, "commit", "-qm", "tracked node_modules symlink");
+  assert.throws(() => installDeps(d), /tracked node_modules symlink/);
+  rmSync(d, { recursive: true, force: true });
 });
 
 test("an npm.cmd in the worktree root stops the install at verification", { skip: process.platform !== "win32" }, () => {
