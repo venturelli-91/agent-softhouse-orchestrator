@@ -25,5 +25,5 @@ export const defaults: Behavior = {
   reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   design: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),
-  docs: () => ({ files: [], not_applicable: [], notes: "" }),
+  docs: () => ({ files: [], notes: "" }),
 };
