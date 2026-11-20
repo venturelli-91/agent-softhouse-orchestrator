@@ -12,6 +12,7 @@ import { commands, DEFAULT_INSTALL, DEFAULT_TEST, type Test } from "./commands.t
 import { addedSkips, type Counts, runTests, untestedLogic } from "./test-report.ts";
 
 export const UNTESTED = "the diff changes logic without adding or changing a test";
+export const CRITERIA_GAP = "acceptance criteria without a test at HEAD in criteria_tests";
 import type { T } from "./ticket.ts";
 
 // Paths no agent may change: secrets (never, not even adopted), and CI and the orchestrator itself (only in a version `orch adopt` took
@@ -70,7 +71,7 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   const untested = untestedLogic(diffFiles("--diff-filter=d"));
   if (untested.length) return { ok: false, reason: `${UNTESTED} (${untested.slice(0, 5).join(", ")})` };
   const gaps = criteria.map((c) => criterionGap(wt, c, links)).filter(Boolean);
-  if (gaps.length) return { ok: false, reason: `acceptance criteria without a test at HEAD in criteria_tests (${gaps.slice(0, 5).join("; ")})` };
+  if (gaps.length) return { ok: false, reason: `${CRITERIA_GAP} (${gaps.slice(0, 5).join("; ")})` };
   try {
     if (install) installDeps(wt, DEFAULT_INSTALL, env, false);
   } catch (e) {

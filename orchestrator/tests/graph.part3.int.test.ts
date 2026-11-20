@@ -43,6 +43,10 @@ test("a manual criterion reaches the CEO approval and QA gets the criteria map t
   assert.match(seen[0], /button says Submit order -> test\/checkout\.test\.js::checkout button/);
   assert.match(seen[0], /looks right on a phone -> manual: needs a real device/);
   assert.match(seen[0], /really exercises its criterion/);
+  knobs.override.dev = (req) => (commit(req.cwd, "agent-dev", "b.txt", String(Math.random())), { summary: "ok", brief: BRIEF, criteria_tests: [] });
+  const again = paused(await answer(g, "rework it"));
+  assert.equal(again?.type, "escalation");
+  assert.equal(again?.manual_criteria, undefined, "a failed dev pass replaces the map, so the escalation shows no stale manual criteria");
 });
 
 test("retry after a reviewer failure re-runs the reviewer and not the dev", async () => {

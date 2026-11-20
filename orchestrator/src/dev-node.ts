@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { MAX_FILE_LINES, MAX_LINE_COLS, verifyTicket } from "./guardrails.ts";
-import { UNTESTED } from "./evidence.ts";
+import { CRITERIA_GAP, UNTESTED } from "./evidence.ts";
 import { commands, DEFAULT_TEST, type Test } from "./commands.ts";
 import { skipAlerts } from "./test-report.ts";
 import { context, escalate, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
@@ -135,19 +135,20 @@ export const dev = guarded("dev", async (t) => {
       summary: cap(output.summary),
       history: log(t, "dev", `host files need CEO review: ${v.host.join(", ")}`, usage),
     };
+  const failed = { brief: output.brief, criteria_tests: output.criteria_tests };
   // Adopted content is the CEO's own: the dev cannot add the missing test without changing it, so the CEO decides.
-  if (!v.ok && t.adopt_tree && v.reason.startsWith(UNTESTED)) return { ...escalate(t, "dev", v.reason, usage), brief: output.brief };
+  if (!v.ok && t.adopt_tree && [UNTESTED, CRITERIA_GAP].some((r) => v.reason.startsWith(r))) return { ...escalate(t, "dev", v.reason, usage), ...failed };
   if (!v.ok) {
     const result = `verification failed: ${v.reason.slice(0, 300)}`;
     // Only structural causes (no commit, forbidden path, dirt): a red suite's output tail looks alike even when another test fails.
     // ponytail: numbers (durations, counts) are ignored when comparing; compare failing test names if suites need it too.
     const same = (r?: string) => r?.replace(/\d+/g, "#") === result.replace(/\d+/g, "#");
     if (!commands(t.test).some((c) => v.reason.startsWith(`${c} failed`)) && same(t.history.filter((h) => h.node === "dev").at(-1)?.result))
-      return { ...escalate(t, "dev", `the same verification failure twice in a row: ${v.reason}`, usage), brief: output.brief };
+      return { ...escalate(t, "dev", `the same verification failure twice in a row: ${v.reason}`, usage), ...failed };
     return {
       status: "dev_failed",
       explanation: cap(output.summary),
-      brief: output.brief,
+      ...failed,
       revisions: t.revisions + 1,
       summary: `verification: ${v.reason}`,
       history: log(t, "dev", result, usage),
