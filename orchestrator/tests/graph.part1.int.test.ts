@@ -295,7 +295,7 @@ test("a run that collects no tests passes when the base had none and says so in 
   knobs.override.dev = (req) => (
     commit(req.cwd, "agent-dev", "test/checkout.test.js", 'console.log("Ran 0 tests in 0.000s");'),
     commit(req.cwd, "agent-dev"),
-    { summary: "ok", brief: BRIEF }
+    { summary: "ok", brief: BRIEF, criteria_tests: [{ criterion: "button says Submit order", test: "manual: the repo collects no tests" }] }
   );
   const g = await start("T-1", undefined, { test_base: { pass: 0, skip: 0, fail: 0 } });
   const p = paused(g.r);

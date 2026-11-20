@@ -1,13 +1,15 @@
 // Flow guardrails against fake nodes (part 2 of 4): no model, no credentials.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
-import { git } from "../scripts/fixture.ts";
+import { createFixture, git } from "../scripts/fixture.ts";
 import { DEV_RULES } from "../src/graph.ts";
+import { Ticket } from "../src/ticket.ts";
 import { alerts } from "../src/watchdog.ts";
-import { ambiguous, BRIEF, commit, defaults, start, paused, answer, approved, knobs } from "./helpers/graph-harness.ts";
+import { ambiguous, BRIEF, commit, defaults, start, paused, answer, approved, knobs, roots } from "./helpers/graph-harness.ts";
 
 test("a clear ticket runs triage through ceo_approval with zero docs calls", async () => {
   const g = await start();
@@ -252,6 +254,40 @@ test("a host file pauses for the CEO with its diff; approve re-verifies without 
   const again = await answer(g, "change the button");
   assert.equal(paused(again)?.type, "host_review", "a new version of the file needs a new approval");
   assert.match(String(paused(again)?.host_diff), /curl evil/);
+});
+
+// The tree the default dev commit leaves on a fresh fixture: an adopted ticket whose dev only commits that content.
+function adoptedTree() {
+  const root = mkdtempSync(join(tmpdir(), "at-"));
+  roots.push(root);
+  const repo = createFixture(root);
+  commit(repo, "x");
+  return git(repo, "rev-parse", "HEAD^{tree}");
+}
+
+test("an adopted ticket with a criterion the dev cannot link escalates at once, without a second dev run", async () => {
+  knobs.override.dev = (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF, criteria_tests: [] });
+  const g = await start("T-1", undefined, { adopt_tree: adoptedTree() });
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /acceptance criteria without a test.*button says Submit order: no test linked/);
+  assert.equal(knobs.calls.filter((c) => c === "dev").length, 1);
+});
+
+test("a ticket with no acceptance criteria (adopted, unclear triage) needs no criteria_tests and reaches approval", async () => {
+  knobs.override.triage = ambiguous;
+  knobs.override.dev = (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF, criteria_tests: [] });
+  const g = await start("T-1", undefined, { adopt_tree: adoptedTree() });
+  assert.equal(paused(g.r)?.type, "approval", String(paused(g.r)?.reason));
+  assert.equal(paused(g.r)?.manual_criteria, undefined);
+});
+
+test("a triage criterion longer than a criteria_tests entry allows is invalid output, so it never reaches the dev", async () => {
+  knobs.override.triage = (req) => ({ ...(defaults.triage!(req) as object), criteria: ["x".repeat(1001)] });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /triage: invalid output/);
+  assert.ok(!knobs.calls.includes("dev"));
+  assert.equal(Ticket.shape.criteria.safeParse(["x".repeat(1001)]).success, false);
 });
 
 test("an adopted ticket skips the planner, and a dev that changes the adopted content escalates instead of reaching review", async () => {

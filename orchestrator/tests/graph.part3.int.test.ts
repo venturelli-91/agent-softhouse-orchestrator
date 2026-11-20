@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { ciVerdict } from "../src/publish.ts";
 import { NodeFailure, type Req } from "../src/run-agent.ts";
-import { BRIEF, commit, defaults, start, paused, answer, approved, reviewerFailsOnce, knobs } from "./helpers/graph-harness.ts";
+import { BRIEF, commit, CRITERIA_TESTS, defaults, start, paused, answer, approved, reviewerFailsOnce, knobs } from "./helpers/graph-harness.ts";
 import { AppFailure, InfraError, setCollector, playwrightCollector } from "../src/webcheck.ts";
 import { WebcheckConfig } from "../src/repo-config.ts";
 
@@ -19,6 +19,34 @@ test("the reviewer gets the repo conventions and QA does not", async () => {
   assert.match(seen.dev, /R-CANARY/);
   assert.match(seen.reviewer, /R-CANARY/);
   assert.doesNotMatch(seen.qa, /R-CANARY/);
+});
+
+test("a criterion the dev links to no test fails verification and goes back to the dev", async () => {
+  knobs.override.dev = (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF, criteria_tests: [] });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.last_node), /same verification failure twice.*button says Submit order: no test linked/);
+});
+
+test("a manual criterion reaches the CEO approval and QA gets the criteria map to judge coverage", async () => {
+  const seen: string[] = [];
+  knobs.override.triage = (req) => ({ ...(defaults.triage!(req) as object), criteria: ["button says Submit order", "looks right on a phone"] });
+  knobs.override.dev = (req) => (
+    commit(req.cwd, "agent-dev"),
+    { summary: "ok", brief: BRIEF, criteria_tests: [...CRITERIA_TESTS, { criterion: "looks right on a phone", test: "manual: needs a real device" }] }
+  );
+  knobs.override.qa = (req) => (seen.push(req.context), approved());
+  const g = await start();
+  const p = paused(g.r);
+  assert.equal(p?.type, "approval");
+  assert.deepEqual(p?.manual_criteria, ["looks right on a phone: needs a real device"]);
+  assert.match(seen[0], /button says Submit order -> test\/checkout\.test\.js::checkout button/);
+  assert.match(seen[0], /looks right on a phone -> manual: needs a real device/);
+  assert.match(seen[0], /really exercises its criterion/);
+  knobs.override.dev = (req) => (commit(req.cwd, "agent-dev", "b.txt", String(Math.random())), { summary: "ok", brief: BRIEF, criteria_tests: [] });
+  const again = paused(await answer(g, "rework it"));
+  assert.equal(again?.type, "escalation");
+  assert.equal(again?.manual_criteria, undefined, "a failed dev pass replaces the map, so the escalation shows no stale manual criteria");
 });
 
 test("retry after a reviewer failure re-runs the reviewer and not the dev", async () => {

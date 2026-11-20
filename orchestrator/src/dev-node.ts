@@ -1,13 +1,18 @@
 import { z } from "zod";
 import { MAX_FILE_LINES, MAX_LINE_COLS, verifyTicket } from "./guardrails.ts";
-import { UNTESTED } from "./evidence.ts";
+import { CRITERIA_GAP, UNTESTED } from "./evidence.ts";
 import { commands, DEFAULT_TEST, type Test } from "./commands.ts";
 import { skipAlerts } from "./test-report.ts";
 import { context, escalate, guarded, log, rulesBlock, sh, ticketData } from "./graph-kit.ts";
 import { runAgent } from "./run-agent.ts";
-import { Brief, cap, DEV_FILE, summary, type T } from "./ticket.ts";
+import { Brief, cap, CriterionTest, DEV_FILE, summary, type T } from "./ticket.ts";
 
-const DevOutput = z.object({ summary, brief: Brief, no_change: z.string().optional() });
+const DevOutput = z.object({ summary, brief: Brief, no_change: z.string().optional(), criteria_tests: z.array(CriterionTest).default([]) });
+
+const CRITERIA_RULE =
+  "Fill `criteria_tests` with one entry per acceptance criterion: `criterion` copied verbatim, `test` as `<file path from the repo root>::<test name>` " +
+  "of a committed test that checks it, or `manual: <reason>` only when it cannot be automated (the CEO sees those). The orchestrator rejects a missing entry, " +
+  "a file not in the commit or a test name not found in that file. ";
 
 export const devRules = (tests: Test = DEFAULT_TEST, turns?: number) => {
   const test = commands(tests).join(" and ");
@@ -17,6 +22,7 @@ export const devRules = (tests: Test = DEFAULT_TEST, turns?: number) => {
   `Modularity is mandatory: every source file you touch must stay within ${MAX_FILE_LINES} lines and ${MAX_LINE_COLS} columns per line; ` +
   `split by responsibility instead of growing a file. The orchestrator rejects the commit otherwise. ` +
   `Test first: write the test that fails without the change, then the code. A diff that changes logic without adding or changing a test is rejected. ` +
+  CRITERIA_RULE +
   (turns
     ? `You have at most ${turns} turns and uncommitted work is lost value: ` +
       `get a first version passing ${test} and commit it early, then refine and commit again. `
@@ -33,7 +39,8 @@ const ADOPT_RULES =
   "The worktree holds changes the CEO already wrote, uncommitted. Do not edit, create, delete, move or format any file: only commit them. " +
   "Split them into atomic commits, one per logical change, each message following the pattern of this repo's `git log` (type, scope, language). " +
   "Shell: one simple command per call (git status, git diff, git log, git add <paths>, git commit). When you finish nothing may remain uncommitted, " +
-  "and the committed content must match the working tree byte for byte, or the orchestrator rejects it. Fill `brief` describing the changes as they are.";
+  "and the committed content must match the working tree byte for byte, or the orchestrator rejects it. Fill `brief` describing the changes as they are. " +
+  CRITERIA_RULE;
 
 // A dev that stopped (turn limit, timeout) leaves uncommitted work in the worktree: tell the next attempt to build on it instead of starting over.
 export const partialWork = (porcelain: string) =>
@@ -89,7 +96,7 @@ export const dev = guarded("dev", async (t) => {
   // The CEO approved the host files of this commit: only the verification runs again (host_review sets brief before it pauses).
   const reverify = t.status === "reverify";
   const porcelain = sh(t.worktree, "status", "--porcelain", "--untracked-files=all");
-  const { output, usage } = reverify ? { output: { summary: t.summary, brief: t.brief!, no_change: undefined }, usage: undefined } : await runAgent({
+  const { output, usage } = reverify ? { output: { summary: t.summary, brief: t.brief!, no_change: undefined, criteria_tests: t.criteria_tests }, usage: undefined } : await runAgent({
     role: "dev",
     files: [DEV_FILE[t.specialty]],
     cwd: t.worktree,
@@ -108,7 +115,9 @@ export const dev = guarded("dev", async (t) => {
   });
   if (t.adopt_tree && !sh(t.worktree, "status", "--porcelain", "--untracked-files=all") && sh(t.worktree, "rev-parse", "HEAD^{tree}") !== t.adopt_tree)
     return escalate(t, "dev", "the commits changed the adopted content: compare the ticket branch with what you had in the working tree", usage);
-  const v = verifyTicket(t);
+  // Earlier tasks of a split ticket do not have to cover the criteria yet; the last one covers them all.
+  const last = t.task_done + 1 >= t.tasks.length;
+  const v = verifyTicket({ ...t, criteria: last ? t.criteria : [], criteria_tests: output.criteria_tests });
   if (!v.ok && output.no_change && !t.tasks.length && nothingDone(t))
     return {
       status: "no_change",
@@ -122,22 +131,24 @@ export const dev = guarded("dev", async (t) => {
       status: "host_review",
       host_pending: v.host,
       brief: output.brief,
+      criteria_tests: output.criteria_tests,
       summary: cap(output.summary),
       history: log(t, "dev", `host files need CEO review: ${v.host.join(", ")}`, usage),
     };
+  const failed = { brief: output.brief, criteria_tests: output.criteria_tests };
   // Adopted content is the CEO's own: the dev cannot add the missing test without changing it, so the CEO decides.
-  if (!v.ok && t.adopt_tree && v.reason.startsWith(UNTESTED)) return { ...escalate(t, "dev", v.reason, usage), brief: output.brief };
+  if (!v.ok && t.adopt_tree && [UNTESTED, CRITERIA_GAP].some((r) => v.reason.startsWith(r))) return { ...escalate(t, "dev", v.reason, usage), ...failed };
   if (!v.ok) {
     const result = `verification failed: ${v.reason.slice(0, 300)}`;
     // Only structural causes (no commit, forbidden path, dirt): a red suite's output tail looks alike even when another test fails.
     // ponytail: numbers (durations, counts) are ignored when comparing; compare failing test names if suites need it too.
     const same = (r?: string) => r?.replace(/\d+/g, "#") === result.replace(/\d+/g, "#");
     if (!commands(t.test).some((c) => v.reason.startsWith(`${c} failed`)) && same(t.history.filter((h) => h.node === "dev").at(-1)?.result))
-      return { ...escalate(t, "dev", `the same verification failure twice in a row: ${v.reason}`, usage), brief: output.brief };
+      return { ...escalate(t, "dev", `the same verification failure twice in a row: ${v.reason}`, usage), ...failed };
     return {
       status: "dev_failed",
       explanation: cap(output.summary),
-      brief: output.brief,
+      ...failed,
       revisions: t.revisions + 1,
       summary: `verification: ${v.reason}`,
       history: log(t, "dev", result, usage),
@@ -162,6 +173,7 @@ export const dev = guarded("dev", async (t) => {
     status: "review",
     explanation: "",
     brief: output.brief,
+    criteria_tests: output.criteria_tests,
     summary: cap(output.summary),
     author_id: v.author,
     evidence: v.evidence,
