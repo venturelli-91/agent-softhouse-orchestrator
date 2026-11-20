@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { interrupt } from "@langchain/langgraph";
 import { orchHome } from "./daily-cap.ts";
-import { MAX_REVISIONS, safeGit, verifyTicket } from "./guardrails.ts";
+import { manualCriteria, MAX_REVISIONS, safeGit, verifyTicket } from "./guardrails.ts";
 import { log } from "./graph-kit.ts";
 import { promotes, stageOf, type DeployConfig } from "./repo-config.ts";
 import type { T } from "./ticket.ts";
@@ -46,6 +46,7 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
             ? `the diff changes files that run code on the host (${t.host_pending.join(", ")}): approve allows exactly these versions`
             : `${t.status}: ${t.summary}`;
   const last = t.history.at(-1);
+  const manual = manualCriteria(t.criteria_tests);
   const d = t.status === "discovery_questions" ? t.discovery_output : null;
   const stage = t.deploy_cfg ? stageOf(t.deploy_cfg, false) : null;
   const r = interrupt(d ? { type: "discovery", ticket: t.id, title: t.title, problem: d.problem, assumptions: d.assumptions, questions: d.questions } : {
@@ -62,6 +63,7 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
     ...(t.load_note ? { load: t.load_note } : {}),
     ...(t.status === "host_review" ? { host_diff: hostDiff(t) } : {}),
     ...(t.test_alerts.length ? { test_alerts: t.test_alerts } : {}),
+    ...(manual.length ? { manual_criteria: manual } : {}),
     deploy: {
       ...deployView(t.deploy_target, stage),
       ...(promotes(t.deploy_cfg) ? { production: deployView(t.deploy_target, stageOf(t.deploy_cfg, true), false) } : {}),
