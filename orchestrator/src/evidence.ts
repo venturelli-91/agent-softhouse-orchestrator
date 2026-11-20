@@ -70,7 +70,7 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   if (skips.length) return { ok: false, reason: `the diff skips tests instead of making them pass (${skips.slice(0, 5).join("; ")})` };
   const untested = untestedLogic(diffFiles("--diff-filter=d"));
   if (untested.length) return { ok: false, reason: `${UNTESTED} (${untested.slice(0, 5).join(", ")})` };
-  const gaps = criteria.map((c) => criterionGap(wt, c, links)).filter(Boolean);
+  const gaps = unique(criteria).map((c) => criterionGap(wt, c, links)).filter(Boolean);
   if (gaps.length) return { ok: false, reason: `${CRITERIA_GAP} (${gaps.slice(0, 5).join("; ")})` };
   try {
     if (install) installDeps(wt, DEFAULT_INSTALL, env, false);
@@ -113,28 +113,39 @@ function blobAt(wt: string, f: string, rev = "HEAD"): string {
 }
 
 const MANUAL = /^manual:\s*(\S[\s\S]*)$/;
-export const manualCriteria = (criteria: string[], links: T["criteria_tests"]) =>
-  [...new Set(criteria.map((c) => c.trim()))].flatMap((c) => {
-    const m = MANUAL.exec(links.find((l) => l.criterion.trim() === c)?.test.trim() ?? "");
+const unique = (criteria: string[]) => [...new Set(criteria.map((c) => c.trim()))];
+const testsOf = (c: string, links: T["criteria_tests"]) => links.filter((l) => l.criterion.trim() === c).map((l) => l.test.trim());
+
+// A criterion is listed as manual only when none of its links is a valid test.
+export const manualCriteria = (wt: string, criteria: string[], links: T["criteria_tests"]) =>
+  unique(criteria).flatMap((c) => {
+    const tests = testsOf(c, links);
+    const m = tests.some((x) => !testGap(wt, x)) ? null : tests.map((x) => MANUAL.exec(x)).find(Boolean);
     return m ? [`${c}: ${m[1]}`] : [];
   });
 
+// Met when any link is a valid test or a manual reason; otherwise the first link's problem is reported.
+function criterionGap(wt: string, c: string, links: T["criteria_tests"]): string {
+  const tests = testsOf(c, links);
+  if (tests.some((x) => MANUAL.test(x) || !testGap(wt, x))) return "";
+  return `${c}: ${tests.length ? testGap(wt, tests[0]) : "no test linked"}`;
+}
+
 // ponytail: "the test name appears in the file" is a substring check, not a parsed test declaration; QA judges whether the test covers the criterion.
-function criterionGap(wt: string, criterion: string, links: T["criteria_tests"]): string {
-  const test = links.find((l) => l.criterion.trim() === criterion.trim())?.test.trim() ?? "";
-  if (MANUAL.test(test)) return "";
+function testGap(wt: string, test: string): string {
   const at = test.indexOf("::");
-  const [file, name] = [test.slice(0, at), test.slice(at + 2).trim()];
-  if (at < 1 || !name) return `${criterion}: no test linked`;
+  const file = test.slice(0, at);
+  const name = test.slice(at + 2).trim();
+  if (at < 1 || !file || !name) return "no test linked";
   let body: string;
   try {
     const blob = blobAt(wt, file);
-    if (blob === "deleted") return `${criterion}: ${file} not at HEAD`;
+    if (blob === "deleted") return `${file} not at HEAD`;
     body = safeGit(wt, "cat-file", "blob", blob);
   } catch {
-    return `${criterion}: ${file} not at HEAD`;
+    return `${file} not at HEAD`;
   }
-  return body.includes(name) ? "" : `${criterion}: test name not found in ${file}`;
+  return body.includes(name) ? "" : `test name not found in ${file}`;
 }
 
 export const verifyTicket = (

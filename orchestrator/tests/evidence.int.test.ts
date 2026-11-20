@@ -529,14 +529,37 @@ test("each acceptance criterion needs a test at HEAD whose name is in the file, 
   assert.equal(none.ok, true);
 });
 
-test("manual criteria listed for the CEO are only the ticket's own, once each; oversized links are refused", () => {
+test("any valid link meets a criterion; a repeated criterion is reported once", () => {
+  const { d, base } = repo();
+  mkdirSync(join(d, "tests"));
+  writeFileSync(join(d, "tests", "a.test.js"), 'test("totals", () => {});\n');
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "dev");
+  const verify = (criteria: string[], links: { criterion: string; test: string }[]) =>
+    verifyEvidence(d, base, GREEN, false, [], null, null, [], criteria, links);
+  const anyValid = verify(["c"], [{ criterion: "c", test: "tests/a.test.js::nope" }, { criterion: "c", test: "tests/a.test.js::totals" }]);
+  const twice = verify(["x", " x "], []);
+  cleanup(d);
+  assert.equal(anyValid.ok, true);
+  assert.ok(!twice.ok);
+  assert.equal(twice.reason.split("x: no test linked").length, 2);
+});
+
+test("manual criteria listed for the CEO are only the ticket's own, once each, without a valid test link; oversized links are refused", () => {
+  const { d } = repo();
+  writeFileSync(join(d, "a.test.js"), 'test("totals", () => {});\n');
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "dev");
   const links = [
     { criterion: " phone ", test: "manual: needs a real phone" },
     { criterion: "phone", test: "manual: again" },
     { criterion: "invented", test: "manual: not on the ticket" },
+    { criterion: "totals", test: "manual: listed first" },
     { criterion: "totals", test: "a.test.js::totals" },
   ];
-  assert.deepEqual(manualCriteria(["phone", "totals"], links), ["phone: needs a real phone"]);
+  const listed = manualCriteria(d, ["phone", "totals"], links);
+  cleanup(d);
+  assert.deepEqual(listed, ["phone: needs a real phone"]);
   assert.equal(CriterionTest.safeParse({ criterion: "c", test: "x".repeat(601) }).success, false);
   assert.equal(CriterionTest.safeParse({ criterion: "c".repeat(1001), test: "manual: x" }).success, false);
 });

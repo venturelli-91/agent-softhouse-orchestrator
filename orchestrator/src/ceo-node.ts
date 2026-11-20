@@ -46,7 +46,7 @@ export const ceoApproval = async (t: T): Promise<Partial<T>> => {
             ? `the diff changes files that run code on the host (${t.host_pending.join(", ")}): approve allows exactly these versions`
             : `${t.status}: ${t.summary}`;
   const last = t.history.at(-1);
-  const manual = manualCriteria(t.criteria, t.criteria_tests);
+  const manual = manualCriteria(t.worktree, t.criteria, t.criteria_tests);
   const d = t.status === "discovery_questions" ? t.discovery_output : null;
   const stage = t.deploy_cfg ? stageOf(t.deploy_cfg, false) : null;
   const r = interrupt(d ? { type: "discovery", ticket: t.id, title: t.title, problem: d.problem, assumptions: d.assumptions, questions: d.questions } : {
