@@ -134,7 +134,7 @@ function criterionGap(wt: string, c: string, links: T["criteria_tests"]): string
 // ponytail: "the test name appears in the file" is a substring check, not a parsed test declaration; QA judges whether the test covers the criterion.
 function testGap(wt: string, test: string): string {
   const at = test.indexOf("::");
-  const file = test.slice(0, at);
+  const file = test.slice(0, at).replace(/\\/g, "/").replace(/^(\.\/)+/, "");
   const name = test.slice(at + 2).trim();
   if (at < 1 || !file || !name) return "no test linked";
   let body: string;

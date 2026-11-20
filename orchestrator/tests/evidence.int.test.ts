@@ -529,7 +529,7 @@ test("each acceptance criterion needs a test at HEAD whose name is in the file, 
   assert.equal(none.ok, true);
 });
 
-test("any valid link meets a criterion; a repeated criterion is reported once", () => {
+test("any valid link meets a criterion; paths with backslashes or ./ resolve; a repeated criterion is reported once", () => {
   const { d, base } = repo();
   mkdirSync(join(d, "tests"));
   writeFileSync(join(d, "tests", "a.test.js"), 'test("totals", () => {});\n');
@@ -538,9 +538,11 @@ test("any valid link meets a criterion; a repeated criterion is reported once", 
   const verify = (criteria: string[], links: { criterion: string; test: string }[]) =>
     verifyEvidence(d, base, GREEN, false, [], null, null, [], criteria, links);
   const anyValid = verify(["c"], [{ criterion: "c", test: "tests/a.test.js::nope" }, { criterion: "c", test: "tests/a.test.js::totals" }]);
+  const paths = verify(["b", "s"], [{ criterion: "b", test: "tests\\a.test.js::totals" }, { criterion: "s", test: "./tests/a.test.js::totals" }]);
   const twice = verify(["x", " x "], []);
   cleanup(d);
   assert.equal(anyValid.ok, true);
+  assert.equal(paths.ok, true);
   assert.ok(!twice.ok);
   assert.equal(twice.reason.split("x: no test linked").length, 2);
 });
