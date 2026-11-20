@@ -25,6 +25,8 @@ const EMPTY_FLAGS = Object.fromEntries(Object.keys(FlagsSchema.shape).map((k) =>
 // Every delivery says why it exists, how it was done and where it applies: it goes into the PR and the CEO notification.
 const briefField = z.string().min(10).max(600);
 export const Brief = z.object({ why: briefField, how: briefField, where: briefField });
+// `test` is `file::test name`, or `manual: <reason>` for a criterion that cannot be automated (listed in the CEO approval).
+export const CriterionTest = z.object({ criterion: z.string(), test: z.string() });
 // Agent text lands in a PR body and in reviewer prompts: one paragraph per field, no headings, images or live @mentions.
 const plain = (s: string) =>
   s
@@ -96,6 +98,7 @@ export const Ticket = z.object({
   specialties: z.array(z.enum(SPECIALTIES)).default([...SPECIALTIES]),
   flags: FlagsSchema.default(EMPTY_FLAGS),
   criteria: z.array(z.string()).default([]),
+  criteria_tests: z.array(CriterionTest).default([]),
   status: z.string().default("new"),
   failed_node: z.string().default(""),
   summary_before_failure: z.string().default(""),

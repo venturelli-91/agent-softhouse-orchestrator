@@ -27,7 +27,7 @@ const RUNS_ON_HOST = /(^|\/)(package\.json|\.npmrc|conftest\.py|setup\.py|setup\
 
 type Verdict = { ok: true; author: string; sha: string; evidence: string[]; counts: Counts | null; none: boolean } | { ok: false; reason: string; host?: string[] };
 
-export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TEST, install = false, hostApproved: string[] = [], baseTests: Counts | null = null, setupIgnored: string[] | null = null, env: string[] = []): Verdict {
+export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TEST, install = false, hostApproved: string[] = [], baseTests: Counts | null = null, setupIgnored: string[] | null = null, env: string[] = [], criteria: string[] = [], links: T["criteria_tests"] = []): Verdict {
   const git = (...a: string[]) => safeGit(wt, ...a);
   const sha = git("rev-parse", "HEAD");
   if (Number(git("rev-list", "--count", `${base}..HEAD`)) === 0) return { ok: false, reason: "no new commit in the worktree" };
@@ -69,6 +69,8 @@ export function verifyEvidence(wt: string, base: string, test: Test = DEFAULT_TE
   if (skips.length) return { ok: false, reason: `the diff skips tests instead of making them pass (${skips.slice(0, 5).join("; ")})` };
   const untested = untestedLogic(diffFiles("--diff-filter=d"));
   if (untested.length) return { ok: false, reason: `${UNTESTED} (${untested.slice(0, 5).join(", ")})` };
+  const gaps = criteria.map((c) => criterionGap(wt, c, links)).filter(Boolean);
+  if (gaps.length) return { ok: false, reason: `acceptance criteria without a test at HEAD in criteria_tests (${gaps.slice(0, 5).join("; ")})` };
   try {
     if (install) installDeps(wt, DEFAULT_INSTALL, env, false);
   } catch (e) {
@@ -109,8 +111,35 @@ function blobAt(wt: string, f: string, rev = "HEAD"): string {
   return meta.split(" ")[2];
 }
 
-export const verifyTicket = (t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved" | "test_base" | "setup_ignored" | "setup_env">, base = t.base) =>
-  verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved, t.test_base, t.setup_ignored, t.setup_env);
+const MANUAL = /^manual:\s*(\S[\s\S]*)$/;
+export const manualCriteria = (links: T["criteria_tests"]) =>
+  links.flatMap((l) => {
+    const m = MANUAL.exec(l.test.trim());
+    return m ? [`${l.criterion.trim()}: ${m[1]}`] : [];
+  });
+
+// ponytail: "the test name appears in the file" is a substring check, not a parsed test declaration; QA judges whether the test covers the criterion.
+function criterionGap(wt: string, criterion: string, links: T["criteria_tests"]): string {
+  const test = links.find((l) => l.criterion.trim() === criterion.trim())?.test.trim() ?? "";
+  if (MANUAL.test(test)) return "";
+  const at = test.indexOf("::");
+  const [file, name] = [test.slice(0, at), test.slice(at + 2).trim()];
+  if (at < 1 || !name) return `${criterion}: no test linked`;
+  let body: string;
+  try {
+    const blob = blobAt(wt, file);
+    if (blob === "deleted") return `${criterion}: ${file} not at HEAD`;
+    body = safeGit(wt, "cat-file", "blob", blob);
+  } catch {
+    return `${criterion}: ${file} not at HEAD`;
+  }
+  return body.includes(name) ? "" : `${criterion}: test name not found in ${file}`;
+}
+
+export const verifyTicket = (
+  t: Pick<T, "worktree" | "base" | "test" | "install" | "host_approved" | "test_base" | "setup_ignored" | "setup_env" | "criteria" | "criteria_tests">,
+  base = t.base,
+) => verifyEvidence(t.worktree, base, t.test, t.install, t.host_approved, t.test_base, t.setup_ignored, t.setup_env, t.criteria, t.criteria_tests);
 
 // The ignored node_modules dirs git lists on their own (a symlink comes without the trailing slash); one nested in another ignored dir is not.
 function ignoredDeps(wt: string): string[] {

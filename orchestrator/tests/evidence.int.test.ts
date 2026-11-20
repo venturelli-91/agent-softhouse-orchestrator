@@ -501,3 +501,29 @@ for (const py of PYS) test(`${py} unittest: pass, fail and none collected are th
   assert.ok(rn.ok && rn.none);
   assert.ok(!rnBad.ok);
 });
+
+test("each acceptance criterion needs a test at HEAD whose name is in the file, or a manual reason; no criteria needs nothing", () => {
+  const { d, base } = repo();
+  writeFileSync(join(d, "a.test.js"), 'test("totals add up", () => {});\n');
+  git(d, "add", "-A");
+  git(d, "commit", "-qm", "dev");
+  const links = [
+    { criterion: "totals", test: "a.test.js::totals add up" },
+    { criterion: "audit", test: "missing.test.js::x" },
+    { criterion: "ui", test: "a.test.js::not there" },
+    { criterion: "phone", test: "manual: needs a real phone" },
+    { criterion: "bare", test: "manual:" },
+    { criterion: "outside", test: "../a.test.js::totals add up" },
+  ];
+  const all = links.map((l) => l.criterion);
+  const gaps = verifyEvidence(d, base, GREEN, false, [], null, null, [], [...all, "export"], links);
+  const met = verifyEvidence(d, base, GREEN, false, [], null, null, [], ["totals", "phone"], links);
+  const none = verifyEvidence(d, base, GREEN, false, [], null, null, [], [], []);
+  cleanup(d);
+  assert.ok(!gaps.ok);
+  for (const c of ["export: no test linked", "audit: missing.test.js not at HEAD", "ui: test name not found in a.test.js", "bare: no test linked", "outside: "])
+    assert.ok(gaps.reason.includes(c), c);
+  assert.doesNotMatch(gaps.reason, /totals|phone/);
+  assert.equal(met.ok, true);
+  assert.equal(none.ok, true);
+});
