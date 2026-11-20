@@ -5,7 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { adoptKeys, installDeps, testFailure, verifyEvidence } from "../src/guardrails.ts";
-import { setupSnapshot } from "../src/evidence.ts";
+import { manualCriteria, setupSnapshot } from "../src/evidence.ts";
+import { CriterionTest } from "../src/ticket.ts";
 
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@x.local", ...a], { cwd, encoding: "utf8" }).trim();
 
@@ -521,9 +522,21 @@ test("each acceptance criterion needs a test at HEAD whose name is in the file, 
   const none = verifyEvidence(d, base, GREEN, false, [], null, null, [], [], []);
   cleanup(d);
   assert.ok(!gaps.ok);
-  for (const c of ["export: no test linked", "audit: missing.test.js not at HEAD", "ui: test name not found in a.test.js", "bare: no test linked", "outside: "])
+  for (const c of ["export: no test linked", "audit: missing.test.js not at HEAD", "ui: test name not found in a.test.js", "bare: no test linked", "outside: ../a.test.js not at HEAD"])
     assert.ok(gaps.reason.includes(c), c);
   assert.doesNotMatch(gaps.reason, /totals|phone/);
   assert.equal(met.ok, true);
   assert.equal(none.ok, true);
+});
+
+test("manual criteria listed for the CEO are only the ticket's own, once each; oversized links are refused", () => {
+  const links = [
+    { criterion: " phone ", test: "manual: needs a real phone" },
+    { criterion: "phone", test: "manual: again" },
+    { criterion: "invented", test: "manual: not on the ticket" },
+    { criterion: "totals", test: "a.test.js::totals" },
+  ];
+  assert.deepEqual(manualCriteria(["phone", "totals"], links), ["phone: needs a real phone"]);
+  assert.equal(CriterionTest.safeParse({ criterion: "c", test: "x".repeat(601) }).success, false);
+  assert.equal(CriterionTest.safeParse({ criterion: "c".repeat(1001), test: "manual: x" }).success, false);
 });

@@ -26,7 +26,8 @@ const EMPTY_FLAGS = Object.fromEntries(Object.keys(FlagsSchema.shape).map((k) =>
 const briefField = z.string().min(10).max(600);
 export const Brief = z.object({ why: briefField, how: briefField, where: briefField });
 // `test` is `file::test name`, or `manual: <reason>` for a criterion that cannot be automated (listed in the CEO approval).
-export const CriterionTest = z.object({ criterion: z.string(), test: z.string() });
+// Dev (LLM) text that reaches the CEO payload and the QA prompt: capped like the brief, with room for a criterion copied verbatim.
+export const CriterionTest = z.object({ criterion: z.string().max(1000), test: z.string().max(600) });
 // Agent text lands in a PR body and in reviewer prompts: one paragraph per field, no headings, images or live @mentions.
 const plain = (s: string) =>
   s

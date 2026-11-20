@@ -112,10 +112,10 @@ function blobAt(wt: string, f: string, rev = "HEAD"): string {
 }
 
 const MANUAL = /^manual:\s*(\S[\s\S]*)$/;
-export const manualCriteria = (links: T["criteria_tests"]) =>
-  links.flatMap((l) => {
-    const m = MANUAL.exec(l.test.trim());
-    return m ? [`${l.criterion.trim()}: ${m[1]}`] : [];
+export const manualCriteria = (criteria: string[], links: T["criteria_tests"]) =>
+  [...new Set(criteria.map((c) => c.trim()))].flatMap((c) => {
+    const m = MANUAL.exec(links.find((l) => l.criterion.trim() === c)?.test.trim() ?? "");
+    return m ? [`${c}: ${m[1]}`] : [];
   });
 
 // ponytail: "the test name appears in the file" is a substring check, not a parsed test declaration; QA judges whether the test covers the criterion.
