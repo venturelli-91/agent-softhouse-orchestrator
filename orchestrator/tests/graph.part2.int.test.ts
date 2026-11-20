@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../scripts/fixture.ts";
 import { DEV_RULES } from "../src/graph.ts";
+import { Ticket } from "../src/ticket.ts";
 import { alerts } from "../src/watchdog.ts";
 import { ambiguous, BRIEF, commit, defaults, start, paused, answer, approved, knobs, roots } from "./helpers/graph-harness.ts";
 
@@ -278,6 +279,15 @@ test("a ticket with no acceptance criteria (adopted, unclear triage) needs no cr
   const g = await start("T-1", undefined, { adopt_tree: adoptedTree() });
   assert.equal(paused(g.r)?.type, "approval", String(paused(g.r)?.reason));
   assert.equal(paused(g.r)?.manual_criteria, undefined);
+});
+
+test("a triage criterion longer than a criteria_tests entry allows is invalid output, so it never reaches the dev", async () => {
+  knobs.override.triage = (req) => ({ ...(defaults.triage!(req) as object), criteria: ["x".repeat(1001)] });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.reason), /triage: invalid output/);
+  assert.ok(!knobs.calls.includes("dev"));
+  assert.equal(Ticket.shape.criteria.safeParse(["x".repeat(1001)]).success, false);
 });
 
 test("an adopted ticket skips the planner, and a dev that changes the adopted content escalates instead of reaching review", async () => {

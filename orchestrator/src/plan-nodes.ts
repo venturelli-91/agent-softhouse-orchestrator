@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { SPECIALTIES, type Specialty } from "./specialties.ts";
-import { briefingMarkdown, cap, DiscoveryOutput, FlagsSchema, summary, type T } from "./ticket.ts";
+import { briefingMarkdown, cap, Criterion, DiscoveryOutput, FlagsSchema, summary, type T } from "./ticket.ts";
 import { context, guarded, log } from "./graph-kit.ts";
 import { runAgent } from "./run-agent.ts";
 
@@ -10,7 +10,7 @@ const TriageOutput = z.object({
   specialty: z.enum(SPECIALTIES),
   clear: z.boolean(),
   flags: FlagsSchema,
-  criteria: z.array(z.string()),
+  criteria: z.array(Criterion),
   summary,
   split: z.array(z.string().max(300)).max(8).default([]),
 });
