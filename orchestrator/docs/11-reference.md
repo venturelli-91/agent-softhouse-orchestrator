@@ -85,7 +85,7 @@ Incident tickets go from triage straight to the planner and adopted trees straig
 
 Generated from `src/graph.ts`; regenerate with `buildGraph().getGraphAsync()` then `.drawMermaid()` (needs `TOKEN_BUDGET_TICKET` set).
 `ceo_approval` is the only human gate: every merge, deploy, escalation and "no change needed" passes through it.
-The pending payload (`orch status <id>`) carries `revisions` and `last_node`, plus the dev's `explanation` and `brief` even when verification failed.
+The pending payload (`orch status <id>`) carries `revisions` and `last_node`, plus the dev's `explanation` and `brief` even when verification failed, and `manual_criteria` (`criterion: reason`) for each acceptance criterion the dev marked `manual:` instead of linking a test.
 A request that needs no code (a check or review) ends with the dev committing nothing and setting `no_change`; with a clean worktree and no commit the ticket asks the CEO instead of failing.
 
 ```mermaid
