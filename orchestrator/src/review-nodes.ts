@@ -24,8 +24,8 @@ const criteriaMap = (t: T) =>
     ? [
         `Criteria linked to tests by the dev (code only checked that each file is committed and contains the test name):\n` +
           `${t.criteria_tests.map((l) => `- ${l.criterion} -> ${l.test}`).join("\n")}\n` +
-          "Judge whether each linked test really exercises its criterion: one that does not goes in `unmet`. " +
-          "For a `manual:` entry, judge whether the reason really prevents automating it.",
+          "Judge whether each linked test really exercises its criterion (sharing the name is not enough): reject citing any that does not. " +
+          "A `manual:` entry whose reason does not really prevent automating the criterion also rejects.",
       ]
     : [];
 // The reviewer must see every changed line: a diff over the limit goes to the CEO instead of being cut (multi-task tickets reach this).
