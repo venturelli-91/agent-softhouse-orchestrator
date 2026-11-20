@@ -21,6 +21,13 @@ test("the reviewer gets the repo conventions and QA does not", async () => {
   assert.doesNotMatch(seen.qa, /R-CANARY/);
 });
 
+test("a criterion the dev links to no test fails verification and goes back to the dev", async () => {
+  knobs.override.dev = (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF, criteria_tests: [] });
+  const g = await start();
+  assert.equal(paused(g.r)?.type, "escalation");
+  assert.match(String(paused(g.r)?.last_node), /same verification failure twice.*button says Submit order: no test linked/);
+});
+
 test("retry after a reviewer failure re-runs the reviewer and not the dev", async () => {
   knobs.override.reviewer = reviewerFailsOnce();
   const g = await start();

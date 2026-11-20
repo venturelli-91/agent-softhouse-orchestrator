@@ -8,6 +8,8 @@ export type Behavior = Partial<Record<string, (req: Req<unknown>) => unknown>>;
 
 export const BRIEF = { why: "the goal of the ticket", how: "small focused change", where: "only the touched module" };
 
+export const CRITERIA_TESTS = [{ criterion: "button says Submit order", test: "test/checkout.test.js::checkout button" }];
+
 export const FLAGS = { touches_security: false, touches_performance: false, touches_ai: false, touches_schema: false, touches_public_api: false,
   touches_permissions: false, touches_external_integration: false, touches_cost: false };
 
@@ -21,7 +23,7 @@ export const defaults: Behavior = {
   triage: () => ({ title: "t", priority: "P2", specialty: "frontend", clear: true, flags: FLAGS, criteria: ["button says Submit order"], summary: "ok" }),
   discovery: () => ({ problem: "the problem", assumptions: [], questions: [], ready: true, briefing: {} }),
   planner: (req) => defaults.triage!(req),
-  dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF }),
+  dev: (req) => (commit(req.cwd, "agent-dev"), { summary: "ok", brief: BRIEF, criteria_tests: CRITERIA_TESTS }),
   reviewer: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   design: () => ({ verdict: "approved", comments: "", summary: "ok" }),
   qa: () => ({ verdict: "approved", comments: "", summary: "ok" }),

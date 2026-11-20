@@ -22,7 +22,7 @@ function sandbox(green = true) {
   const repo = createFixture(dir);
   // The fixture starts red on purpose (the tracer needs a failing test); `orch run` refuses a red base, so green it unless asked.
   if (green) {
-    writeFileSync(join(repo, "test/checkout.test.js"), 'import { test } from "node:test";\ntest("ok", () => {});\n');
+    writeFileSync(join(repo, "test/checkout.test.js"), 'import { test } from "node:test";\ntest("checkout button", () => {});\n');
     git(repo, "commit", "-qam", "green base");
   }
   return { orch, repo, done: () => rmSync(dir, { recursive: true, force: true }) };

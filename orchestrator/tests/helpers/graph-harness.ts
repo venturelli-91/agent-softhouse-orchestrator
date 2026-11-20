@@ -9,9 +9,9 @@ import { gitConfigHash } from "../../src/guardrails.ts";
 import { config, createWorktree, buildGraph, resume, Ticket } from "../../src/graph.ts";
 import { registerPublisher } from "../../src/publish.ts";
 import { NodeFailure, registerExecutor, type Req } from "../../src/run-agent.ts";
-import { BRIEF, type Behavior, commit, defaults, FLAGS } from "./fakes.ts";
+import { BRIEF, type Behavior, commit, CRITERIA_TESTS, defaults, FLAGS } from "./fakes.ts";
 
-export { BRIEF, type Behavior, commit, defaults, FLAGS };
+export { BRIEF, type Behavior, commit, CRITERIA_TESTS, defaults, FLAGS };
 
 export const knobs = {
   override: {} as Behavior,
@@ -46,7 +46,9 @@ registerExecutor("fake", {
     if (req.role === "docs") (knobs.docsCalls.push(req.role), knobs.docsContexts.push(req.context));
     else knobs.calls.push(req.role);
     const raw = (knobs.override[req.role] ?? defaults[req.role]!)(req as Req<unknown>);
-    const output = req.schema.safeParse(raw);
+    // A dev override that does not mention criteria_tests links the default criterion, so only the tests about the map have to set it.
+    const linked = req.role === "dev" && raw && typeof raw === "object" && !("criteria_tests" in raw) ? { ...raw, criteria_tests: CRITERIA_TESTS } : raw;
+    const output = req.schema.safeParse(linked);
     if (!output.success) throw new NodeFailure(`${req.role}: invalid output`);
     return { output: output.data, usage: { tokens_in: knobs.tokensPerCall, tokens_out: 0, cache_read: 0, cache_create: 0, cost_usd: 0, turns: 1, ms: 1 } };
   },

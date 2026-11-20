@@ -126,7 +126,10 @@ test("a request that needs several commits is split into atomic tasks run one at
     split: ["engine and store", "API routes", "ops UI"] });
   const ctxs: string[] = [];
   let n = 0;
-  knobs.override.dev = (req) => (ctxs.push(req.context), commit(req.cwd, "agent-dev"), n++, { summary: "ok", brief: BRIEF });
+  knobs.override.dev = (req) => (
+    ctxs.push(req.context), commit(req.cwd, "agent-dev"), n++,
+    { summary: "ok", brief: BRIEF, criteria_tests: n < 3 ? [] : [{ criterion: "c", test: "test/checkout.test.js::checkout button" }] }
+  );
   const g = await start();
   assert.equal(paused(g.r)?.type, "approval");
   assert.equal(knobs.calls.filter((c) => c === "dev").length, 3);
