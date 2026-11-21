@@ -134,3 +134,14 @@ test("the real gitleaks flags a committed token by file and line without the val
     setScanRunner(CLEAN);
   }
 });
+
+test("a .gitattributes that marks files as binary does not hide a committed token", { skip: !hasGitleaks && "gitleaks not on PATH" }, async () => {
+  setScanRunner(realScan);
+  try {
+    const out = await secrets(ticket({ ".gitattributes": "* -diff\n", "src/k.js": `const a = 1;\nconst t = "${TOKEN}";\n` }));
+    assert.equal(out.status, "dev_failed");
+    assert.match(String(out.summary), /src\/k\.js:2 \(github-pat\)/);
+  } finally {
+    setScanRunner(CLEAN);
+  }
+});

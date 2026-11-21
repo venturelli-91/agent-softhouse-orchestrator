@@ -19,7 +19,7 @@ const LEAKS = 99;
 export const realScan: ScanRunner = (worktree, base, config) => {
   const dir = mkdtempSync(join(tmpdir(), "gitleaks-"));
   writeFileSync(join(dir, "gitleaks.toml"), config);
-  const args = ["git", `--log-opts=${base}..HEAD`, "--redact", "--no-banner", "--ignore-gitleaks-allow", "--report-format", "json", "--report-path", "-",
+  const args = ["git", `--log-opts=--text --no-textconv --no-ext-diff -m ${base}..HEAD`, "--redact", "--no-banner", "--ignore-gitleaks-allow", "--report-format", "json", "--report-path", "-",
     "--exit-code", String(LEAKS), "--gitleaks-ignore-path", dir, "--config", join(dir, "gitleaks.toml"), worktree];
   const { GITLEAKS_CONFIG: _c, GITLEAKS_CONFIG_TOML: _t, ...env } = process.env;
   return new Promise<string[]>((done, fail) =>
