@@ -1,5 +1,7 @@
 // Tiny fixture service for the load stage tests. argv: port mode infoFile. Modes: lock (one global lock serializes every request and
-// writes hold it across the dependency call), free (the dependency call is made outside any lock), die (exits after 1.5s), hang (never listens).
+// writes hold it across the dependency call), free (the dependency call is made outside any lock), die (exits after 1.5s), hang (never listens),
+// guarded (like free, but the dependency call times out after 1s and a failure answers 503), retry (like free, but a failed dependency call
+// is retried forever, so writes hang while the dependency is down).
 import { createServer } from "node:http";
 import { writeFileSync } from "node:fs";
 
@@ -15,7 +17,17 @@ else {
     tail = run.catch(() => {});
     return run;
   };
-  const callDep = () => fetch(dep).then((r) => r.text());
+  const once = () => fetch(dep, mode === "guarded" ? { signal: AbortSignal.timeout(1000) } : {}).then((r) => r.text());
+  const callDep = async () => {
+    for (;;) {
+      try {
+        return await once();
+      } catch (e) {
+        if (mode !== "retry") throw e;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+  };
   createServer(async (req, res) => {
     req.resume();
     try {
@@ -23,7 +35,7 @@ else {
       else if (req.method === "POST") (await callDep(), await exclusive(() => undefined));
       res.end("ok");
     } catch {
-      res.statusCode = 500;
+      res.statusCode = mode === "guarded" ? 503 : 500;
       res.end("err");
     }
   }).listen(Number(port), "127.0.0.1");

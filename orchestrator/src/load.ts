@@ -81,7 +81,8 @@ async function viaDriver(cfg: LoadConfig, proxy: Awaited<ReturnType<typeof start
     }
   }
   const slowed = report.slowed_p95_ms === undefined ? "" : ` vs ${Math.round(report.slowed_p95_ms)}ms with the dependency slowed`;
-  return { findings, report, summary: `${report.requests} requests, error rate ${pct(report.errors, report.requests)}, fast p95 ${Math.round(report.baseline_p95_ms)}ms baseline${slowed}` };
+  const outage = report.outage_requests === undefined ? "" : `; dependency down: ${pct(report.outage_uncontrolled!, report.outage_requests)} unanswered, ${report.outage_recovered ? "recovered" : "no recovery"}`;
+  return { findings, report, summary: `${report.requests} requests, error rate ${pct(report.errors, report.requests)}, fast p95 ${Math.round(report.baseline_p95_ms)}ms baseline${slowed}${outage}` };
 }
 
 export const realLoad: LoadRunner = async (cfg, cwd, ctx) => {

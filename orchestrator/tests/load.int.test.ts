@@ -69,6 +69,25 @@ test("a service that calls the dependency outside any lock passes the stage", as
   await assertCleanedUp(f);
 });
 
+const OUTAGE = { slow_dependency: { env: "DEP_URL", delay_ms: 300, outage: true } };
+
+test("a service that times out the dead dependency, answers 503 and reconnects passes the outage phase", async () => {
+  const f = await fixture("guarded", OUTAGE);
+  const out = await run(f);
+  assert.deepEqual(out.findings, []);
+  const r = out.report as { outage_requests: number; outage_uncontrolled: number; outage_recovered: boolean };
+  assert.ok(r.outage_requests > 0 && r.outage_uncontrolled === 0 && r.outage_recovered, JSON.stringify(r));
+  assert.match(out.summary, /; dependency down: 0\.0% unanswered, recovered$/);
+  await assertCleanedUp(f);
+});
+
+test("a service whose writes hang while the dependency is down fails the outage phase", async () => {
+  const f = await fixture("retry", OUTAGE);
+  const out = await run(f);
+  assert.match(out.findings.join("\n"), /got no answer \(timeout or reset\) while the dependency was down/);
+  await assertCleanedUp(f);
+});
+
 test("a service that dies during the run is an app failure and leaves nothing behind", async () => {
   const f = await fixture("die");
   await assert.rejects(run(f), (e: Error) => e instanceof AppFailure && /exited during the load run/.test(e.message));

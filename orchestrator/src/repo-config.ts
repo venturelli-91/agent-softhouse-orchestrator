@@ -98,6 +98,8 @@ export const LoadConfig = z.object({
     env: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
     target: z.string().regex(/^(localhost|127\.0\.0\.1):\d{1,5}$/, "target must be localhost:port or 127.0.0.1:port").optional(),
     delay_ms: z.number().positive().max(30000),
+    // ponytail: optional, not default(false), so configs and in-flight tickets without the key parse exactly as before.
+    outage: z.boolean().optional(),
   }).nullable().default(null),
   concurrency: z.number().int().min(1).max(200).default(20),
   duration_s: z.number().positive().max(120).default(20),

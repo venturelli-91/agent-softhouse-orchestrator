@@ -27,6 +27,15 @@ test("thresholds: slow p95 needs to break both the absolute limit and the ratio"
   assert.equal(p95([]), 0);
 });
 
+test("thresholds: the outage phase is judged only when it ran, each breach on its own", () => {
+  const out: LoadReport = { ...ok, outage_requests: 400, outage_uncontrolled: 2, outage_fast_p95_ms: 150, outage_recovered: true };
+  assert.deepEqual(evaluateLoad(out, cfg), []);
+  assert.match(evaluateLoad({ ...out, outage_uncontrolled: 40 }, cfg).join(), /10\.0% of 400 requests got no answer.*dependency was down.*no timeout or error handling/);
+  assert.match(evaluateLoad({ ...out, outage_fast_p95_ms: 4200 }, cfg).join(), /fast_path p95 4200ms vs 100ms baseline while dependency down/);
+  assert.deepEqual(evaluateLoad({ ...out, outage_fast_p95_ms: 450 }, cfg), []);
+  assert.match(evaluateLoad({ ...out, outage_recovered: false }, cfg).join(), /writes still fail 10s after the dependency came back/);
+});
+
 test("the stub proxy really delays and close frees the port", async () => {
   const p = await startDelayProxy();
   const url = `http://127.0.0.1:${p.port}/`;
