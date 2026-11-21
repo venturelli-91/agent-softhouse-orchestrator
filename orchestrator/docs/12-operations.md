@@ -117,7 +117,8 @@ as "dependency not reached".
 
 With `slow_dependency.outage: true` a fourth phase follows, `min(duration_s, 10)` seconds with the dependency down: the
 proxy cuts its open connections and refuses new ones while the writers run and `fast_path` is probed. Any HTTP answer
-(a 503 is fine) counts as controlled; a timeout (5s) or a reset counts as unanswered, apart from the main error rate.
+(a 503 is fine) to a write or a `fast_path` probe counts as controlled; a timeout (5s) or a reset counts as unanswered,
+apart from the main error rate.
 Writes in flight when the phase ends are awaited, not cut. Then the dependency comes back and the first `writes` entry
 must answer below 500 within `recover_s`. The `runner` mode does not run this phase.
 

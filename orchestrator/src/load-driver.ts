@@ -78,12 +78,14 @@ function writers(cfg: LoadConfig, stop: AbortSignal, inflight: AbortSignal, coun
   return Promise.all(Array.from({ length: cfg.concurrency }, (_, i) => run(i)));
 }
 
-async function probe(cfg: LoadConfig, seconds: number, check: () => void): Promise<number[]> {
+async function probe(cfg: LoadConfig, seconds: number, check: () => void, count?: (r: Fetched) => void): Promise<number[]> {
   const stop = AbortSignal.timeout(seconds * 1000);
   const ms: number[] = [];
   while (!stop.aborted) {
     check();
-    ms.push((await hit(new URL(cfg.fast_path, cfg.base_url).href, {}, stop)).ms);
+    const r = await hit(new URL(cfg.fast_path, cfg.base_url).href, {}, stop);
+    if (!stop.aborted) count?.(r);
+    ms.push(r.ms);
     await sleep(100);
   }
   return ms;
@@ -132,7 +134,7 @@ export async function runDriver(cfg: LoadConfig, proxy: DelayProxy | null, check
     proxy.down = true;
     try {
       const counted = (r: Fetched) => (o.requests++, r.answered || o.uncontrolled++);
-      report.outage_fast_p95_ms = p95(await phase(() => probe(cfg, Math.min(cfg.duration_s, 10), check), counted, true));
+      report.outage_fast_p95_ms = p95(await phase(() => probe(cfg, Math.min(cfg.duration_s, 10), check, counted), counted, true));
     } finally {
       proxy.down = false;
     }
