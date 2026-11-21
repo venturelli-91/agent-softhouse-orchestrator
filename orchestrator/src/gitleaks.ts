@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -9,18 +9,21 @@ import { type T } from "./ticket.ts";
 import { InfraError } from "./webcheck.ts";
 
 // Findings are "file:line (rule)" only: the value itself never leaves the scanner.
-export type ScanRunner = (worktree: string, base: string) => Promise<string[]>;
+export type ScanRunner = (worktree: string, base: string, config: string) => Promise<string[]>;
 
 const Findings = z.array(z.object({ File: z.string(), StartLine: z.number(), RuleID: z.string() }));
 const LEAKS = 99;
 
-// cwd and ignore path are an empty dir of ours: no binary in the worktree can shadow gitleaks and a dev-written .gitleaksignore is not read from there.
-export const realScan: ScanRunner = (worktree, base) => {
+// cwd, ignore path and config live in a dir of ours: no binary in the worktree can shadow gitleaks, and neither a worktree .gitleaks.toml
+// (even untracked) nor the GITLEAKS_CONFIG* env vars can replace the base commit's config.
+export const realScan: ScanRunner = (worktree, base, config) => {
   const dir = mkdtempSync(join(tmpdir(), "gitleaks-"));
+  writeFileSync(join(dir, "gitleaks.toml"), config);
   const args = ["git", `--log-opts=${base}..HEAD`, "--redact", "--no-banner", "--ignore-gitleaks-allow", "--report-format", "json", "--report-path", "-",
-    "--exit-code", String(LEAKS), "--gitleaks-ignore-path", dir, worktree];
+    "--exit-code", String(LEAKS), "--gitleaks-ignore-path", dir, "--config", join(dir, "gitleaks.toml"), worktree];
+  const { GITLEAKS_CONFIG: _c, GITLEAKS_CONFIG_TOML: _t, ...env } = process.env;
   return new Promise<string[]>((done, fail) =>
-    execFile("gitleaks", args, { cwd: dir, maxBuffer: 64 * 1024 * 1024, timeout: 600_000, windowsHide: true }, (e, out) => {
+    execFile("gitleaks", args, { cwd: dir, env, maxBuffer: 64 * 1024 * 1024, timeout: 600_000, windowsHide: true }, (e, out) => {
       const code = e ? (e as { code?: unknown }).code : 0;
       if (code === "ENOENT") return fail(new InfraError("gitleaks not found"));
       if (code !== 0 && code !== LEAKS) return fail(new NodeFailure(`gitleaks failed (exit ${typeof code === "number" ? code : "none"})`));
@@ -37,10 +40,16 @@ let run: ScanRunner = realScan;
 export const setScanRunner = (r: ScanRunner) => void (run = r);
 
 const SUPPRESSOR = /(^|\/)\.gitleaks(\.toml|ignore)$/i;
+const atBase = (t: T, f: string) => (sh(t.worktree, "ls-tree", "--name-only", t.base, "--", f) ? sh(t.worktree, "cat-file", "blob", `${t.base}:${f}`) : null);
 
 function suppressions(t: T): string[] {
   const git = (...a: string[]) => sh(t.worktree, "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", ...a, t.base, "HEAD");
   const out = git("--name-only", "-z").split("\0").filter((f) => SUPPRESSOR.test(f)).map((f) => `${f} (gitleaks config or ignore file changed)`);
+  // gitleaks always reads the worktree's root .gitleaksignore, also an untracked or ignored one the diff never shows.
+  const ignore = join(t.worktree, ".gitleaksignore");
+  const current = existsSync(ignore) ? readFileSync(ignore, "utf8").replace(/\r\n/g, "\n").trimEnd() : null;
+  if (current !== atBase(t, ".gitleaksignore") && !out.some((f) => f.startsWith(".gitleaksignore ")))
+    out.push(".gitleaksignore (differs from the base commit outside the commits)");
   let file = "";
   let line = 0;
   let del = 0;
@@ -66,7 +75,7 @@ export const secrets = guarded("secrets", async (t: T) => {
   const found = suppressions(t);
   const docs_warnings = [...t.docs_warnings];
   try {
-    found.push(...(await run(t.worktree, t.base)));
+    found.push(...(await run(t.worktree, t.base, atBase(t, ".gitleaks.toml") ?? "[extend]\nuseDefault = true\n")));
   } catch (e) {
     if (!(e instanceof InfraError)) throw e instanceof NodeFailure ? e : new NodeFailure((e as Error).message.split("\n")[0]);
     docs_warnings.push(`secrets skipped: ${e.message}`);

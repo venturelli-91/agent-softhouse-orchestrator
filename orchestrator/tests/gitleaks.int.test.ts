@@ -53,6 +53,11 @@ test("a dev-written ignore file or config, or an added gitleaks:allow, is a find
   assert.match(allow.rejections!.join(), /^secrets: /);
   const clean = await secrets(ticket({ "src/a.js": "const a = 1;\n" }));
   assert.equal(clean.status, "review");
+  const t = ticket({ "src/a.js": "const a = 1;\n" });
+  writeFileSync(join(t.worktree, ".gitleaksignore"), "abc:src/k.js:github-pat:2\n");
+  const untracked = await secrets(t);
+  assert.equal(untracked.status, "dev_failed");
+  assert.match(String(untracked.summary), /\.gitleaksignore/);
 });
 
 test("without gitleaks on PATH the real scanner is an infrastructure error and the stage passes with a docs warning", async () => {
@@ -61,7 +66,7 @@ test("without gitleaks on PATH the real scanner is an infrastructure error and t
   roots.push(empty);
   process.env.PATH = empty;
   try {
-    await assert.rejects(realScan(empty, "HEAD"), (e: Error) => e instanceof InfraError && /gitleaks not found/.test(e.message));
+    await assert.rejects(realScan(empty, "HEAD", ""), (e: Error) => e instanceof InfraError && /gitleaks not found/.test(e.message));
   } finally {
     process.env.PATH = path;
   }
@@ -107,7 +112,12 @@ test("the real gitleaks flags a committed token by file and line without the val
     assert.equal(JSON.stringify(out).includes(TOKEN.slice(4, 20)), false);
     assert.equal(git(t.worktree, "status", "--porcelain"), "");
     assert.equal((await secrets(ticket({ "src/a.js": "const a = 1;\n" }))).status, "review");
+    const allowAll = "[allowlist]\npaths = ['''.*''']\n";
+    writeFileSync(join(t.worktree, ".gitleaks.toml"), allowAll);
+    process.env.GITLEAKS_CONFIG_TOML = allowAll;
+    assert.match(String((await secrets(t)).summary), /src\/k\.js:2 \(github-pat\)/);
   } finally {
+    delete process.env.GITLEAKS_CONFIG_TOML;
     setScanRunner(CLEAN);
   }
 });
