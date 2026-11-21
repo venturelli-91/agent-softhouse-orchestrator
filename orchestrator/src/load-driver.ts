@@ -8,6 +8,10 @@ export type LoadReport = {
   slowed_p95_ms?: number;
   recovered?: boolean;
   dep_connections?: number;
+  outage_requests?: number;
+  outage_uncontrolled?: number;
+  outage_fast_p95_ms?: number;
+  outage_recovered?: boolean;
 };
 
 const REQUEST_TIMEOUT_MS = 5000;
@@ -26,10 +30,17 @@ export function evaluateLoad(r: LoadReport, cfg: Pick<LoadConfig, "thresholds" |
   if (r.slowed_p95_ms !== undefined && r.slowed_p95_ms > th.max_fast_p95_ms && r.slowed_p95_ms > th.max_fast_p95_ratio * r.baseline_p95_ms)
     out.push(`fast_path p95 ${Math.round(r.slowed_p95_ms)}ms vs ${Math.round(r.baseline_p95_ms)}ms baseline while dependency slow: a request handler blocks on the dependency (lock or pool held across the call)`);
   if (r.recovered === false) out.push(`service did not answer within ${th.recover_s}s after the dependency sped up again`);
+  const lost = r.outage_requests ? r.outage_uncontrolled! / r.outage_requests : 0;
+  if (lost > th.max_error_rate)
+    out.push(`${(lost * 100).toFixed(1)}% of ${r.outage_requests} requests got no answer (timeout or reset) while the dependency was down (max ${(th.max_error_rate * 100).toFixed(1)}%): requests hang or drop when the dependency fails (no timeout or error handling on the dependency call)`);
+  if (r.outage_fast_p95_ms !== undefined && r.outage_fast_p95_ms > th.max_fast_p95_ms && r.outage_fast_p95_ms > th.max_fast_p95_ratio * r.baseline_p95_ms)
+    out.push(`fast_path p95 ${Math.round(r.outage_fast_p95_ms)}ms vs ${Math.round(r.baseline_p95_ms)}ms baseline while dependency down: a request handler blocks on the failing dependency (lock or pool held across the call)`);
+  if (r.outage_recovered === false) out.push(`writes still fail ${th.recover_s}s after the dependency came back: the service does not reconnect to it`);
   return out;
 }
 
-type Fetched = { ms: number; ok: boolean };
+// `answered`: the service sent an HTTP response (any status), as opposed to a timeout or a reset/refused connection.
+type Fetched = { ms: number; ok: boolean; answered: boolean };
 async function hit(url: string, init: RequestInit, signal: AbortSignal): Promise<Fetched> {
   const t0 = performance.now();
   try {
@@ -44,43 +55,59 @@ async function hit(url: string, init: RequestInit, signal: AbortSignal): Promise
         }
       } catch {}
     }
-    return { ms: performance.now() - t0, ok: r.status < 500 };
+    return { ms: performance.now() - t0, ok: r.status < 500, answered: true };
   } catch {
-    return signal.aborted ? { ms: performance.now() - t0, ok: true } : { ms: REQUEST_TIMEOUT_MS, ok: false };
+    return signal.aborted ? { ms: performance.now() - t0, ok: true, answered: false } : { ms: REQUEST_TIMEOUT_MS, ok: false, answered: false };
   }
 }
 
-// `check` throws when the service died or the stage ran out of time. Writers run until `stop` aborts them; aborted requests are not errors.
-function writers(cfg: LoadConfig, stop: AbortSignal, tally: { requests: number; errors: number }, check: () => void): Promise<unknown> {
+const write = (cfg: LoadConfig, w: LoadConfig["writes"][number], signal: AbortSignal) =>
+  hit(new URL(w.path, cfg.base_url).href, { method: w.method, body: w.body, headers: w.body ? { "content-type": "application/json" } : {} }, signal);
+
+// `check` throws when the service died or the stage ran out of time. Writers start requests until `stop` aborts; `inflight` aborting
+// cuts the running ones, which are then not counted.
+function writers(cfg: LoadConfig, stop: AbortSignal, inflight: AbortSignal, count: (r: Fetched) => void, check: () => void): Promise<unknown> {
   const run = async (i: number) => {
     for (let n = i; !stop.aborted; n++) {
       check();
-      const w = cfg.writes[n % cfg.writes.length];
-      const r = await hit(new URL(w.path, cfg.base_url).href, { method: w.method, body: w.body, headers: w.body ? { "content-type": "application/json" } : {} }, stop);
-      if (stop.aborted) return;
-      tally.requests++;
-      if (!r.ok) tally.errors++;
+      const r = await write(cfg, cfg.writes[n % cfg.writes.length], inflight);
+      if (inflight.aborted) return;
+      count(r);
     }
   };
   return Promise.all(Array.from({ length: cfg.concurrency }, (_, i) => run(i)));
 }
 
-async function probe(cfg: LoadConfig, seconds: number, check: () => void): Promise<number[]> {
+async function probe(cfg: LoadConfig, seconds: number, check: () => void, count?: (r: Fetched) => void): Promise<number[]> {
   const stop = AbortSignal.timeout(seconds * 1000);
   const ms: number[] = [];
   while (!stop.aborted) {
     check();
-    ms.push((await hit(new URL(cfg.fast_path, cfg.base_url).href, {}, stop)).ms);
+    const r = await hit(new URL(cfg.fast_path, cfg.base_url).href, {}, stop);
+    if (!stop.aborted) count?.(r);
+    ms.push(r.ms);
     await sleep(100);
   }
   return ms;
 }
 
+async function recovers(cfg: LoadConfig, attempt: () => Promise<Fetched>, check: () => void): Promise<boolean> {
+  const until = Date.now() + cfg.thresholds.recover_s * 1000;
+  while (Date.now() < until) {
+    check();
+    if ((await attempt()).ok) return true;
+    await sleep(200);
+  }
+  return false;
+}
+
 export async function runDriver(cfg: LoadConfig, proxy: DelayProxy | null, check: () => void): Promise<LoadReport> {
   const tally = { requests: 0, errors: 0 };
-  const phase = async <R>(during: () => Promise<R>): Promise<R> => {
+  const main = (r: Fetched) => (tally.requests++, r.ok || tally.errors++);
+  // `drain`: let the running requests end (answer or REQUEST_TIMEOUT_MS) instead of cutting them, so a hang is seen even in a short phase.
+  const phase = async <R>(during: () => Promise<R>, count = main, drain = false): Promise<R> => {
     const ctl = new AbortController();
-    const w = writers(cfg, ctl.signal, tally, check);
+    const w = writers(cfg, ctl.signal, drain ? new AbortController().signal : ctl.signal, count, check);
     try {
       return (await Promise.race([during(), w])) as R;
     } finally {
@@ -100,12 +127,20 @@ export async function runDriver(cfg: LoadConfig, proxy: DelayProxy | null, check
     }
     // Connections during the slowed phase only: the counter accumulates, so a re-run must not see the first run's.
     report.dep_connections = proxy.connections - before;
-    const until = Date.now() + cfg.thresholds.recover_s * 1000;
-    for (report.recovered = false; Date.now() < until && !report.recovered; ) {
-      check();
-      report.recovered = (await hit(new URL(cfg.health_path, cfg.base_url).href, {}, new AbortController().signal)).ok;
-      if (!report.recovered) await sleep(200);
+    report.recovered = await recovers(cfg, () => hit(new URL(cfg.health_path, cfg.base_url).href, {}, new AbortController().signal), check);
+  }
+  if (proxy && cfg.slow_dependency?.outage && report.recovered !== false) {
+    const o = { requests: 0, uncontrolled: 0 };
+    proxy.down = true;
+    try {
+      const counted = (r: Fetched) => (o.requests++, r.answered || o.uncontrolled++);
+      report.outage_fast_p95_ms = p95(await phase(() => probe(cfg, Math.min(cfg.duration_s, 10), check, counted), counted, true));
+    } finally {
+      proxy.down = false;
     }
+    report.outage_requests = o.requests;
+    report.outage_uncontrolled = o.uncontrolled;
+    report.outage_recovered = await recovers(cfg, () => write(cfg, cfg.writes[0], new AbortController().signal), check);
   }
   return { ...report, ...tally };
 }

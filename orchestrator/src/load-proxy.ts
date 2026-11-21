@@ -1,13 +1,27 @@
 import { createServer as httpServer } from "node:http";
 import { connect, createServer, type Server, type Socket } from "node:net";
 
-export type DelayProxy = { port: number; delay_ms: number; connections: number; close(): Promise<void> };
+export type DelayProxy = { port: number; delay_ms: number; connections: number; down: boolean; close(): Promise<void> };
 
 // Both listeners bind 127.0.0.1 only. With a target the bytes toward it are held back by delay_ms (order kept); without one it is an HTTP stub that answers 200 after the delay.
+// While `down` the dependency is dead: setting it cuts every open connection and new ones are destroyed on accept.
 export async function startDelayProxy(target?: string): Promise<DelayProxy> {
   const sockets = new Set<Socket>();
   const timers = new Set<NodeJS.Timeout>();
-  const p: DelayProxy = { port: 0, delay_ms: 0, connections: 0, close: async () => {} };
+  let down = false;
+  const p: DelayProxy = {
+    port: 0,
+    delay_ms: 0,
+    connections: 0,
+    get down() {
+      return down;
+    },
+    set down(v) {
+      down = v;
+      if (v) sockets.forEach((s) => s.destroy());
+    },
+    close: async () => {},
+  };
   const after = (ms: number, fn: () => void) => {
     const t = setTimeout(() => (timers.delete(t), fn()), ms);
     timers.add(t);
@@ -21,6 +35,7 @@ export async function startDelayProxy(target?: string): Promise<DelayProxy> {
   if (target) {
     const [host, port] = target.split(":");
     server = createServer((client) => {
+      if (down) return void client.destroy();
       p.connections++;
       const up = connect({ host, port: Number(port) });
       track(client, up);
@@ -43,7 +58,7 @@ export async function startDelayProxy(target?: string): Promise<DelayProxy> {
       req.resume();
       after(p.delay_ms, () => res.end("ok"));
     });
-    http.on("connection", (s) => track(s));
+    http.on("connection", (s) => (down ? s.destroy() : track(s)));
     server = http as unknown as Server;
   }
   await new Promise<void>((ok, fail) => (server.once("error", fail), server.listen(0, "127.0.0.1", ok)));

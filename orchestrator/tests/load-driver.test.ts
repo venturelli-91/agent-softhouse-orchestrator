@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { createServer } from "node:http";
-import { evaluateLoad, p95, type LoadReport } from "../src/load-driver.ts";
+import { connect } from "node:net";
+import { evaluateLoad, p95, runDriver, type LoadReport } from "../src/load-driver.ts";
 import { startDelayProxy } from "../src/load-proxy.ts";
 import { LoadConfig } from "../src/repo-config.ts";
 
@@ -23,6 +25,48 @@ test("thresholds: slow p95 needs to break both the absolute limit and the ratio"
   assert.equal(evaluateLoad({ ...ok, baseline_p95_ms: 10, slowed_p95_ms: 600 }, cfg).length, 1);
   assert.equal(p95([1, 2, 3, 4, 5, 6, 7, 8, 9, 100]), 100);
   assert.equal(p95([]), 0);
+});
+
+test("thresholds: the outage phase is judged only when it ran, each breach on its own", () => {
+  const out: LoadReport = { ...ok, outage_requests: 400, outage_uncontrolled: 2, outage_fast_p95_ms: 150, outage_recovered: true };
+  assert.deepEqual(evaluateLoad(out, cfg), []);
+  assert.match(evaluateLoad({ ...out, outage_uncontrolled: 40 }, cfg).join(), /10\.0% of 400 requests got no answer.*dependency was down.*no timeout or error handling/);
+  assert.match(evaluateLoad({ ...out, outage_fast_p95_ms: 4200 }, cfg).join(), /fast_path p95 4200ms vs 100ms baseline while dependency down/);
+  assert.deepEqual(evaluateLoad({ ...out, outage_fast_p95_ms: 450 }, cfg), []);
+  assert.match(evaluateLoad({ ...out, outage_recovered: false }, cfg).join(), /writes still fail 10s after the dependency came back/);
+});
+
+test("a fast_path reset while the dependency is down counts as unanswered in the outage phase", { timeout: 30000 }, async () => {
+  const p = await startDelayProxy();
+  const svc = createServer((req, res) => (req.method === "GET" && p.down ? req.socket.destroy() : res.end("ok")));
+  await new Promise<void>((ok) => svc.listen(0, "127.0.0.1", ok));
+  const c = LoadConfig.parse({ serve: "node s.js", base_url: `http://127.0.0.1:${(svc.address() as { port: number }).port}`, writes: [{ method: "POST", path: "/w" }],
+    slow_dependency: { env: "DEP_URL", delay_ms: 10, outage: true }, duration_s: 1, concurrency: 1 });
+  try {
+    const r = await runDriver(c, p, () => {});
+    assert.ok(r.outage_uncontrolled! > 0 && r.outage_recovered, JSON.stringify(r));
+  } finally {
+    await p.close();
+    svc.closeAllConnections();
+    await new Promise((ok) => svc.close(ok));
+  }
+});
+
+test("the outage phase is skipped when the service did not recover from the slowed phase", { timeout: 30000 }, async () => {
+  const p = await startDelayProxy();
+  const svc = createServer((req, res) => ((res.statusCode = req.url === "/h" ? 500 : 200), res.end("x")));
+  await new Promise<void>((ok) => svc.listen(0, "127.0.0.1", ok));
+  const c = LoadConfig.parse({ serve: "node s.js", base_url: `http://127.0.0.1:${(svc.address() as { port: number }).port}`, writes: [{ method: "POST", path: "/w" }],
+    health_path: "/h", slow_dependency: { env: "DEP_URL", delay_ms: 10, outage: true }, duration_s: 1, concurrency: 1, thresholds: { recover_s: 1 } });
+  try {
+    const r = await runDriver(c, p, () => {});
+    assert.equal(r.recovered, false);
+    assert.equal(r.outage_requests, undefined);
+  } finally {
+    await p.close();
+    svc.closeAllConnections();
+    await new Promise((ok) => svc.close(ok));
+  }
 });
 
 test("the stub proxy really delays and close frees the port", async () => {
@@ -54,4 +98,22 @@ test("the TCP proxy forwards to its target and delays the bytes toward it", asyn
   target.closeAllConnections();
   await new Promise((ok) => target.close(ok));
   await assert.rejects(fetch(url));
+});
+
+test("a down proxy cuts open connections, refuses new ones and forwards again once back up", { timeout: 10000 }, async () => {
+  const target = createServer((_, res) => res.end("from-target"));
+  await new Promise<void>((ok) => target.listen(0, "127.0.0.1", ok));
+  for (const p of [await startDelayProxy(), await startDelayProxy(`127.0.0.1:${(target.address() as { port: number }).port}`)]) {
+    const open = connect(p.port, "127.0.0.1");
+    await once(open, "connect");
+    const cut = once(open, "close");
+    p.down = true;
+    await cut;
+    await assert.rejects(fetch(`http://127.0.0.1:${p.port}/`, { signal: AbortSignal.timeout(2000) }));
+    p.down = false;
+    assert.ok((await fetch(`http://127.0.0.1:${p.port}/`).then((r) => r.text())).length > 0);
+    await p.close();
+  }
+  target.closeAllConnections();
+  await new Promise((ok) => target.close(ok));
 });
