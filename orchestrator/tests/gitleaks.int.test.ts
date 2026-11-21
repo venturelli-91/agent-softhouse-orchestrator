@@ -76,7 +76,20 @@ test("without gitleaks on PATH the real scanner is an infrastructure error and t
   assert.match(out.docs_warnings!.join(), /secrets skipped: gitleaks not found/);
 });
 
-test("a finding sends the ticket back to the dev before docs and review; a scanner crash escalates and retry re-runs the stage", async () => {
+test("the scan covers the commit the docs node adds", async () => {
+  const seen: string[] = [];
+  setScanRunner(async (wt) => (seen.push(git(wt, "log", "-1", "--format=%s")), []));
+  try {
+    knobs.override.docs = (req) => ({ files: /Phase: pre/.test(req.context) ? [{ path: "README.md", content: "# Fixture\n" }] : [], notes: "" });
+    const g = await start("T-1", new MemorySaver(), { project_docs: ["README.md"] });
+    assert.equal(paused(g.r)?.type, "approval");
+    assert.deepEqual(seen, ["docs: update README.md"]);
+  } finally {
+    setScanRunner(CLEAN);
+  }
+});
+
+test("a finding sends the ticket back to the dev before review; a scanner crash escalates and retry re-runs the stage", async () => {
   let n = 0;
   setScanRunner(async () => (n++ === 0 ? ["checkout.html:2 (github-pat)"] : []));
   try {

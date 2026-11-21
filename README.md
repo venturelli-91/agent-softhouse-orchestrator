@@ -13,7 +13,7 @@ Derived from [`orchestrator/src/graph.ts`](orchestrator/src/graph.ts).
 Left out for readability: the `docs_pre` node (project docs), the gate's retry and rediscover routes
 (back to the failed node or to `discovery`) and its abort route to the end.
 Any agent failure, timeout, exceeded budget or the revision cap sends the ticket to the human gate instead of crashing.
-`secrets` is code (zero tokens): `gitleaks` over the ticket's commits; a finding, or a dev-added `.gitleaksignore`, `.gitleaks.toml` or `gitleaks:allow`, goes back to the dev as `file:line (rule)`, never the value. Without `gitleaks` on PATH it is skipped with a docs warning.
+`secrets` is code (zero tokens), after `docs_pre` so the docs commit is covered: `gitleaks` over the ticket's commits with the base commit's config; a finding, or a dev-added `.gitleaksignore`, `.gitleaks.toml` or `gitleaks:allow`, goes back to the dev as `file:line (rule)`, never the value. Without `gitleaks` on PATH it is skipped with a docs warning.
 
 ```mermaid
 flowchart TD
