@@ -55,6 +55,8 @@ const requests: { text: string; exp: Exp }[] = [
   { text: "We need reports.", exp: { clear: false } },
   { text: "Improve the checkout.", exp: { clear: false } },
   { text: "Customers complain about login.", exp: { clear: false } },
+  // Hand-graded: the channel question depends on who receives them (buyers or internal staff); both in round 1 is a miss.
+  { text: "Add notifications.", exp: { clear: false } },
 ];
 
 const check = (o: z.infer<typeof Plan>, e: Exp) =>
