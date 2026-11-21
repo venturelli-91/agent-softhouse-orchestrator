@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { createServer } from "node:http";
+import { connect } from "node:net";
 import { evaluateLoad, p95, type LoadReport } from "../src/load-driver.ts";
 import { startDelayProxy } from "../src/load-proxy.ts";
 import { LoadConfig } from "../src/repo-config.ts";
@@ -54,4 +56,22 @@ test("the TCP proxy forwards to its target and delays the bytes toward it", asyn
   target.closeAllConnections();
   await new Promise((ok) => target.close(ok));
   await assert.rejects(fetch(url));
+});
+
+test("a down proxy cuts open connections, refuses new ones and forwards again once back up", { timeout: 10000 }, async () => {
+  const target = createServer((_, res) => res.end("from-target"));
+  await new Promise<void>((ok) => target.listen(0, "127.0.0.1", ok));
+  for (const p of [await startDelayProxy(), await startDelayProxy(`127.0.0.1:${(target.address() as { port: number }).port}`)]) {
+    const open = connect(p.port, "127.0.0.1");
+    await once(open, "connect");
+    const cut = once(open, "close");
+    p.down = true;
+    await cut;
+    await assert.rejects(fetch(`http://127.0.0.1:${p.port}/`, { signal: AbortSignal.timeout(2000) }));
+    p.down = false;
+    assert.ok((await fetch(`http://127.0.0.1:${p.port}/`).then((r) => r.text())).length > 0);
+    await p.close();
+  }
+  target.closeAllConnections();
+  await new Promise((ok) => target.close(ok));
 });
