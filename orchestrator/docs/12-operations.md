@@ -115,17 +115,24 @@ integrations and data tickets pass through `load` after `webcheck`. It is code, 
 `target` it is an HTTP stub that answers 200 after the delay. A service that hardcodes its dependency address is reported
 as "dependency not reached".
 
+With `slow_dependency.outage: true` a fourth phase follows, `min(duration_s, 10)` seconds with the dependency down: the
+proxy cuts its open connections and refuses new ones while the writers run and `fast_path` is probed. Any HTTP answer
+(a 503 is fine) counts as controlled; a timeout (5s) or a reset counts as unanswered, apart from the main error rate.
+Writes in flight when the phase ends are awaited, not cut. Then the dependency comes back and the first `writes` entry
+must answer below 500 within `recover_s`. The `runner` mode does not run this phase.
+
 | Key | Meaning |
 |---|---|
 | `serve`, `base_url`, `env`, `timeout_s` | As in `webcheck`; `timeout_s` (default 300, max 600) caps the whole stage. |
 | `health_path`, `fast_path` | Default `/`; `fast_path` must not touch the dependency. |
 | `writes` | 1 to 5 `{method, path, body?}`, body a static JSON string. |
-| `slow_dependency` | `{env, target?, delay_ms}` or `null`; `target` is localhost:port. |
+| `slow_dependency` | `{env, target?, delay_ms, outage?}` or `null`; `target` is localhost:port; `outage` (default off) adds the dependency-down phase. |
 | `concurrency`, `duration_s` | Defaults 20 and 20. |
 | `thresholds` | `max_error_rate` 0.01, `max_fast_p95_ms` 500, `max_fast_p95_ratio` 5, `recover_s` 10. |
 | `runner` | Optional plain command that replaces the built-in driver: gets `ORCH_LOAD_TARGET`, `ORCH_SLOW_DEP` (dependency slow for the whole run) and `ORCH_LOAD_DURATION`; exit 0 pass, 1 breach, other crash; last stdout line `{"requests":N,"errors":N,"p95_ms":N}`. |
 
-A breach (error rate, fast path stalled while the dependency is slow, no recovery, service died) goes back to the dev as
+A breach (error rate, fast path stalled while the dependency is slow or down, unanswered requests while it is down, no
+recovery, service died) goes back to the dev as
 `load: ...`; the whole run is re-run once before it counts. A pass puts one summary line in the PR body and in the
 approval request, and the JSON report is saved as `ORCH_HOME/load-<id>.json`. A port that already answers or a runner
 that crashes escalates to you; a runner or proxy that cannot start skips with a warning.
