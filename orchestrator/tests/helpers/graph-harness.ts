@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { MemorySaver } from "@langchain/langgraph";
 import { createFixture, git } from "../../scripts/fixture.ts";
+import { setScanRunner } from "../../src/gitleaks.ts";
 import { gitConfigHash } from "../../src/guardrails.ts";
 import { config, createWorktree, buildGraph, resume, Ticket } from "../../src/graph.ts";
 import { registerPublisher } from "../../src/publish.ts";
@@ -31,6 +32,9 @@ export const knobs = {
 export const FAST_TEST = "node test/checkout.test.js";
 
 export const roots: string[] = [];
+
+// The fixture commits hold no secret: the stub keeps the flow tests independent of whether gitleaks is installed.
+setScanRunner(async () => []);
 
 registerPublisher("fake", {
   publish: (p) => (knobs.publications.push(`${p.id}@${p.sha}`), "pr:https://example/pull/1"),

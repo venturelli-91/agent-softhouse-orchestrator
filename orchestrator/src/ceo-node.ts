@@ -137,5 +137,5 @@ const hostDiff = (t: T) => {
   return `${diff.slice(0, HOST_DIFF_CHARS)}\n[TRUNCATED: the full diff is in ${file}]`;
 };
 
-const RETRYABLE = ["triage", "discovery", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy"];
-const POST_DEV = ["reviewer", "design", "qa", "webcheck", "load", "publish", "deploy"];
+const RETRYABLE = ["triage", "discovery", "planner", "dev", "secrets", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy"];
+const POST_DEV = ["secrets", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy"];

@@ -29,5 +29,18 @@ jobs:
           python-version: "3.12"
       - run: npm ci
       - run: npm run typecheck
+      # Pinned release with its sha256: the real-gitleaks test runs instead of skipping.
+      - name: Install gitleaks
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            asset=gitleaks_8.30.1_windows_x64.zip; sum=d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e
+          else
+            asset=gitleaks_8.30.1_linux_x64.tar.gz; sum=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          fi
+          mkdir -p "$RUNNER_TEMP/gitleaks" && cd "$RUNNER_TEMP/gitleaks"
+          curl -sSfL -o "$asset" "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/$asset"
+          echo "$sum  $asset" | sha256sum -c -
+          if [ "$RUNNER_OS" = "Windows" ]; then unzip -q -o "$asset" gitleaks.exe; cygpath -w "$PWD" >> "$GITHUB_PATH"; else tar -xzf "$asset" gitleaks; echo "$PWD" >> "$GITHUB_PATH"; fi
       # Fake nodes: no model, no credentials.
       - run: npm test

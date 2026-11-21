@@ -17,6 +17,7 @@ const lessons = (playbooks: string) =>
 import { DIFF_LIMIT, design, evidenceNote, qa, reviewer } from "./review-nodes.ts";
 import { deploy, deployTicket, mergeNode, publishNode, verifyDeployNode } from "./ship-nodes.ts";
 import { load } from "./load.ts";
+import { secrets } from "./gitleaks.ts";
 import { webcheck } from "./webcheck.ts";
 import { Brief, briefMarkdown, Ticket, type T } from "./ticket.ts";
 
@@ -53,6 +54,7 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addNode("qa", qa)
     .addNode("webcheck", webcheck)
     .addNode("load", load)
+    .addNode("secrets", secrets)
     .addNode("publish", publishNode)
     .addNode("ceo_approval", ceoApproval)
     .addNode("merge_pr", mergeNode)
@@ -64,14 +66,15 @@ export function buildGraph(checkpointer = new MemorySaver()) {
     .addConditionalEdges("discovery", (t: T) => (t.status === "planned_input" ? "planner" : "ceo_approval"), ["planner", "ceo_approval"])
     .addConditionalEdges("planner", route("dev", "dev"), ["dev", "ceo_approval"])
     .addConditionalEdges("dev", (t: T) => (t.status === "dev_next" ? "dev" : route("review", "docs_pre")(t)), ["docs_pre", "dev", "ceo_approval"])
-    .addEdge("docs_pre", "reviewer")
+    .addEdge("docs_pre", "secrets")
+    .addConditionalEdges("secrets", route("review", "reviewer"), ["reviewer", "dev", "ceo_approval"])
     .addConditionalEdges("reviewer", afterReview, ["design", "qa", "dev", "ceo_approval"])
     .addConditionalEdges("design", route("qa", "qa"), ["qa", "dev", "ceo_approval"])
     .addConditionalEdges("qa", route("webcheck", "webcheck"), ["webcheck", "dev", "ceo_approval"])
     .addConditionalEdges("webcheck", route("publish", "load"), ["load", "dev", "ceo_approval"])
     .addConditionalEdges("load", route("publish", "publish"), ["publish", "dev", "ceo_approval"])
     .addConditionalEdges("publish", route("approval", "ceo_approval"), ["ceo_approval", "dev"])
-    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "discovery", "planner", "dev", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy", "merge_pr", END])
+    .addConditionalEdges("ceo_approval", afterCeo, ["triage", "discovery", "planner", "dev", "secrets", "reviewer", "design", "qa", "webcheck", "load", "publish", "deploy", "merge_pr", END])
     .addConditionalEdges("merge_pr", afterMerge, ["deploy", "dev", "ceo_approval"])
     .addConditionalEdges("deploy", (t: T) => (["deployed", "simulated_deploy"].includes(t.status) ? "verify_deploy" : t.status === "escalated" ? "ceo_approval" : END), ["verify_deploy", "ceo_approval", END])
     .addConditionalEdges("verify_deploy", (t: T) => (t.status === "promote" ? "ceo_approval" : END), ["ceo_approval", END])
