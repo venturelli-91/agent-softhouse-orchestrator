@@ -24,6 +24,7 @@ export type Req<T> = {
   schema: z.ZodType<T>;
   cwd: string;
   test?: string | string[]; // the repo's test command(s), only used to build the dev's allowlist
+  base?: string; // the ticket's base commit, only used to build the dev's allowlist
 };
 export type Result<T> = { output: T; usage: Usage };
 export interface Executor {
@@ -67,7 +68,7 @@ const jsonSchema = (s: z.ZodType) => ({ ...z.toJSONSchema(s), $schema: undefined
 
 // --max-turns counts the StructuredOutput turn of --json-schema, hence the +1.
 // No --bare (it ignores the subscription login); the context is trimmed by the other flags.
-export function claudeArgs(req: Pick<Req<unknown>, "role" | "schema" | "test">, system: string, env = process.env): string[] {
+export function claudeArgs(req: Pick<Req<unknown>, "role" | "schema" | "test" | "base">, system: string, env = process.env): string[] {
   return [
     "-p",
     "--model", readEnv("MODEL", req.role, env),
@@ -80,7 +81,7 @@ export function claudeArgs(req: Pick<Req<unknown>, "role" | "schema" | "test">, 
     "--strict-mcp-config",
     "--disable-slash-commands",
     "--no-session-persistence",
-    ...permissionArgs(req.role, req.test),
+    ...permissionArgs(req.role, req.test, req.base),
   ];
 }
 

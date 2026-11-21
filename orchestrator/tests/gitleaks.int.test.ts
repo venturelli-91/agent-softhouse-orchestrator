@@ -42,8 +42,10 @@ const hasGitleaks = (() => {
 
 test("a dev-written ignore file or config, or an added gitleaks:allow, is a finding with file and line", async () => {
   setScanRunner(CLEAN);
-  const ignore = await secrets(ticket({ "sub/.gitleaksignore": "abc:src/k.js:github-pat:2\n" }));
+  const ti = ticket({ "sub/.gitleaksignore": "abc:src/k.js:github-pat:2\n" });
+  const ignore = await secrets(ti);
   assert.equal(ignore.status, "dev_failed");
+  assert.ok(String(ignore.summary).includes(`git reset --soft ${ti.base}`));
   assert.match(String(ignore.summary), /sub\/\.gitleaksignore/);
   const toml = await secrets(ticket({ ".gitleaks.toml": "[allowlist]\npaths = ['.*']\n" }));
   assert.match(String(toml.summary), /\.gitleaks\.toml/);

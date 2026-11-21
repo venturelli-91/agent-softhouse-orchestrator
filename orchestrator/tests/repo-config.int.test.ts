@@ -135,6 +135,14 @@ test("the dev's allowlist gets the repo's test command instead of npm test", () 
   assert.ok(both.includes(`${SHELL}(npm test *)`) && both.includes(`${SHELL}(npm run lint *)`));
 });
 
+test("the dev may reset its own commits back to the ticket's base and nowhere else", () => {
+  const allow = (a: string[]) => a.slice(a.indexOf("--allowedTools") + 1, a.indexOf("--disallowedTools"));
+  const resets = (a: string[]) => allow(a).filter((r) => r.includes("git reset"));
+  assert.deepEqual(resets(permissionArgs("dev", "npm test", "abc123")), [`${SHELL}(git reset --soft abc123)`]);
+  assert.deepEqual(resets(permissionArgs("dev")), []);
+  assert.deepEqual(resets(permissionArgs("qa", "npm test", "abc123")), []);
+});
+
 function home(cfg: string) {
   const h = mkdtempSync(join(tmpdir(), "rc-home-"));
   mkdirSync(h, { recursive: true });

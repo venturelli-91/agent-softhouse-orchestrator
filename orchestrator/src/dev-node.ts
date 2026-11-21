@@ -112,6 +112,7 @@ export const dev = guarded("dev", async (t) => {
           ...rulesBlock(t),
         ),
     test: t.test,
+    base: t.base,
   });
   if (t.adopt_tree && !sh(t.worktree, "status", "--porcelain", "--untracked-files=all") && sh(t.worktree, "rev-parse", "HEAD^{tree}") !== t.adopt_tree)
     return escalate(t, "dev", "the commits changed the adopted content: compare the ticket branch with what you had in the working tree", usage);

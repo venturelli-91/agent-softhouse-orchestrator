@@ -44,12 +44,13 @@ export const PERMISSIONS: Record<Role, { tools: string[]; allow: string[]; deny:
 };
 
 // `test` is the repo's own test command or commands (from .orchestrator.json); the dev may run exactly those.
-export function permissionArgs(role: Role, test: string | string[] = DEFAULT_TEST): string[] {
+// `base` is the ticket's base commit: the dev may squash its own commits back to it (to drop a secret from history), never past it.
+export function permissionArgs(role: Role, test: string | string[] = DEFAULT_TEST, base?: string): string[] {
   const p = PERMISSIONS[role];
   const cmds = [test].flat();
   // The exact command, plus the command with arguments: a bare `npm test*` (no space) would also allow `npm testx`.
   const own = [...cmds, ...(cmds.some((c) => c.startsWith("npm")) ? ["npm run typecheck"] : [])].flatMap((c) => [`${SHELL}(${c})`, `${SHELL}(${c} *)`]);
-  const allow = role === "dev" ? [...p.allow, ...own] : p.allow;
+  const allow = role === "dev" ? [...p.allow, ...own, ...(base ? [`${SHELL}(git reset --soft ${base})`] : [])] : p.allow;
   return [
     "--permission-mode", "dontAsk",
     "--tools", p.tools.join(","),

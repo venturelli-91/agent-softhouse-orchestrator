@@ -81,6 +81,6 @@ export const secrets = guarded("secrets", async (t: T) => {
     docs_warnings.push(`secrets skipped: ${e.message}`);
   }
   if (!found.length) return { status: "review", docs_warnings, history: log(t, "secrets", docs_warnings.length > t.docs_warnings.length ? "skipped: gitleaks not found" : "passed") };
-  const comments = `possible secret or scanner suppression in the ticket's commits (value not shown; rewrite the commits so none of them holds it):\n${found.slice(0, 10).join("\n")}`;
+  const comments = `possible secret or scanner suppression in the ticket's commits (value not shown). Run \`git reset --soft ${t.base}\`, remove it from the files, then commit again:\n${found.slice(0, 10).join("\n")}`;
   return { status: "dev_failed", revisions: t.revisions + 1, docs_warnings, summary: comments, rejections: [...t.rejections, `secrets: ${comments}`], history: log(t, "secrets", "rejected") };
 });
