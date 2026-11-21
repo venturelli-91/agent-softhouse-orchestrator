@@ -52,6 +52,23 @@ test("a fast_path reset while the dependency is down counts as unanswered in the
   }
 });
 
+test("the outage phase is skipped when the service did not recover from the slowed phase", { timeout: 30000 }, async () => {
+  const p = await startDelayProxy();
+  const svc = createServer((req, res) => ((res.statusCode = req.url === "/h" ? 500 : 200), res.end("x")));
+  await new Promise<void>((ok) => svc.listen(0, "127.0.0.1", ok));
+  const c = LoadConfig.parse({ serve: "node s.js", base_url: `http://127.0.0.1:${(svc.address() as { port: number }).port}`, writes: [{ method: "POST", path: "/w" }],
+    health_path: "/h", slow_dependency: { env: "DEP_URL", delay_ms: 10, outage: true }, duration_s: 1, concurrency: 1, thresholds: { recover_s: 1 } });
+  try {
+    const r = await runDriver(c, p, () => {});
+    assert.equal(r.recovered, false);
+    assert.equal(r.outage_requests, undefined);
+  } finally {
+    await p.close();
+    svc.closeAllConnections();
+    await new Promise((ok) => svc.close(ok));
+  }
+});
+
 test("the stub proxy really delays and close frees the port", async () => {
   const p = await startDelayProxy();
   const url = `http://127.0.0.1:${p.port}/`;

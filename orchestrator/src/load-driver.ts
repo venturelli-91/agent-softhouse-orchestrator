@@ -129,7 +129,7 @@ export async function runDriver(cfg: LoadConfig, proxy: DelayProxy | null, check
     report.dep_connections = proxy.connections - before;
     report.recovered = await recovers(cfg, () => hit(new URL(cfg.health_path, cfg.base_url).href, {}, new AbortController().signal), check);
   }
-  if (proxy && cfg.slow_dependency?.outage) {
+  if (proxy && cfg.slow_dependency?.outage && report.recovered !== false) {
     const o = { requests: 0, uncontrolled: 0 };
     proxy.down = true;
     try {
