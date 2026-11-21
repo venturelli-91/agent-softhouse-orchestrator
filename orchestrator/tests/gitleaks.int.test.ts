@@ -40,7 +40,7 @@ const hasGitleaks = (() => {
   }
 })();
 
-test("a dev-written ignore file or config, or an added gitleaks:allow, is a finding with file and line", async () => {
+test("a dev-written ignore file or config is a finding", async () => {
   setScanRunner(CLEAN);
   const ti = ticket({ "sub/.gitleaksignore": "abc:src/k.js:github-pat:2\n" });
   const ignore = await secrets(ti);
@@ -49,10 +49,7 @@ test("a dev-written ignore file or config, or an added gitleaks:allow, is a find
   assert.match(String(ignore.summary), /sub\/\.gitleaksignore/);
   const toml = await secrets(ticket({ ".gitleaks.toml": "[allowlist]\npaths = ['.*']\n" }));
   assert.match(String(toml.summary), /\.gitleaks\.toml/);
-  const allow = await secrets(ticket({ "src/a.js": "const a = 1;\nconst b = 2; // gitleaks:allow\n" }));
-  assert.equal(allow.status, "dev_failed");
-  assert.match(String(allow.summary), /src\/a\.js:2/);
-  assert.match(allow.rejections!.join(), /^secrets: /);
+  assert.match(toml.rejections!.join(), /^secrets: /);
   const clean = await secrets(ticket({ "src/a.js": "const a = 1;\n" }));
   assert.equal(clean.status, "review");
   const t = ticket({ "src/a.js": "const a = 1;\n" });
@@ -137,10 +134,10 @@ test("the real gitleaks flags a committed token by file and line without the val
   }
 });
 
-test("a .gitattributes that marks files as binary does not hide a committed token", { skip: !hasGitleaks && "gitleaks not on PATH" }, async () => {
+test("neither a .gitattributes that marks files as binary nor a gitleaks:allow comment hides a committed token", { skip: !hasGitleaks && "gitleaks not on PATH" }, async () => {
   setScanRunner(realScan);
   try {
-    const out = await secrets(ticket({ ".gitattributes": "* -diff\n", "src/k.js": `const a = 1;\nconst t = "${TOKEN}";\n` }));
+    const out = await secrets(ticket({ ".gitattributes": "* -diff\n", "src/k.js": `const a = 1;\nconst t = "${TOKEN}"; // gitleaks:allow\n` }));
     assert.equal(out.status, "dev_failed");
     assert.match(String(out.summary), /src\/k\.js:2 \(github-pat\)/);
   } finally {

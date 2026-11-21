@@ -43,29 +43,13 @@ const SUPPRESSOR = /(^|\/)\.gitleaks(\.toml|ignore)$/i;
 const atBase = (t: T, f: string) => (sh(t.worktree, "ls-tree", "--name-only", t.base, "--", f) ? sh(t.worktree, "cat-file", "blob", `${t.base}:${f}`) : null);
 
 function suppressions(t: T): string[] {
-  const git = (...a: string[]) => sh(t.worktree, "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", ...a, t.base, "HEAD");
-  const out = git("--name-only", "-z").split("\0").filter((f) => SUPPRESSOR.test(f)).map((f) => `${f} (gitleaks config or ignore file changed)`);
+  const out = sh(t.worktree, "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-z", t.base, "HEAD")
+    .split("\0").filter((f) => SUPPRESSOR.test(f)).map((f) => `${f} (gitleaks config or ignore file changed)`);
   // gitleaks always reads the worktree's root .gitleaksignore, also an untracked or ignored one the diff never shows.
   const ignore = join(t.worktree, ".gitleaksignore");
   const current = existsSync(ignore) ? readFileSync(ignore, "utf8").replace(/\r\n/g, "\n").trimEnd() : null;
   if (current !== atBase(t, ".gitleaksignore") && !out.some((f) => f.startsWith(".gitleaksignore ")))
     out.push(".gitleaksignore (differs from the base commit outside the commits)");
-  let file = "";
-  let line = 0;
-  let del = 0;
-  let add = 0;
-  for (const l of git("-U0", "--text", "--no-color", "--no-prefix").split("\n")) {
-    if (del > 0 && l.startsWith("-")) del--;
-    else if (add > 0 && l.startsWith("+")) {
-      add--;
-      if (l.includes("gitleaks:allow")) out.push(`${file}:${line} (gitleaks:allow added)`);
-      line++;
-    } else if ((del === 0 && add === 0) || l.startsWith("@@")) {
-      const h = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(l);
-      if (h) [del, line, add] = [h[1] === undefined ? 1 : Number(h[1]), Number(h[2]), h[3] === undefined ? 1 : Number(h[3])];
-      else if (l.startsWith("+++ ")) file = l.slice(4).replace(/\t$/, "");
-    }
-  }
   return out;
 }
 
