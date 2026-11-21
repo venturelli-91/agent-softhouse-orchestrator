@@ -71,7 +71,7 @@ async function viaRunner(cfg: LoadConfig, cwd: string, env: Record<string, strin
 async function viaDriver(cfg: LoadConfig, proxy: Awaited<ReturnType<typeof startDelayProxy>> | null, check: () => void): Promise<LoadOutcome> {
   let report: LoadReport = await runDriver(cfg, proxy, check);
   let findings = evaluateLoad(report, cfg);
-  if (findings.length && report.recovered !== false) {
+  if (findings.length && report.recovered !== false && report.outage_recovered !== false) {
     try {
       report = await runDriver(cfg, proxy, check);
       findings = evaluateLoad(report, cfg);

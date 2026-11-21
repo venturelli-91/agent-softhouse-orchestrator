@@ -88,6 +88,15 @@ test("a service whose writes hang while the dependency is down fails the outage 
   await assertCleanedUp(f);
 });
 
+test("a service that never reconnects after the outage fails the recovery check and is not re-run", async () => {
+  const f = await fixture("sticky", OUTAGE);
+  const out = await run(f);
+  const all = out.findings.join("\n");
+  assert.match(all, /writes still fail 5s after the dependency came back: the service does not reconnect to it/);
+  assert.doesNotMatch(all, /error rate|dependency not reached/);
+  await assertCleanedUp(f);
+});
+
 test("a service that dies during the run is an app failure and leaves nothing behind", async () => {
   const f = await fixture("die");
   await assert.rejects(run(f), (e: Error) => e instanceof AppFailure && /exited during the load run/.test(e.message));
