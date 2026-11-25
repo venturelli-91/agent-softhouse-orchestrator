@@ -1,37 +1,48 @@
-// Stop: when the session changed logic files, the turn only ends with a test touched, and once the model was asked to run the suite.
+// Stop: when this session edited logic files, the turn only ends with a test touched and a test command run after the last logic edit.
 // It never runs anything itself: the tests are session-written code, so they run through Bash, behind the permission prompt.
+// Edits come from this session's transcripts (main + subagents), not git: unmerged commits from earlier sessions never trigger it.
+// ponytail: only Write/Edit/NotebookEdit count as edits; read shell writes (sed, heredocs) too if that gap ever lets untested logic through.
+// ponytail: TEST_RUN is a loose match (a denied or unrelated command naming a test tool counts): it nudges, it does not prove.
 // ponytail: mirrors untestedLogic in orchestrator/src/test-report.ts (.claude/ ships without orchestrator/).
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 
 const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*|[^/]*_test)\.(py|go)$|Tests?\.(java|kt|cs|swift)$/i;
 const LOGIC_FILE = /\.(?:[cm]?[jt]sx?|py|go|rs|java|kt|swift|rb|php|cs|c|cpp)$/i;
 const NO_LOGIC = /\.d\.[cm]?ts$|(^|\/)[^/]*\.config\.[cm]?[jt]s$/i;
+const EDIT = /^(Write|Edit|NotebookEdit)$/;
+const TEST_RUN = /\btest\b|pytest|vitest|jest|rspec|phpunit/;
 
 const input = JSON.parse(readFileSync(0, "utf8") || "{}");
 // A second stop in a row ends the turn: the model already got the request once, and a loop helps nobody.
-if (input.stop_hook_active) process.exit(0);
+if (input.stop_hook_active || !input.transcript_path) process.exit(0);
 const root = process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd();
-const git = (...a) => { try { return execFileSync("git", ["-c", "core.quotePath=false", ...a], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch { return ""; } };
 
-// Uncommitted changes plus commits not yet on the default remote branch.
-const base = git("merge-base", "HEAD", "origin/HEAD").trim();
-// -z: paths come raw (no quoting); a rename entry is followed by its old path, which is skipped.
-const status = git("status", "--porcelain", "-z", "--untracked-files=all").split("\0");
-const changed = [];
-for (let i = 0; i < status.length; i++) {
-  if (!status[i]) continue;
-  changed.push(status[i].slice(3));
-  if (/^[RC]/.test(status[i])) i++;
+// Subagents write their tool calls to <transcript>/subagents/agent-*.jsonl; timestamps order calls across files.
+const subagents = input.transcript_path.replace(/\.jsonl$/, "/subagents");
+const transcripts = [input.transcript_path, ...(existsSync(subagents) ? readdirSync(subagents).filter((f) => f.endsWith(".jsonl")).map((f) => join(subagents, f)) : [])];
+
+const logic = new Set();
+let lastLogic = "", lastRun = "", tested = false;
+for (const line of transcripts.flatMap((t) => readFileSync(t, "utf8").split("\n"))) {
+  if (!line.includes('"tool_use"')) continue;
+  const { timestamp, message } = JSON.parse(line);
+  for (const use of message?.content ?? []) {
+    if (use.type !== "tool_use") continue;
+    if (TEST_RUN.test(use.input?.command ?? "") && timestamp > lastRun) lastRun = timestamp;
+    if (!EDIT.test(use.name)) continue;
+    const rel = relative(root, use.input.file_path ?? use.input.notebook_path).replaceAll("\\", "/");
+    if (rel.startsWith("../") || isAbsolute(rel)) continue;
+    if (TEST_FILE.test(rel)) tested = true;
+    else if (LOGIC_FILE.test(rel) && !NO_LOGIC.test(rel)) {
+      logic.add(rel);
+      if (timestamp > lastLogic) lastLogic = timestamp;
+    }
+  }
 }
-const files = [
-  ...changed,
-  ...(base ? git("diff", "--name-only", "-z", "--diff-filter=d", `${base}..HEAD`).split("\0").filter(Boolean) : []),
-];
-const logic = files.filter((f) => LOGIC_FILE.test(f) && !NO_LOGIC.test(f) && !TEST_FILE.test(f));
-if (!logic.length) process.exit(0);
+if (!lastLogic || lastRun > lastLogic) process.exit(0);
 
-const reason = files.some((f) => TEST_FILE.test(f))
+const reason = tested
   ? "Logic changed: run the repo's test command with Bash now and fix any failure before finishing (the hook does not run it for you)."
-  : `Logic changed without a test (${logic.slice(0, 5).join(", ")}): write the test that fails without the change, then run the suite with Bash.`;
+  : `Logic changed without a test (${[...logic].slice(0, 5).join(", ")}): write the test that fails without the change, then run the suite with Bash.`;
 process.stdout.write(JSON.stringify({ decision: "block", reason }));
