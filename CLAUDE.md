@@ -33,8 +33,8 @@ matrix" (section below) may be taken without them.
    - **P2**: improvement or exploration
    - **Bugs**: regressions and failures
 9. The goal is validated value, not volume of code.
-10. Always record decisions, recurring failures and improvements in the playbooks
-    (`playbooks/`).
+10. Project documentation is mandatory and updated in the same PR as the code
+    (`DOCUMENTATION.md`); recurring failures and improvements also go to `playbooks/`.
 
 ## Mandatory flow
 
