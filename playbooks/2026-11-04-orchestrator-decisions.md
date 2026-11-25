@@ -9,7 +9,7 @@ Source: specs and plans in `docs/superpowers/`, review rounds in the git history
 - A hotfix counts toward the 5 active tickets; at the limit the incident waits.
 - One outage keeps one incident and one hotfix even if the symptom changes.
 - `orch chaos` works only on sandbox targets.
-- The Stop hook `verify.mjs` reads this session's Write/Edit/NotebookEdit calls from the transcript, not git: comparing with `origin/HEAD` made every turn on a branch with unmerged commits ask for a test run, even with nothing changed (2026-11-25). A test command run after the last logic edit ends the turn.
+- The Stop hook `verify.mjs` reads this session's Write/Edit/NotebookEdit calls (main and subagent transcripts, files inside the project only), not git: comparing with `origin/HEAD` made every turn on a branch with unmerged commits ask for a test run, even with nothing changed (2026-11-25). A test command run after the last logic edit ends the turn.
 
 ## Recurring failure class (found by review, fixed in code)
 Every hardening round was the same pattern: a git or process feature let repo content run code on the host. Fixes so far: hooks off for host-side git, `.git/config` snapshot and recheck, no ext protocols, shadow-binary check (PATHEXT, cwd), deploy output kept local and masked, postmortem text neutralised (HTML and link definitions), symlinked `playbooks/` refused.
