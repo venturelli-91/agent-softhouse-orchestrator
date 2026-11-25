@@ -39,13 +39,14 @@ test("verify hook reads only this session's edits: asks for a test and a test ru
   let clock = 0;
   const lines = (uses: object[]) =>
     uses.map((u) => JSON.stringify({ type: "assistant", timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, ++clock)).toISOString(), message: { content: [{ type: "tool_use", ...u }] } }));
-  // Subagent tool calls live in <transcript>/subagents/agent-*.jsonl; here they come after the main ones.
-  const run = (name: string, uses: object[], sub: object[] = [], extra = {}) => {
+  // Subagent tool calls live in <transcript>/subagents/agent-*.jsonl; they are stamped after the main ones unless subFirst.
+  const run = (name: string, uses: object[], sub: object[] = [], extra = {}, subFirst = false) => {
     const transcript_path = join(root, `${name}.jsonl`);
+    const early = subFirst ? lines(sub) : [];
     writeFileSync(transcript_path, [JSON.stringify({ type: "user", message: { content: "say tool_use" } }), ...lines(uses)].join("\n"));
     if (sub.length) {
       mkdirSync(join(root, name, "subagents"), { recursive: true });
-      writeFileSync(join(root, name, "subagents", "agent-1.jsonl"), lines(sub).join("\n"));
+      writeFileSync(join(root, name, "subagents", "agent-1.jsonl"), (subFirst ? early : lines(sub)).join("\n"));
     }
     return hook("verify.mjs", root, { transcript_path, ...extra }).stdout;
   };
@@ -61,6 +62,7 @@ test("verify hook reads only this session's edits: asks for a test and a test ru
     editedAfterRun: run("after", [spec, bash("docker compose run --rm api pytest"), edit("src", "a.ts")]),
     subUntested: run("sub-untested", [{ name: "Agent", input: { prompt: "x" } }], [edit("src", "a.ts")]),
     subRan: run("sub-ran", [], [edit("src", "a.ts"), spec, bash("npm test")]),
+    subThenMainRan: run("sub-main", [bash("npm test")], [edit("src", "a.ts"), spec], {}, true),
     again: run("again", [edit("src", "a.ts")], [], { stop_hook_active: true }),
   };
   const ran = existsSync(join(root, "ran"));
@@ -71,6 +73,7 @@ test("verify hook reads only this session's edits: asks for a test and a test ru
   assert.equal(out.docs, "");
   assert.match(JSON.parse(out.subUntested).reason, /without a test \(src\/a\.ts\)/);
   assert.equal(out.subRan, "");
+  assert.equal(out.subThenMainRan, "");
   assert.match(JSON.parse(out.untested).reason, /without a test \(src\/ação €\.ts\)/);
   assert.match(JSON.parse(out.tested).reason, /run the repo's test command with Bash/);
   assert.equal(out.ran, "");
