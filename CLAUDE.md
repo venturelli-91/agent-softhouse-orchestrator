@@ -9,7 +9,8 @@ the project's repository. The commands (`/demand`, `/ticket`, `/daily-brief`,
 
 **Deterministic hooks** (`.claude/settings.json`, scripts in `.claude/hooks/`): `guard.mjs` blocks
 writes to secrets, git internals and Claude hooks/settings; `verify.mjs` keeps the turn open once
-when logic changed, asking for the missing test and for a test run through Bash. It never runs the
+when this session edited logic (read from its transcript), asking for the missing test and for a test run
+through Bash after the last edit. It never runs the
 suite itself: the tests are session-written code, so they stay behind the permission prompt. They hold in
 the interactive session the same rules `orch` enforces in code.
 
