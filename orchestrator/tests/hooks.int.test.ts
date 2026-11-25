@@ -36,26 +36,41 @@ test("verify hook reads only this session's edits: asks for a test and a test ru
   git("commit", "-qm", "unmerged logic from an earlier session");
   const edit = (...p: string[]) => ({ name: "Edit", input: { file_path: join(root, ...p) } });
   const bash = (command: string) => ({ name: "Bash", input: { command } });
-  const run = (name: string, uses: object[], extra = {}) => {
+  let clock = 0;
+  const lines = (uses: object[]) =>
+    uses.map((u) => JSON.stringify({ type: "assistant", timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, ++clock)).toISOString(), message: { content: [{ type: "tool_use", ...u }] } }));
+  // Subagent tool calls live in <transcript>/subagents/agent-*.jsonl; here they come after the main ones.
+  const run = (name: string, uses: object[], sub: object[] = [], extra = {}) => {
     const transcript_path = join(root, `${name}.jsonl`);
-    const lines = uses.map((u) => JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", ...u }] } }));
-    writeFileSync(transcript_path, [JSON.stringify({ type: "user", message: { content: "say tool_use" } }), ...lines].join("\n"));
+    writeFileSync(transcript_path, [JSON.stringify({ type: "user", message: { content: "say tool_use" } }), ...lines(uses)].join("\n"));
+    if (sub.length) {
+      mkdirSync(join(root, name, "subagents"), { recursive: true });
+      writeFileSync(join(root, name, "subagents", "agent-1.jsonl"), lines(sub).join("\n"));
+    }
     return hook("verify.mjs", root, { transcript_path, ...extra }).stdout;
   };
   const spec = edit("tests", "a.test.ts");
   const out = {
     none: run("none", [bash("git log")]),
+    read: run("read", [{ name: "Read", input: { file_path: join(root, "src", "old.ts") } }]),
+    outside: run("outside", [edit("..", "other-repo", "src", "x.ts")]),
     docs: run("docs", [edit("README.md")]),
     untested: run("untested", [edit("src", "ação €.ts")]),
     tested: run("tested", [edit("src", "a.ts"), spec]),
-    ran: run("ran", [edit("src", "a.ts"), spec, bash("cd x && npm test")]),
+    ran: run("ran", [edit("src", "a.ts"), spec, bash("cd x && make test")]),
     editedAfterRun: run("after", [spec, bash("docker compose run --rm api pytest"), edit("src", "a.ts")]),
-    again: run("again", [edit("src", "a.ts")], { stop_hook_active: true }),
+    subUntested: run("sub-untested", [{ name: "Agent", input: { prompt: "x" } }], [edit("src", "a.ts")]),
+    subRan: run("sub-ran", [], [edit("src", "a.ts"), spec, bash("npm test")]),
+    again: run("again", [edit("src", "a.ts")], [], { stop_hook_active: true }),
   };
   const ran = existsSync(join(root, "ran"));
   rmSync(root, { recursive: true, force: true });
   assert.equal(out.none, "");
+  assert.equal(out.read, "");
+  assert.equal(out.outside, "");
   assert.equal(out.docs, "");
+  assert.match(JSON.parse(out.subUntested).reason, /without a test \(src\/a\.ts\)/);
+  assert.equal(out.subRan, "");
   assert.match(JSON.parse(out.untested).reason, /without a test \(src\/ação €\.ts\)/);
   assert.match(JSON.parse(out.tested).reason, /run the repo's test command with Bash/);
   assert.equal(out.ran, "");
